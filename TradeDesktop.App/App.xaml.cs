@@ -55,14 +55,9 @@ public partial class App : System.Windows.Application
     private static IDictionary<string, string?> LoadDotEnv()
     {
         var values = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
-        var envPath = Path.Combine(AppContext.BaseDirectory, ".env");
+        var envPath = FindDotEnvPath();
 
-        if (!File.Exists(envPath))
-        {
-            envPath = Path.Combine(Directory.GetCurrentDirectory(), ".env");
-        }
-
-        if (!File.Exists(envPath))
+        if (envPath is null)
         {
             return values;
         }
@@ -104,5 +99,33 @@ public partial class App : System.Windows.Application
         }
 
         return values;
+    }
+
+    private static string? FindDotEnvPath()
+    {
+        static string? FindInCurrentAndParents(string startDirectory)
+        {
+            var current = new DirectoryInfo(startDirectory);
+            while (current is not null)
+            {
+                var candidate = Path.Combine(current.FullName, ".env");
+                if (File.Exists(candidate))
+                {
+                    return candidate;
+                }
+
+                current = current.Parent;
+            }
+
+            return null;
+        }
+
+        var fromBaseDirectory = FindInCurrentAndParents(AppContext.BaseDirectory);
+        if (fromBaseDirectory is not null)
+        {
+            return fromBaseDirectory;
+        }
+
+        return FindInCurrentAndParents(Directory.GetCurrentDirectory());
     }
 }
