@@ -1,12 +1,20 @@
-name: Build Windows App
+name: Build and Release Windows App
 
 on:
   push:
     branches: [ main ]
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
+
+    env:
+      APP_NAME: TradeDesktop.App
+      MAJOR: 1
+      MINOR: 0
 
     steps:
       - name: Checkout source
@@ -17,17 +25,44 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
+      - name: Generate version
+        shell: pwsh
+        run: |
+          $version="${{ env.MAJOR }}.${{ env.MINOR }}.${{ github.run_number }}"
+          echo "VERSION=$version" >> $env:GITHUB_ENV
+          echo "VERSIONED_EXE=${{ env.APP_NAME }}-$version.exe" >> $env:GITHUB_ENV
+          echo "LATEST_EXE=${{ env.APP_NAME }}-latest.exe" >> $env:GITHUB_ENV
+          echo "TAG=v$version" >> $env:GITHUB_ENV
+
       - name: Restore dependencies
         run: dotnet restore
 
-      - name: Build project
-        run: dotnet build --configuration Release --no-restore
-
       - name: Publish app
-        run: dotnet publish src/TradeDesktop.App/TradeDesktop.App.csproj -c Release -r win-x64 --self-contained true -o publish
+        shell: pwsh
+        run: |
+          dotnet publish TradeDesktop.App/TradeDesktop.App.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained true `
+            /p:PublishSingleFile=true `
+            /p:Version=${{ env.VERSION }} `
+            /p:AssemblyVersion=${{ env.VERSION }} `
+            /p:FileVersion=${{ env.VERSION }} `
+            -o publish
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      - name: Prepare release files
+        shell: pwsh
+        run: |
+          Copy-Item "publish/${{ env.APP_NAME }}.exe" "publish/${{ env.VERSIONED_EXE }}"
+          Copy-Item "publish/${{ env.APP_NAME }}.exe" "publish/${{ env.LATEST_EXE }}"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: trade-desktop-build
-          path: publish
+          tag_name: ${{ env.TAG }}
+          name: Release ${{ env.VERSION }}
+          files: |
+            publish/${{ env.VERSIONED_EXE }}
+            publish/${{ env.LATEST_EXE }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
