@@ -94,7 +94,7 @@ public sealed class DashboardViewModel : ObservableObject
 
     private void OnMarketDataReceived(object? sender, MarketData marketData)
     {
-        Application.Current.Dispatcher.Invoke(() =>
+        System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
             ConnectionStatus = marketData.IsConnected ? "Connected" : "Disconnected";
             Bid = marketData.Bid.ToString("F5", CultureInfo.InvariantCulture);
