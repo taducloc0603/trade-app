@@ -1,0 +1,86 @@
+<Window x:Class="TradeDesktop.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        Title="Trade Desktop Dashboard"
+        Height="450"
+        Width="760"
+        MinHeight="450"
+        MinWidth="700"
+        WindowStartupLocation="CenterScreen">
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="12" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="12" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="16" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock FontSize="22" FontWeight="SemiBold" Text="Dashboard" />
+
+        <Border Grid.Row="2" BorderBrush="#DDD" BorderThickness="1" CornerRadius="8" Padding="16">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="8" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="8" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="8" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <TextBlock Text="Connection" FontWeight="Bold" />
+                <TextBlock Grid.Column="1" Text="{Binding ConnectionStatus}" HorizontalAlignment="Right" Foreground="DarkBlue" FontWeight="SemiBold" />
+
+                <TextBlock Grid.Row="2" Text="Bid" FontWeight="Bold" />
+                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Bid}" HorizontalAlignment="Right" />
+
+                <TextBlock Grid.Row="4" Text="Ask" FontWeight="Bold" />
+                <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding Ask}" HorizontalAlignment="Right" />
+
+                <TextBlock Grid.Row="6" Text="Spread" FontWeight="Bold" />
+                <TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding Spread}" HorizontalAlignment="Right" />
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="4" BorderBrush="#DDD" BorderThickness="1" CornerRadius="8" Padding="16">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="8" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="8" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <TextBlock Text="Timestamp (UTC)" FontWeight="Bold" />
+                <TextBlock Grid.Column="1" Text="{Binding Timestamp}" HorizontalAlignment="Right" />
+
+                <TextBlock Grid.Row="2" Text="Signal" FontWeight="Bold" />
+                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Signal}" HorizontalAlignment="Right" FontWeight="SemiBold" />
+
+                <TextBlock Grid.Row="4" Text="Reason" FontWeight="Bold" />
+                <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding Reason}" HorizontalAlignment="Right" TextWrapping="Wrap" MaxWidth="320" />
+            </Grid>
+        </Border>
+
+        <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="Start" Command="{Binding StartCommand}" Width="120" Margin="0,0,8,0" />
+            <Button Content="Stop" Command="{Binding StopCommand}" Width="120" />
+        </StackPanel>
+    </Grid>
+</Window>
