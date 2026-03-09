@@ -242,11 +242,20 @@ public sealed class DashboardViewModel : ObservableObject
 
     private async Task CheckConfigCodeAsync()
     {
-        var exists = await _configRepository.ExistsByIdAsync(ConfigCode.Trim());
-        ConfigCodeCheckSuccess = exists;
-        ConfigCodeCheckStatus = exists
-            ? "Code hợp lệ: tồn tại trong DB"
-            : "Code không hợp lệ: không tồn tại trong DB";
+        try
+        {
+            var exists = await _configRepository.ExistsByIdAsync(ConfigCode.Trim());
+            ConfigCodeCheckSuccess = exists;
+            ConfigCodeCheckStatus = exists
+                ? "Code hợp lệ: tồn tại trong DB"
+                : "Code không hợp lệ: không tồn tại trong DB";
+        }
+        catch (Exception ex)
+        {
+            ConfigCodeCheckSuccess = false;
+            ConfigCodeCheckStatus = $"Lỗi check code: {ex.Message}";
+        }
+
         ResetUpdateStatus();
         RefreshExchangeButtons();
     }
@@ -277,14 +286,21 @@ public sealed class DashboardViewModel : ObservableObject
 
     private async Task UpdateSansAsync()
     {
-        var updated = await _configRepository.UpdateSansAsync(
-            ConfigCode.Trim(),
-            Exchange1MapName.Trim(),
-            Exchange2MapName.Trim());
+        try
+        {
+            var updated = await _configRepository.UpdateSansAsync(
+                ConfigCode.Trim(),
+                Exchange1MapName.Trim(),
+                Exchange2MapName.Trim());
 
-        UpdateStatus = updated
-            ? "Update thành công sans = [map1, map2] lên Supabase"
-            : "Update thất bại. Kiểm tra key/quyền/table hoặc thử lại.";
+            UpdateStatus = updated
+                ? "Update thành công sans = [map1, map2] lên Supabase"
+                : "Update thất bại. Kiểm tra key/quyền/table hoặc thử lại.";
+        }
+        catch (Exception ex)
+        {
+            UpdateStatus = $"Update lỗi: {ex.Message}";
+        }
     }
 
     private static bool MapNameExistsInSharedMemory(string? mapName)
@@ -295,15 +311,27 @@ public sealed class DashboardViewModel : ObservableObject
             return false;
         }
 
-        try
+        var candidates = new HashSet<string>(StringComparer.Ordinal)
         {
-            using var _ = MemoryMappedFile.OpenExisting(normalized);
-            return true;
-        }
-        catch
+            normalized,
+            normalized.Replace('/', '\\'),
+            normalized.Replace('\\', '/')
+        };
+
+        foreach (var candidate in candidates)
         {
-            return false;
+            try
+            {
+                using var _ = MemoryMappedFile.OpenExisting(candidate);
+                return true;
+            }
+            catch
+            {
+                // thử tiếp candidate khác
+            }
         }
+
+        return false;
     }
 
     private void ResetExchange1Check()
