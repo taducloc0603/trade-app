@@ -1,4 +1,6 @@
 using System.Windows;
+using System.Collections.Generic;
+using System.IO;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -20,6 +22,7 @@ public partial class App : System.Windows.Application
             .ConfigureServices(services =>
             {
                 var configuration = new ConfigurationBuilder()
+                    .AddInMemoryCollection(LoadDotEnv())
                     .AddEnvironmentVariables()
                     .Build();
 
@@ -47,5 +50,59 @@ public partial class App : System.Windows.Application
         }
 
         base.OnExit(e);
+    }
+
+    private static IDictionary<string, string?> LoadDotEnv()
+    {
+        var values = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        var envPath = Path.Combine(AppContext.BaseDirectory, ".env");
+
+        if (!File.Exists(envPath))
+        {
+            envPath = Path.Combine(Directory.GetCurrentDirectory(), ".env");
+        }
+
+        if (!File.Exists(envPath))
+        {
+            return values;
+        }
+
+        foreach (var rawLine in File.ReadLines(envPath))
+        {
+            var line = rawLine.Trim();
+            if (string.IsNullOrWhiteSpace(line) || line.StartsWith('#'))
+            {
+                continue;
+            }
+
+            if (line.StartsWith("export ", StringComparison.OrdinalIgnoreCase))
+            {
+                line = line[7..].TrimStart();
+            }
+
+            var separatorIndex = line.IndexOf('=');
+            if (separatorIndex <= 0)
+            {
+                continue;
+            }
+
+            var key = line[..separatorIndex].Trim();
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                continue;
+            }
+
+            var value = line[(separatorIndex + 1)..].Trim();
+            if (value.Length >= 2 &&
+                ((value.StartsWith('"') && value.EndsWith('"')) ||
+                 (value.StartsWith('\'') && value.EndsWith('\''))))
+            {
+                value = value[1..^1];
+            }
+
+            values[key] = value;
+        }
+
+        return values;
     }
 }
