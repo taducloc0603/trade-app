@@ -9,6 +9,9 @@ namespace TradeDesktop.Infrastructure;
 
 public static class DependencyInjection
 {
+    private const string DefaultSupabaseUrl = "https://yrrzgssbafjpkrsetsot.supabase.co";
+    private const string DefaultSupabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlycnpnc3NiYWZqcGtyc2V0c290Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE1OTU1MjYsImV4cCI6MjA4NzE3MTUyNn0.H9LL2VcNlA_n1HjcK3IH_8US8HMVW6hOBbHHp-5MobE";
+
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddSingleton<ISharedMemoryReader, MockSharedMemoryMarketDataReader>();
@@ -24,7 +27,8 @@ public static class DependencyInjection
                 configuration["SUPABASE_URL"] ??
                 configuration["NEXT_PUBLIC_SUPABASE_URL"] ??
                 configuration["Supabase:Url"] ??
-                configuration["Supabase__Url"];
+                configuration["Supabase__Url"] ??
+                DefaultSupabaseUrl;
 
             var key =
                 configuration["SUPABASE_KEY"] ??
@@ -32,7 +36,8 @@ public static class DependencyInjection
                 configuration["NEXT_PUBLIC_SUPABASE_ANON_KEY"] ??
                 configuration["SUPABASE_SERVICE_ROLE_KEY"] ??
                 configuration["Supabase:Key"] ??
-                configuration["Supabase__Key"];
+                configuration["Supabase__Key"] ??
+                DefaultSupabaseAnonKey;
 
             return new SupabaseConfigRepository(httpClient, url, key);
         });
