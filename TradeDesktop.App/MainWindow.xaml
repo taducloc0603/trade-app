@@ -5,9 +5,9 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
         Title="Trade Desktop Dashboard"
-        Height="450"
+        Height="760"
         Width="760"
-        MinHeight="450"
+        MinHeight="720"
         MinWidth="700"
         WindowStartupLocation="CenterScreen">
     <Grid Margin="16">
@@ -16,6 +16,8 @@
             <RowDefinition Height="12" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="12" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="16" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="16" />
             <RowDefinition Height="Auto" />
@@ -82,5 +84,137 @@
             <Button Content="Start" Command="{Binding StartCommand}" Width="120" Margin="0,0,8,0" />
             <Button Content="Stop" Command="{Binding StopCommand}" Width="120" />
         </StackPanel>
+
+        <Border Grid.Row="8" BorderBrush="#DDD" BorderThickness="1" CornerRadius="8" Padding="16">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="12" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <TextBlock Text="Tạo sàn (MapName check trước khi tạo)" FontSize="16" FontWeight="SemiBold" />
+
+                <Grid Grid.Row="2">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="12" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="12" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <Border Grid.Row="0" BorderBrush="#EEE" BorderThickness="1" CornerRadius="6" Padding="12">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="12" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="8" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="8" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Text="Code (id record)" FontWeight="Bold" />
+
+                            <TextBox Grid.Row="2"
+                                     Text="{Binding ConfigCode, UpdateSourceTrigger=PropertyChanged}"
+                                     Height="30"
+                                     VerticalContentAlignment="Center" />
+
+                            <Button Grid.Row="2"
+                                    Grid.Column="2"
+                                    Content="Check Code"
+                                    Command="{Binding CheckConfigCodeCommand}"
+                                    Width="120" />
+
+                            <TextBlock Grid.Row="4"
+                                       Grid.ColumnSpan="3"
+                                       Foreground="DarkSlateBlue"
+                                       Text="{Binding ConfigCodeCheckStatus}" />
+                        </Grid>
+                    </Border>
+
+                    <Grid Grid.Row="2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="16" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <Border Grid.Column="0" BorderBrush="#EEE" BorderThickness="1" CornerRadius="6" Padding="12">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="8" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="8" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <TextBlock Text="Sàn 1" FontWeight="Bold" />
+
+                                <TextBox Grid.Row="2"
+                                         Text="{Binding Exchange1MapName, UpdateSourceTrigger=PropertyChanged}"
+                                         Height="30"
+                                         VerticalContentAlignment="Center" />
+
+                                <Button Grid.Row="4"
+                                        Content="Check"
+                                        Command="{Binding CheckExchange1MapNameCommand}"
+                                        Width="100" />
+
+                                <TextBlock Grid.Row="4"
+                                           Margin="108,0,0,0"
+                                           Text="{Binding Exchange1CheckStatus}"
+                                           TextWrapping="Wrap"
+                                           Foreground="DarkSlateBlue" />
+                            </Grid>
+                        </Border>
+
+                        <Border Grid.Column="2" BorderBrush="#EEE" BorderThickness="1" CornerRadius="6" Padding="12">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="8" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="8" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <TextBlock Text="Sàn 2" FontWeight="Bold" />
+
+                                <TextBox Grid.Row="2"
+                                         Text="{Binding Exchange2MapName, UpdateSourceTrigger=PropertyChanged}"
+                                         Height="30"
+                                         VerticalContentAlignment="Center" />
+
+                                <Button Grid.Row="4"
+                                        Content="Check"
+                                        Command="{Binding CheckExchange2MapNameCommand}"
+                                        Width="100" />
+
+                                <TextBlock Grid.Row="4"
+                                           Margin="108,0,0,0"
+                                           Text="{Binding Exchange2CheckStatus}"
+                                           TextWrapping="Wrap"
+                                           Foreground="DarkSlateBlue" />
+                            </Grid>
+                        </Border>
+                    </Grid>
+
+                    <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right">
+                        <TextBlock Text="{Binding UpdateStatus}" VerticalAlignment="Center" Margin="0,0,12,0" Foreground="DarkGreen" />
+                        <Button Content="Update sans"
+                                Command="{Binding UpdateSansCommand}"
+                                Width="140" />
+                    </StackPanel>
+                </Grid>
+            </Grid>
+        </Border>
     </Grid>
 </Window>

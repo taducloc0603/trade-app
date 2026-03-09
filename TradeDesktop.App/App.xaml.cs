@@ -1,4 +1,5 @@
 using System.Windows;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using TradeDesktop.App.ViewModels;
@@ -18,9 +19,13 @@ public partial class App : System.Windows.Application
         _host = Host.CreateDefaultBuilder()
             .ConfigureServices(services =>
             {
+                var configuration = new ConfigurationBuilder()
+                    .AddEnvironmentVariables()
+                    .Build();
+
                 services
                     .AddApplication()
-                    .AddInfrastructure();
+                    .AddInfrastructure(configuration);
 
                 services.AddSingleton<DashboardViewModel>();
                 services.AddSingleton<MainWindow>();
