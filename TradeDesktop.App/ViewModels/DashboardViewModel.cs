@@ -305,7 +305,7 @@ public sealed class DashboardViewModel : ObservableObject
 
     private static bool MapNameExistsInSharedMemory(string? mapName)
     {
-        var normalized = mapName?.Trim();
+        var normalized = mapName?.Trim().Trim('"');
         if (string.IsNullOrWhiteSpace(normalized))
         {
             return false;
@@ -318,11 +318,19 @@ public sealed class DashboardViewModel : ObservableObject
             normalized.Replace('\\', '/')
         };
 
+        var normalizedBackslash = normalized.Replace('/', '\\');
+        if (!normalizedBackslash.StartsWith("Global\\", StringComparison.OrdinalIgnoreCase) &&
+            !normalizedBackslash.StartsWith("Local\\", StringComparison.OrdinalIgnoreCase))
+        {
+            candidates.Add($"Global\\{normalizedBackslash}");
+            candidates.Add($"Local\\{normalizedBackslash}");
+        }
+
         foreach (var candidate in candidates)
         {
             try
             {
-                using var _ = MemoryMappedFile.OpenExisting(candidate);
+                using var _ = MemoryMappedFile.OpenExisting(candidate, MemoryMappedFileRights.Read);
                 return true;
             }
             catch
