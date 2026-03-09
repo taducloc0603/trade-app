@@ -1,5 +1,6 @@
 using TradeDesktop.Application.Abstractions;
 using TradeDesktop.Domain.Models;
+using DomainMarketData = TradeDesktop.Domain.Models.MarketData;
 
 namespace TradeDesktop.Infrastructure.MarketData;
 
@@ -11,7 +12,7 @@ public sealed class MockSharedMemoryMarketDataReader : ISharedMemoryReader
     private decimal _lastMidPrice = 100.00m;
     private readonly Random _random = new();
 
-    public event EventHandler<MarketData>? MarketDataReceived;
+    public event EventHandler<DomainMarketData>? MarketDataReceived;
 
     public bool IsRunning { get; private set; }
 
@@ -75,7 +76,7 @@ public sealed class MockSharedMemoryMarketDataReader : ISharedMemoryReader
         }
     }
 
-    private MarketData NextMockTick()
+    private DomainMarketData NextMockTick()
     {
         var drift = (decimal)(_random.NextDouble() - 0.5) * 0.20m;
         _lastMidPrice = Math.Round(Math.Max(1m, _lastMidPrice + drift), 5);
@@ -83,7 +84,7 @@ public sealed class MockSharedMemoryMarketDataReader : ISharedMemoryReader
         var bid = Math.Round(_lastMidPrice - spread / 2m, 5);
         var ask = Math.Round(_lastMidPrice + spread / 2m, 5);
 
-        return new MarketData(
+        return new DomainMarketData(
             Bid: bid,
             Ask: ask,
             Timestamp: DateTime.UtcNow,

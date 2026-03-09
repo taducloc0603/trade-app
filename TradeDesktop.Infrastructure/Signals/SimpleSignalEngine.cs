@@ -1,11 +1,12 @@
 using TradeDesktop.Application.Abstractions;
 using TradeDesktop.Domain.Models;
+using DomainMarketData = TradeDesktop.Domain.Models.MarketData;
 
 namespace TradeDesktop.Infrastructure.Signals;
 
 public sealed class SimpleSignalEngine : ISignalEngine
 {
-    public SignalResult Calculate(MarketData marketData)
+    public SignalResult Calculate(DomainMarketData marketData)
     {
         if (!marketData.IsConnected)
         {
