@@ -27,15 +27,15 @@ public sealed class ConfigViewModel : ObservableObject
         _runtimeConfigState = runtimeConfigState;
         _configRepository = configRepository;
 
-        Code = runtimeConfigState.Code;
-        MapName1 = runtimeConfigState.MapName1;
-        MapName2 = runtimeConfigState.MapName2;
-
         CheckCodeCommand = new AsyncRelayCommand(CheckCodeAsync, CanCheckCode);
         CheckMap1Command = new AsyncRelayCommand(CheckMap1Async, CanCheckMap1);
         CheckMap2Command = new AsyncRelayCommand(CheckMap2Async, CanCheckMap2);
         SaveCommand = new AsyncRelayCommand(SaveAsync, CanSave);
         CancelCommand = new AsyncRelayCommand(CancelAsync);
+
+        Code = runtimeConfigState.Code;
+        MapName1 = runtimeConfigState.MapName1;
+        MapName2 = runtimeConfigState.MapName2;
     }
 
     public event Action<bool?>? RequestClose;
@@ -169,9 +169,9 @@ public sealed class ConfigViewModel : ObservableObject
 
     private void RefreshButtons()
     {
-        CheckCodeCommand.RaiseCanExecuteChanged();
-        CheckMap1Command.RaiseCanExecuteChanged();
-        CheckMap2Command.RaiseCanExecuteChanged();
-        SaveCommand.RaiseCanExecuteChanged();
+        CheckCodeCommand?.RaiseCanExecuteChanged();
+        CheckMap1Command?.RaiseCanExecuteChanged();
+        CheckMap2Command?.RaiseCanExecuteChanged();
+        SaveCommand?.RaiseCanExecuteChanged();
     }
 }
