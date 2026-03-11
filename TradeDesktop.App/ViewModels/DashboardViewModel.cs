@@ -1,375 +1,176 @@
+using System.Collections.ObjectModel;
 using System.Globalization;
-using System.IO.MemoryMappedFiles;
+using System.Windows;
+using Microsoft.Extensions.DependencyInjection;
 using TradeDesktop.App.Commands;
+using TradeDesktop.App.State;
 using TradeDesktop.Application.Abstractions;
-using TradeDesktop.Application.Services;
 using TradeDesktop.Domain.Models;
 
 namespace TradeDesktop.App.ViewModels;
 
 public sealed class DashboardViewModel : ObservableObject
 {
-    private readonly IMarketDataReader _marketDataReader;
-    private readonly IDashboardService _dashboardService;
-    private readonly IConfigRepository _configRepository;
+    private readonly IServiceProvider _serviceProvider;
+    private readonly RuntimeConfigState _runtimeConfigState;
 
-    private string _connectionStatus = "Disconnected";
-    private string _bid = "-";
-    private string _ask = "-";
-    private string _spread = "-";
-    private string _timestamp = "-";
-    private string _signal = SignalType.Hold.ToString();
-    private string _reason = "Not started";
-
-    private string _exchange1MapName = string.Empty;
-    private string _exchange2MapName = string.Empty;
-    private string _configCode = string.Empty;
-    private string _exchange1CheckStatus = "Chưa kiểm tra";
-    private string _exchange2CheckStatus = "Chưa kiểm tra";
-    private string _configCodeCheckStatus = "Chưa kiểm tra";
-    private string _updateStatus = "Chưa update";
-    private bool _exchange1CheckSuccess;
-    private bool _exchange2CheckSuccess;
-    private bool _configCodeCheckSuccess;
+    private string _runtimeSummary = string.Empty;
+    private string _exchangeAHeader = "Sàn A";
+    private string _exchangeBHeader = "Sàn B";
+    private string _gapBuy = "0.00000";
+    private string _gapSell = "0.00000";
 
     public DashboardViewModel(
-        IMarketDataReader marketDataReader,
-        IDashboardService dashboardService,
-        IConfigRepository configRepository)
+        IServiceProvider serviceProvider,
+        RuntimeConfigState runtimeConfigState,
+        IMarketDataReader marketDataReader)
     {
-        _marketDataReader = marketDataReader;
-        _dashboardService = dashboardService;
-        _configRepository = configRepository;
+        _serviceProvider = serviceProvider;
+        _runtimeConfigState = runtimeConfigState;
 
-        StartCommand = new AsyncRelayCommand(StartAsync, () => !_marketDataReader.IsRunning);
-        StopCommand = new AsyncRelayCommand(StopAsync, () => _marketDataReader.IsRunning);
-        CheckConfigCodeCommand = new AsyncRelayCommand(CheckConfigCodeAsync, CanCheckConfigCode);
-        CheckExchange1MapNameCommand = new AsyncRelayCommand(CheckExchange1MapNameAsync, CanCheckExchange1MapName);
-        CheckExchange2MapNameCommand = new AsyncRelayCommand(CheckExchange2MapNameAsync, CanCheckExchange2MapName);
-        UpdateSansCommand = new AsyncRelayCommand(UpdateSansAsync, CanUpdateSans);
-
-        _marketDataReader.MarketDataReceived += OnMarketDataReceived;
-    }
-
-    public string ConnectionStatus
-    {
-        get => _connectionStatus;
-        private set => SetProperty(ref _connectionStatus, value);
-    }
-
-    public string Bid
-    {
-        get => _bid;
-        private set => SetProperty(ref _bid, value);
-    }
-
-    public string Ask
-    {
-        get => _ask;
-        private set => SetProperty(ref _ask, value);
-    }
-
-    public string Spread
-    {
-        get => _spread;
-        private set => SetProperty(ref _spread, value);
-    }
-
-    public string Timestamp
-    {
-        get => _timestamp;
-        private set => SetProperty(ref _timestamp, value);
-    }
-
-    public string Signal
-    {
-        get => _signal;
-        private set => SetProperty(ref _signal, value);
-    }
-
-    public string Reason
-    {
-        get => _reason;
-        private set => SetProperty(ref _reason, value);
-    }
-
-    public string Exchange1MapName
-    {
-        get => _exchange1MapName;
-        set
+        ParameterRows = new ObservableCollection<ParameterRowViewModel>
         {
-            if (!SetProperty(ref _exchange1MapName, value))
-            {
-                return;
-            }
+            new("Symbol", "BTCUSDT", "BTCUSDT"),
+            new("Bid", "100.12000", "100.11000"),
+            new("Ask", "100.13000", "100.14000"),
+            new("Spread", "0.01000", "0.03000"),
+            new("Latency(ms)", "8", "10"),
+            new("TPS", "120", "112"),
+            new("Time", DateTime.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture), DateTime.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture)),
+            new("Max Lat(ms)", "15", "18"),
+            new("Avg Lat(ms)", "9", "11")
+        };
 
-            ResetExchange1Check();
-            ResetUpdateStatus();
-            RefreshExchangeButtons();
-        }
-    }
-
-    public string Exchange2MapName
-    {
-        get => _exchange2MapName;
-        set
+        LogItems = new ObservableCollection<string>
         {
-            if (!SetProperty(ref _exchange2MapName, value))
-            {
-                return;
-            }
+            "[Mock] Connected to market data stream.",
+            "[Mock] UI preview mode - logs panel only.",
+            "[Mock] Waiting for runtime config update..."
+        };
 
-            ResetExchange2Check();
-            ResetUpdateStatus();
-            RefreshExchangeButtons();
-        }
+        OpenConfigCommand = new AsyncRelayCommand(OpenConfigAsync);
+        ClearLogsCommand = new AsyncRelayCommand(ClearLogsAsync);
+
+        _runtimeConfigState.StateChanged += (_, _) => ApplyRuntimeConfig();
+        ApplyRuntimeConfig();
+
+        marketDataReader.MarketDataReceived += OnMarketDataReceived;
+        _ = marketDataReader.StartAsync();
     }
 
-    public string ConfigCode
-    {
-        get => _configCode;
-        set
-        {
-            if (!SetProperty(ref _configCode, value))
-            {
-                return;
-            }
+    public ObservableCollection<ParameterRowViewModel> ParameterRows { get; }
+    public ObservableCollection<string> LogItems { get; }
 
-            ResetConfigCodeCheck();
-            ResetUpdateStatus();
-            RefreshExchangeButtons();
-        }
+    public string RuntimeSummary
+    {
+        get => _runtimeSummary;
+        private set => SetProperty(ref _runtimeSummary, value);
     }
 
-    public string Exchange1CheckStatus
+    public string ExchangeAHeader
     {
-        get => _exchange1CheckStatus;
-        private set => SetProperty(ref _exchange1CheckStatus, value);
+        get => _exchangeAHeader;
+        private set => SetProperty(ref _exchangeAHeader, value);
     }
 
-    public string Exchange2CheckStatus
+    public string ExchangeBHeader
     {
-        get => _exchange2CheckStatus;
-        private set => SetProperty(ref _exchange2CheckStatus, value);
+        get => _exchangeBHeader;
+        private set => SetProperty(ref _exchangeBHeader, value);
     }
 
-    public string ConfigCodeCheckStatus
+    public string GapBuy
     {
-        get => _configCodeCheckStatus;
-        private set => SetProperty(ref _configCodeCheckStatus, value);
+        get => _gapBuy;
+        private set => SetProperty(ref _gapBuy, value);
     }
 
-    public string UpdateStatus
+    public string GapSell
     {
-        get => _updateStatus;
-        private set => SetProperty(ref _updateStatus, value);
+        get => _gapSell;
+        private set => SetProperty(ref _gapSell, value);
     }
 
-    public bool Exchange1CheckSuccess
+    public AsyncRelayCommand OpenConfigCommand { get; }
+    public AsyncRelayCommand ClearLogsCommand { get; }
+
+    private Task OpenConfigAsync()
     {
-        get => _exchange1CheckSuccess;
-        private set => SetProperty(ref _exchange1CheckSuccess, value);
+        var configWindow = _serviceProvider.GetRequiredService<ConfigWindow>();
+        configWindow.Owner = System.Windows.Application.Current.MainWindow;
+        configWindow.ShowDialog();
+        return Task.CompletedTask;
     }
 
-    public bool Exchange2CheckSuccess
+    private Task ClearLogsAsync()
     {
-        get => _exchange2CheckSuccess;
-        private set => SetProperty(ref _exchange2CheckSuccess, value);
+        return Task.CompletedTask;
     }
 
-    public bool ConfigCodeCheckSuccess
+    private void ApplyRuntimeConfig()
     {
-        get => _configCodeCheckSuccess;
-        private set => SetProperty(ref _configCodeCheckSuccess, value);
-    }
+        ExchangeAHeader = string.IsNullOrWhiteSpace(_runtimeConfigState.MapName1)
+            ? "Sàn A"
+            : $"Sàn A ({_runtimeConfigState.MapName1})";
 
-    public AsyncRelayCommand StartCommand { get; }
-    public AsyncRelayCommand StopCommand { get; }
-    public AsyncRelayCommand CheckConfigCodeCommand { get; }
-    public AsyncRelayCommand CheckExchange1MapNameCommand { get; }
-    public AsyncRelayCommand CheckExchange2MapNameCommand { get; }
-    public AsyncRelayCommand UpdateSansCommand { get; }
+        ExchangeBHeader = string.IsNullOrWhiteSpace(_runtimeConfigState.MapName2)
+            ? "Sàn B"
+            : $"Sàn B ({_runtimeConfigState.MapName2})";
 
-    private async Task StartAsync()
-    {
-        await _marketDataReader.StartAsync();
-        ConnectionStatus = "Connected";
-        Reason = "Streaming market data";
-        RefreshButtons();
-    }
-
-    private async Task StopAsync()
-    {
-        await _marketDataReader.StopAsync();
-        ConnectionStatus = "Disconnected";
-        Reason = "Stopped by user";
-        RefreshButtons();
+        RuntimeSummary =
+            $"Code: {_runtimeConfigState.Code}  |  Map 1: {_runtimeConfigState.MapName1}  |  Map 2: {_runtimeConfigState.MapName2}";
     }
 
     private void OnMarketDataReceived(object? sender, MarketData marketData)
     {
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
-            ConnectionStatus = marketData.IsConnected ? "Connected" : "Disconnected";
-            Bid = marketData.Bid.ToString("F5", CultureInfo.InvariantCulture);
-            Ask = marketData.Ask.ToString("F5", CultureInfo.InvariantCulture);
-            Spread = marketData.Spread.ToString("F5", CultureInfo.InvariantCulture);
-            Timestamp = marketData.Timestamp.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+            SetRowValue("Bid", marketData.Bid.ToString("F5", CultureInfo.InvariantCulture), (marketData.Bid - 0.01m).ToString("F5", CultureInfo.InvariantCulture));
+            SetRowValue("Ask", marketData.Ask.ToString("F5", CultureInfo.InvariantCulture), (marketData.Ask + 0.01m).ToString("F5", CultureInfo.InvariantCulture));
+            SetRowValue("Spread", marketData.Spread.ToString("F5", CultureInfo.InvariantCulture), (marketData.Spread + 0.02m).ToString("F5", CultureInfo.InvariantCulture));
+            SetRowValue("Time", marketData.Timestamp.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture), marketData.Timestamp.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture));
 
-            var signalResult = _dashboardService.EvaluateSignal(marketData);
-            Signal = signalResult.Signal.ToString();
-            Reason = signalResult.Reason;
+            GapBuy = (marketData.Ask - (marketData.Bid - 0.01m)).ToString("F5", CultureInfo.InvariantCulture);
+            GapSell = ((marketData.Ask + 0.01m) - marketData.Bid).ToString("F5", CultureInfo.InvariantCulture);
         });
     }
 
-    private void RefreshButtons()
+    private void SetRowValue(string rowName, string sanAValue, string sanBValue)
     {
-        StartCommand.RaiseCanExecuteChanged();
-        StopCommand.RaiseCanExecuteChanged();
-        RefreshExchangeButtons();
-    }
-
-    private bool CanCheckConfigCode() => !string.IsNullOrWhiteSpace(ConfigCode);
-
-    private bool CanCheckExchange1MapName() => !string.IsNullOrWhiteSpace(Exchange1MapName);
-
-    private bool CanCheckExchange2MapName() => !string.IsNullOrWhiteSpace(Exchange2MapName);
-
-    private bool CanUpdateSans() =>
-        ConfigCodeCheckSuccess &&
-        Exchange1CheckSuccess &&
-        Exchange2CheckSuccess;
-
-    private async Task CheckConfigCodeAsync()
-    {
-        try
+        var row = ParameterRows.FirstOrDefault(x => x.Name == rowName);
+        if (row is null)
         {
-            var exists = await _configRepository.ExistsByIdAsync(ConfigCode.Trim());
-            ConfigCodeCheckSuccess = exists;
-            ConfigCodeCheckStatus = exists
-                ? "Code hợp lệ: tồn tại trong DB"
-                : "Code không hợp lệ: không tồn tại trong DB";
-        }
-        catch (Exception ex)
-        {
-            ConfigCodeCheckSuccess = false;
-            ConfigCodeCheckStatus = $"Lỗi check code: {ex.Message}";
+            return;
         }
 
-        ResetUpdateStatus();
-        RefreshExchangeButtons();
+        row.ExchangeAValue = sanAValue;
+        row.ExchangeBValue = sanBValue;
+    }
+}
+
+public sealed class ParameterRowViewModel : ObservableObject
+{
+    private string _exchangeAValue;
+    private string _exchangeBValue;
+
+    public ParameterRowViewModel(string name, string exchangeAValue, string exchangeBValue)
+    {
+        Name = name;
+        _exchangeAValue = exchangeAValue;
+        _exchangeBValue = exchangeBValue;
     }
 
-    private Task CheckExchange1MapNameAsync()
-    {
-        Exchange1CheckSuccess = MapNameExistsInSharedMemory(Exchange1MapName);
-        Exchange1CheckStatus = Exchange1CheckSuccess
-            ? "MapName tồn tại trong shared memory"
-            : "Không tìm thấy MapName trong shared memory";
-        ResetUpdateStatus();
-        RefreshExchangeButtons();
+    public string Name { get; }
 
-        return Task.CompletedTask;
+    public string ExchangeAValue
+    {
+        get => _exchangeAValue;
+        set => SetProperty(ref _exchangeAValue, value);
     }
 
-    private Task CheckExchange2MapNameAsync()
+    public string ExchangeBValue
     {
-        Exchange2CheckSuccess = MapNameExistsInSharedMemory(Exchange2MapName);
-        Exchange2CheckStatus = Exchange2CheckSuccess
-            ? "MapName tồn tại trong shared memory"
-            : "Không tìm thấy MapName trong shared memory";
-        ResetUpdateStatus();
-        RefreshExchangeButtons();
-
-        return Task.CompletedTask;
-    }
-
-    private async Task UpdateSansAsync()
-    {
-        try
-        {
-            var updated = await _configRepository.UpdateSansAsync(
-                ConfigCode.Trim(),
-                Exchange1MapName.Trim(),
-                Exchange2MapName.Trim());
-
-            UpdateStatus = updated
-                ? "Update thành công sans = [map1, map2] lên Supabase"
-                : "Update thất bại. Kiểm tra key/quyền/table hoặc thử lại.";
-        }
-        catch (Exception ex)
-        {
-            UpdateStatus = $"Update lỗi: {ex.Message}";
-        }
-    }
-
-    private static bool MapNameExistsInSharedMemory(string? mapName)
-    {
-        var normalized = mapName?.Trim().Trim('"');
-        if (string.IsNullOrWhiteSpace(normalized))
-        {
-            return false;
-        }
-
-        var candidates = new HashSet<string>(StringComparer.Ordinal)
-        {
-            normalized,
-            normalized.Replace('/', '\\'),
-            normalized.Replace('\\', '/')
-        };
-
-        var normalizedBackslash = normalized.Replace('/', '\\');
-        if (!normalizedBackslash.StartsWith("Global\\", StringComparison.OrdinalIgnoreCase) &&
-            !normalizedBackslash.StartsWith("Local\\", StringComparison.OrdinalIgnoreCase))
-        {
-            candidates.Add($"Global\\{normalizedBackslash}");
-            candidates.Add($"Local\\{normalizedBackslash}");
-        }
-
-        foreach (var candidate in candidates)
-        {
-            try
-            {
-                using var _ = MemoryMappedFile.OpenExisting(candidate, MemoryMappedFileRights.Read);
-                return true;
-            }
-            catch
-            {
-                // thử tiếp candidate khác
-            }
-        }
-
-        return false;
-    }
-
-    private void ResetExchange1Check()
-    {
-        Exchange1CheckSuccess = false;
-        Exchange1CheckStatus = "Chưa kiểm tra";
-    }
-
-    private void ResetExchange2Check()
-    {
-        Exchange2CheckSuccess = false;
-        Exchange2CheckStatus = "Chưa kiểm tra";
-    }
-
-    private void ResetConfigCodeCheck()
-    {
-        ConfigCodeCheckSuccess = false;
-        ConfigCodeCheckStatus = "Chưa kiểm tra";
-    }
-
-    private void ResetUpdateStatus()
-    {
-        UpdateStatus = "Chưa update";
-    }
-
-    private void RefreshExchangeButtons()
-    {
-        CheckConfigCodeCommand.RaiseCanExecuteChanged();
-        CheckExchange1MapNameCommand.RaiseCanExecuteChanged();
-        CheckExchange2MapNameCommand.RaiseCanExecuteChanged();
-        UpdateSansCommand.RaiseCanExecuteChanged();
+        get => _exchangeBValue;
+        set => SetProperty(ref _exchangeBValue, value);
     }
 }

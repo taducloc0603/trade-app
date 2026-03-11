@@ -5,215 +5,182 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
         Title="Trade Desktop Dashboard"
-        Height="760"
-        Width="760"
-        MinHeight="720"
-        MinWidth="700"
-        WindowStartupLocation="CenterScreen">
-    <Grid Margin="16">
+        Height="860"
+        Width="1240"
+        MinHeight="760"
+        MinWidth="1100"
+        WindowStartupLocation="CenterScreen"
+        Background="#F4F6FA">
+    <Grid Margin="20">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="12" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="12" />
-            <RowDefinition Height="Auto" />
             <RowDefinition Height="16" />
-            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
             <RowDefinition Height="16" />
-            <RowDefinition Height="Auto" />
+            <RowDefinition Height="270" />
         </Grid.RowDefinitions>
 
-        <TextBlock FontSize="22" FontWeight="SemiBold" Text="Dashboard" />
-
-        <Border Grid.Row="2" BorderBrush="#DDD" BorderThickness="1" CornerRadius="8" Padding="16">
+        <Border Grid.Row="0" CornerRadius="12" Padding="16" Background="White" BorderBrush="#E4E7EC" BorderThickness="1">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="8" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="8" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="8" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
 
-                <TextBlock Text="Connection" FontWeight="Bold" />
-                <TextBlock Grid.Column="1" Text="{Binding ConnectionStatus}" HorizontalAlignment="Right" Foreground="DarkBlue" FontWeight="SemiBold" />
+                <StackPanel Orientation="Vertical">
+                    <TextBlock Text="Dashboard" FontSize="24" FontWeight="SemiBold" />
+                    <TextBlock Margin="0,4,0,0"
+                               Foreground="#667085"
+                               Text="{Binding RuntimeSummary}" />
+                </StackPanel>
 
-                <TextBlock Grid.Row="2" Text="Bid" FontWeight="Bold" />
-                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Bid}" HorizontalAlignment="Right" />
-
-                <TextBlock Grid.Row="4" Text="Ask" FontWeight="Bold" />
-                <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding Ask}" HorizontalAlignment="Right" />
-
-                <TextBlock Grid.Row="6" Text="Spread" FontWeight="Bold" />
-                <TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding Spread}" HorizontalAlignment="Right" />
+                <Button Grid.Column="1"
+                        Content="Config"
+                        Width="120"
+                        Height="36"
+                        Command="{Binding OpenConfigCommand}" />
             </Grid>
         </Border>
 
-        <Border Grid.Row="4" BorderBrush="#DDD" BorderThickness="1" CornerRadius="8" Padding="16">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="8" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="8" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="2*" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
 
-                <TextBlock Text="Timestamp (UTC)" FontWeight="Bold" />
-                <TextBlock Grid.Column="1" Text="{Binding Timestamp}" HorizontalAlignment="Right" />
+            <Border Grid.Column="0" CornerRadius="12" Padding="16" Background="White" BorderBrush="#E4E7EC" BorderThickness="1">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="12" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="10" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
 
-                <TextBlock Grid.Row="2" Text="Signal" FontWeight="Bold" />
-                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Signal}" HorizontalAlignment="Right" FontWeight="SemiBold" />
+                    <TextBlock Text="Thông số" FontSize="18" FontWeight="SemiBold" />
 
-                <TextBlock Grid.Row="4" Text="Reason" FontWeight="Bold" />
-                <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding Reason}" HorizontalAlignment="Right" TextWrapping="Wrap" MaxWidth="320" />
-            </Grid>
-        </Border>
+                    <Grid Grid.Row="2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="2*" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="8" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
 
-        <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button Content="Start" Command="{Binding StartCommand}" Width="120" Margin="0,0,8,0" />
-            <Button Content="Stop" Command="{Binding StopCommand}" Width="120" />
-        </StackPanel>
+                        <TextBlock Text="Thông số" FontWeight="SemiBold" Foreground="#344054" />
+                        <TextBlock Grid.Column="1" Text="{Binding ExchangeAHeader}" FontWeight="SemiBold" Foreground="#344054" HorizontalAlignment="Center" />
+                        <TextBlock Grid.Column="2" Text="{Binding ExchangeBHeader}" FontWeight="SemiBold" Foreground="#344054" HorizontalAlignment="Center" />
 
-        <Border Grid.Row="8" BorderBrush="#DDD" BorderThickness="1" CornerRadius="8" Padding="16">
+                        <ItemsControl Grid.Row="2" Grid.ColumnSpan="3" ItemsSource="{Binding ParameterRows}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Padding="0,7" BorderBrush="#EEF1F5" BorderThickness="0,0,0,1">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="2*" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+
+                                            <TextBlock Text="{Binding Name}" Foreground="#344054" />
+                                            <TextBlock Grid.Column="1" Text="{Binding ExchangeAValue}" HorizontalAlignment="Center" />
+                                            <TextBlock Grid.Column="2" Text="{Binding ExchangeBValue}" HorizontalAlignment="Center" />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Grid>
+
+                    <Grid Grid.Row="4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="12" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="40" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="12" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Text="GAP BUY" FontWeight="SemiBold" Foreground="#344054" />
+                        <TextBlock Grid.Column="2" Text="{Binding GapBuy}" Foreground="#101828" />
+
+                        <TextBlock Grid.Column="4" Text="GAP SELL" FontWeight="SemiBold" Foreground="#344054" />
+                        <TextBlock Grid.Column="6" Text="{Binding GapSell}" Foreground="#101828" />
+                    </Grid>
+                </Grid>
+            </Border>
+
+            <Border Grid.Column="2" CornerRadius="12" Padding="16" Background="White" BorderBrush="#E4E7EC" BorderThickness="1">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="12" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Text="Logs" FontSize="18" FontWeight="SemiBold" />
+                        <Button Grid.Column="1" Content="Clear all" Width="90" Command="{Binding ClearLogsCommand}" />
+                    </Grid>
+
+                    <Border Grid.Row="2" BorderBrush="#EEF1F5" BorderThickness="1" CornerRadius="8" Padding="8">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <ItemsControl ItemsSource="{Binding LogItems}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Padding="0,6" BorderBrush="#EEF1F5" BorderThickness="0,0,0,1">
+                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" Foreground="#344054" />
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Border>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <Border Grid.Row="4" CornerRadius="12" Padding="16" Background="White" BorderBrush="#E4E7EC" BorderThickness="1">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="12" />
-                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="16" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
 
-                <TextBlock Text="Tạo sàn (MapName check trước khi tạo)" FontSize="16" FontWeight="SemiBold" />
+                <TextBlock Grid.ColumnSpan="3" Text="Thông tin lệnh" FontSize="18" FontWeight="SemiBold" />
 
-                <Grid Grid.Row="2">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="12" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="12" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
-
-                    <Border Grid.Row="0" BorderBrush="#EEE" BorderThickness="1" CornerRadius="6" Padding="12">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="12" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="8" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="8" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
-
-                            <TextBlock Text="Code (id record)" FontWeight="Bold" />
-
-                            <TextBox Grid.Row="2"
-                                     Text="{Binding ConfigCode, UpdateSourceTrigger=PropertyChanged}"
-                                     Height="30"
-                                     VerticalContentAlignment="Center" />
-
-                            <Button Grid.Row="2"
-                                    Grid.Column="2"
-                                    Content="Check Code"
-                                    Command="{Binding CheckConfigCodeCommand}"
-                                    Width="120" />
-
-                            <TextBlock Grid.Row="4"
-                                       Grid.ColumnSpan="3"
-                                       Foreground="DarkSlateBlue"
-                                       Text="{Binding ConfigCodeCheckStatus}" />
-                        </Grid>
-                    </Border>
-
-                    <Grid Grid.Row="2">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="16" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-
-                        <Border Grid.Column="0" BorderBrush="#EEE" BorderThickness="1" CornerRadius="6" Padding="12">
-                            <Grid>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="8" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="8" />
-                                    <RowDefinition Height="Auto" />
-                                </Grid.RowDefinitions>
-
-                                <TextBlock Text="Sàn 1" FontWeight="Bold" />
-
-                                <TextBox Grid.Row="2"
-                                         Text="{Binding Exchange1MapName, UpdateSourceTrigger=PropertyChanged}"
-                                         Height="30"
-                                         VerticalContentAlignment="Center" />
-
-                                <Button Grid.Row="4"
-                                        Content="Check"
-                                        Command="{Binding CheckExchange1MapNameCommand}"
-                                        Width="100" />
-
-                                <TextBlock Grid.Row="4"
-                                           Margin="108,0,0,0"
-                                           Text="{Binding Exchange1CheckStatus}"
-                                           TextWrapping="Wrap"
-                                           Foreground="DarkSlateBlue" />
-                            </Grid>
-                        </Border>
-
-                        <Border Grid.Column="2" BorderBrush="#EEE" BorderThickness="1" CornerRadius="6" Padding="12">
-                            <Grid>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="8" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="8" />
-                                    <RowDefinition Height="Auto" />
-                                </Grid.RowDefinitions>
-
-                                <TextBlock Text="Sàn 2" FontWeight="Bold" />
-
-                                <TextBox Grid.Row="2"
-                                         Text="{Binding Exchange2MapName, UpdateSourceTrigger=PropertyChanged}"
-                                         Height="30"
-                                         VerticalContentAlignment="Center" />
-
-                                <Button Grid.Row="4"
-                                        Content="Check"
-                                        Command="{Binding CheckExchange2MapNameCommand}"
-                                        Width="100" />
-
-                                <TextBlock Grid.Row="4"
-                                           Margin="108,0,0,0"
-                                           Text="{Binding Exchange2CheckStatus}"
-                                           TextWrapping="Wrap"
-                                           Foreground="DarkSlateBlue" />
-                            </Grid>
-                        </Border>
-                    </Grid>
-
-                    <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right">
-                        <TextBlock Text="{Binding UpdateStatus}" VerticalAlignment="Center" Margin="0,0,12,0" Foreground="DarkGreen" />
-                        <Button Content="Update sans"
-                                Command="{Binding UpdateSansCommand}"
-                                Width="140" />
+                <Border Grid.Row="2" Grid.Column="0" BorderBrush="#EEF1F5" BorderThickness="1" CornerRadius="10" Background="#FAFBFC" Padding="14">
+                    <StackPanel>
+                        <TextBlock Text="Khung lệnh trái" FontWeight="SemiBold" Foreground="#344054" />
+                        <TextBlock Margin="0,8,0,0" Foreground="#667085" Text="Placeholder layout theo mockup." />
                     </StackPanel>
-                </Grid>
+                </Border>
+
+                <Border Grid.Row="2" Grid.Column="2" BorderBrush="#EEF1F5" BorderThickness="1" CornerRadius="10" Background="#FAFBFC" Padding="14">
+                    <StackPanel>
+                        <TextBlock Text="Khung lệnh phải" FontWeight="SemiBold" Foreground="#344054" />
+                        <TextBlock Margin="0,8,0,0" Foreground="#667085" Text="Placeholder layout theo mockup." />
+                    </StackPanel>
+                </Border>
             </Grid>
         </Border>
     </Grid>
