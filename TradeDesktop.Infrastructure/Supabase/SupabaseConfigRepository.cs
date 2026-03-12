@@ -78,7 +78,7 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
     {
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
-            $"{_supabaseUrl}/rest/v1/configs?select=id,code,sans,ip&{columnName}=eq.{Uri.EscapeDataString(value)}&limit=1");
+            $"{_supabaseUrl}/rest/v1/configs?select=id,sans,ip&{columnName}=eq.{Uri.EscapeDataString(value)}&limit=1");
 
         AddAuthHeaders(request);
 
