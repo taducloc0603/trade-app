@@ -26,24 +26,14 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
 
         var normalizedCode = NormalizeCode(code);
 
-        using var request = new HttpRequestMessage(
-            HttpMethod.Get,
-            $"{_supabaseUrl}/rest/v1/configs?select=code&code=eq.{Uri.EscapeDataString(normalizedCode)}&limit=1");
-
-        AddAuthHeaders(request);
-
-        using var response = await _httpClient.SendAsync(request, cancellationToken);
-        if (!response.IsSuccessStatusCode)
+        var existsByCode = await ExistsByColumnAsync("code", normalizedCode, cancellationToken);
+        if (existsByCode)
         {
-            var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
-            throw new HttpRequestException(
-                $"Supabase ExistsByCodeAsync thất bại. Status={(int)response.StatusCode}, Body={errorBody}");
+            return true;
         }
 
-        var json = await response.Content.ReadAsStringAsync(cancellationToken);
-
-        using var doc = JsonDocument.Parse(json);
-        return doc.RootElement.ValueKind == JsonValueKind.Array && doc.RootElement.GetArrayLength() > 0;
+        // Backward-compatible: nhiều môi trường đang dùng id làm khóa nhập ở ô Code.
+        return await ExistsByColumnAsync("id", normalizedCode, cancellationToken);
     }
 
     public async Task<ConfigRecord?> GetByCodeAsync(string code, CancellationToken cancellationToken = default)
@@ -60,24 +50,10 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
 
         var normalizedCode = NormalizeCode(code);
 
-        using var request = new HttpRequestMessage(
-            HttpMethod.Get,
-            $"{_supabaseUrl}/rest/v1/configs?select=code,sans,ip&code=eq.{Uri.EscapeDataString(normalizedCode)}&limit=1");
+        var row = await GetFirstByColumnAsync("code", normalizedCode, cancellationToken)
+                  ?? await GetFirstByColumnAsync("id", normalizedCode, cancellationToken);
 
-        AddAuthHeaders(request);
-
-        using var response = await _httpClient.SendAsync(request, cancellationToken);
-        if (!response.IsSuccessStatusCode)
-        {
-            var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
-            throw new HttpRequestException(
-                $"Supabase GetByCodeAsync thất bại. Status={(int)response.StatusCode}, Body={errorBody}");
-        }
-
-        var json = await response.Content.ReadAsStringAsync(cancellationToken);
-        var rows = JsonSerializer.Deserialize<List<ConfigRow>>(json);
-        var row = rows?.FirstOrDefault();
-        if (row is null || string.IsNullOrWhiteSpace(row.Code))
+        if (row is null)
         {
             return null;
         }
@@ -86,7 +62,10 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
             ? row.Sans.GetRawText()
             : "[]";
 
-        return new ConfigRecord(row.Code, sansJson, row.Ip);
+        return new ConfigRecord(
+            string.IsNullOrWhiteSpace(row.Code) ? normalizedCode : row.Code,
+            sansJson,
+            row.Ip);
     }
 
     public async Task<bool> UpdateSansAndIpByCodeAsync(string code, string sansJson, string ip, CancellationToken cancellationToken = default)
@@ -102,26 +81,15 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
         }
 
         var normalizedCode = NormalizeCode(code);
-        using var sansDoc = JsonDocument.Parse(string.IsNullOrWhiteSpace(sansJson) ? "[]" : sansJson);
 
-        var payload = JsonSerializer.Serialize(new
+        var updatedByCode = await UpdateByColumnAsync("code", normalizedCode, sansJson, ip, cancellationToken);
+        if (updatedByCode)
         {
-            sans = sansDoc.RootElement,
-            ip = ip.Trim()
-        });
+            return true;
+        }
 
-        using var request = new HttpRequestMessage(
-            HttpMethod.Patch,
-            $"{_supabaseUrl}/rest/v1/configs?code=eq.{Uri.EscapeDataString(normalizedCode)}")
-        {
-            Content = new StringContent(payload, Encoding.UTF8, "application/json")
-        };
-
-        AddAuthHeaders(request);
-        request.Headers.TryAddWithoutValidation("Prefer", "return=minimal");
-
-        using var response = await _httpClient.SendAsync(request, cancellationToken);
-        return response.IsSuccessStatusCode;
+        // Backward-compatible: fallback update theo id nếu input thực tế là id.
+        return await UpdateByColumnAsync("id", normalizedCode, sansJson, ip, cancellationToken);
     }
 
     private static string NormalizeCode(string code) => code.Trim();
@@ -134,6 +102,86 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
     {
         request.Headers.TryAddWithoutValidation("apikey", _supabaseKey);
         request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {_supabaseKey}");
+    }
+
+    private async Task<bool> ExistsByColumnAsync(string columnName, string value, CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"{_supabaseUrl}/rest/v1/configs?select={columnName}&{columnName}=eq.{Uri.EscapeDataString(value)}&limit=1");
+
+        AddAuthHeaders(request);
+
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
+            throw new HttpRequestException(
+                $"Supabase ExistsByColumnAsync thất bại. Column={columnName}, Status={(int)response.StatusCode}, Body={errorBody}");
+        }
+
+        var json = await response.Content.ReadAsStringAsync(cancellationToken);
+        using var doc = JsonDocument.Parse(json);
+        return doc.RootElement.ValueKind == JsonValueKind.Array && doc.RootElement.GetArrayLength() > 0;
+    }
+
+    private async Task<ConfigRow?> GetFirstByColumnAsync(string columnName, string value, CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"{_supabaseUrl}/rest/v1/configs?select=code,sans,ip&{columnName}=eq.{Uri.EscapeDataString(value)}&limit=1");
+
+        AddAuthHeaders(request);
+
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
+            throw new HttpRequestException(
+                $"Supabase GetFirstByColumnAsync thất bại. Column={columnName}, Status={(int)response.StatusCode}, Body={errorBody}");
+        }
+
+        var json = await response.Content.ReadAsStringAsync(cancellationToken);
+        var rows = JsonSerializer.Deserialize<List<ConfigRow>>(json);
+        return rows?.FirstOrDefault();
+    }
+
+    private async Task<bool> UpdateByColumnAsync(
+        string columnName,
+        string value,
+        string sansJson,
+        string ip,
+        CancellationToken cancellationToken)
+    {
+        using var sansDoc = JsonDocument.Parse(string.IsNullOrWhiteSpace(sansJson) ? "[]" : sansJson);
+
+        var payload = JsonSerializer.Serialize(new
+        {
+            sans = sansDoc.RootElement,
+            ip = ip.Trim()
+        });
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Patch,
+            $"{_supabaseUrl}/rest/v1/configs?{columnName}=eq.{Uri.EscapeDataString(value)}")
+        {
+            Content = new StringContent(payload, Encoding.UTF8, "application/json")
+        };
+
+        AddAuthHeaders(request);
+        request.Headers.TryAddWithoutValidation("Prefer", "return=representation");
+
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
+            throw new HttpRequestException(
+                $"Supabase UpdateByColumnAsync thất bại. Column={columnName}, Status={(int)response.StatusCode}, Body={errorBody}");
+        }
+
+        var json = await response.Content.ReadAsStringAsync(cancellationToken);
+        using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(json) ? "[]" : json);
+        return doc.RootElement.ValueKind == JsonValueKind.Array && doc.RootElement.GetArrayLength() > 0;
     }
 
     private sealed class ConfigRow
