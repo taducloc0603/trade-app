@@ -37,24 +37,24 @@
                 </Grid.RowDefinitions>
 
                 <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="Code" FontWeight="SemiBold" />
-                <TextBox Grid.Row="0" Grid.Column="1" Margin="0,0,10,0" Height="32" VerticalContentAlignment="Center" Text="{Binding Code, UpdateSourceTrigger=PropertyChanged}" />
+                <TextBox Grid.Row="0" Grid.Column="1" Margin="0,0,10,0" Height="32" VerticalContentAlignment="Center" IsReadOnly="{Binding IsCodeReadOnly}" Text="{Binding Code, UpdateSourceTrigger=PropertyChanged}" />
                 <Button Grid.Row="0" Grid.Column="2" Content="Check" Width="78" Height="32" Command="{Binding CheckCodeCommand}" />
                 <TextBlock Grid.Row="0" Grid.Column="3" Margin="10,0,0,0" VerticalAlignment="Center" Text="{Binding CodeCheckStatus}" Foreground="#344054" />
 
                 <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Text="Map Name 1" FontWeight="SemiBold" />
-                <TextBox Grid.Row="2" Grid.Column="1" Margin="0,0,10,0" Height="32" VerticalContentAlignment="Center" Text="{Binding MapName1, UpdateSourceTrigger=PropertyChanged}" />
-                <Button Grid.Row="2" Grid.Column="2" Content="Check" Width="78" Height="32" Command="{Binding CheckMap1Command}" />
+                <TextBox Grid.Row="2" Grid.Column="1" Margin="0,0,10,0" Height="32" VerticalContentAlignment="Center" IsEnabled="{Binding AreMapNamesEnabled}" Text="{Binding MapName1, UpdateSourceTrigger=PropertyChanged}" />
+                <Button Grid.Row="2" Grid.Column="2" Content="Check" Width="78" Height="32" IsEnabled="{Binding AreMapNamesEnabled}" Command="{Binding CheckMap1Command}" />
                 <TextBlock Grid.Row="2" Grid.Column="3" Margin="10,0,0,0" VerticalAlignment="Center" Text="{Binding Map1CheckStatus}" Foreground="#344054" />
 
                 <TextBlock Grid.Row="4" Grid.Column="0" VerticalAlignment="Center" Text="Map Name 2" FontWeight="SemiBold" />
-                <TextBox Grid.Row="4" Grid.Column="1" Margin="0,0,10,0" Height="32" VerticalContentAlignment="Center" Text="{Binding MapName2, UpdateSourceTrigger=PropertyChanged}" />
-                <Button Grid.Row="4" Grid.Column="2" Content="Check" Width="78" Height="32" Command="{Binding CheckMap2Command}" />
+                <TextBox Grid.Row="4" Grid.Column="1" Margin="0,0,10,0" Height="32" VerticalContentAlignment="Center" IsEnabled="{Binding AreMapNamesEnabled}" Text="{Binding MapName2, UpdateSourceTrigger=PropertyChanged}" />
+                <Button Grid.Row="4" Grid.Column="2" Content="Check" Width="78" Height="32" IsEnabled="{Binding AreMapNamesEnabled}" Command="{Binding CheckMap2Command}" />
                 <TextBlock Grid.Row="4" Grid.Column="3" Margin="10,0,0,0" VerticalAlignment="Center" Text="{Binding Map2CheckStatus}" Foreground="#344054" />
             </Grid>
         </Border>
 
         <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button Content="Save" Width="92" Height="34" Margin="0,0,8,0" Command="{Binding SaveCommand}" />
+            <Button Content="Save" Width="92" Height="34" Margin="0,0,8,0" IsEnabled="{Binding CanSave}" Command="{Binding SaveCommand}" />
             <Button Content="Cancel" Width="92" Height="34" Command="{Binding CancelCommand}" />
         </StackPanel>
     </Grid>
