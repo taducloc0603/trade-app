@@ -1,4 +1,4 @@
-using TradeDesktop.Application.Models;
+using TradeDesktop.Domain.Models;
 
 namespace TradeDesktop.Application.Abstractions;
 
@@ -8,5 +8,5 @@ public interface IRuntimeConfigProvider
     string CurrentCode { get; }
     string CurrentMapName1 { get; }
     string CurrentMapName2 { get; }
-    SharedMemorySnapshot? CurrentDashboardMetrics { get; }
+    DashboardMetrics? CurrentDashboardMetrics { get; }
 }

@@ -1,5 +1,5 @@
 using TradeDesktop.Application.Abstractions;
-using TradeDesktop.Application.Models;
+using TradeDesktop.Domain.Models;
 
 namespace TradeDesktop.App.State;
 
@@ -9,7 +9,7 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
     public string CurrentCode { get; private set; } = string.Empty;
     public string CurrentMapName1 { get; private set; } = string.Empty;
     public string CurrentMapName2 { get; private set; } = string.Empty;
-    public SharedMemorySnapshot? CurrentDashboardMetrics { get; private set; }
+    public DashboardMetrics? CurrentDashboardMetrics { get; private set; }
 
     // Backward-compatible aliases for existing bindings/usages.
     public string LocalIp => CurrentIp;
@@ -30,7 +30,7 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
     public void Update(string localIp, string mapName1, string mapName2)
         => Update(localIp, CurrentCode, mapName1, mapName2);
 
-    public void UpdateDashboardMetrics(SharedMemorySnapshot snapshot)
+    public void UpdateDashboardMetrics(DashboardMetrics snapshot)
     {
         CurrentDashboardMetrics = snapshot;
         StateChanged?.Invoke(this, EventArgs.Empty);

@@ -39,9 +39,10 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
             : "[]";
 
         return new ConfigRecord(
-            string.IsNullOrWhiteSpace(row.Id) ? string.Empty : row.Id,
-            sansJson,
-            row.Ip);
+            Id: string.IsNullOrWhiteSpace(row.Id) ? string.Empty : row.Id,
+            Code: string.IsNullOrWhiteSpace(row.Code) ? (row.Id ?? string.Empty) : row.Code,
+            SansJson: sansJson,
+            Ip: row.Ip);
     }
 
     public async Task<bool> UpdateSansAndIpByIpAsync(string ip, string sansJson, CancellationToken cancellationToken = default)
@@ -77,7 +78,7 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
     {
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
-            $"{_supabaseUrl}/rest/v1/configs?select=id,sans,ip&{columnName}=eq.{Uri.EscapeDataString(value)}&limit=1");
+            $"{_supabaseUrl}/rest/v1/configs?select=id,code,sans,ip&{columnName}=eq.{Uri.EscapeDataString(value)}&limit=1");
 
         AddAuthHeaders(request);
 
@@ -103,6 +104,7 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
         }
 
         first.TryGetProperty("id", out var idElement);
+        first.TryGetProperty("code", out var codeElement);
         first.TryGetProperty("sans", out var sansElement);
 
         // DB column name is lowercase: ip
@@ -115,6 +117,7 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
         return new ConfigRow
         {
             Id = idElement.ValueKind == JsonValueKind.String ? idElement.GetString() : null,
+            Code = codeElement.ValueKind == JsonValueKind.String ? codeElement.GetString() : null,
             // Clone để JsonElement không còn phụ thuộc JsonDocument đã dispose.
             Sans = sansElement.ValueKind is JsonValueKind.Undefined
                 ? default
@@ -173,6 +176,9 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
 
         [JsonPropertyName("sans")]
         public JsonElement Sans { get; set; }
+
+        [JsonPropertyName("code")]
+        public string? Code { get; set; }
 
         [JsonPropertyName("ip")]
         public string? Ip { get; set; }

@@ -1,7 +1,5 @@
 using TradeDesktop.Application.Abstractions;
 using TradeDesktop.Application.Models;
-using TradeDesktop.Domain.Models;
-using DomainMarketData = TradeDesktop.Domain.Models.MarketData;
 
 namespace TradeDesktop.Infrastructure.MarketData;
 
@@ -13,7 +11,6 @@ public sealed class MockSharedMemoryMarketDataReader : ISharedMemoryReader
     private decimal _lastMidPrice = 100.00m;
     private readonly Random _random = new();
 
-    public event EventHandler<DomainMarketData>? MarketDataReceived;
     public event EventHandler<SharedMemorySnapshot>? SnapshotReceived;
 
     public bool IsRunning { get; private set; }
@@ -73,17 +70,17 @@ public sealed class MockSharedMemoryMarketDataReader : ISharedMemoryReader
 
         while (await timer.WaitForNextTickAsync(cancellationToken))
         {
-            var marketData = NextMockTick();
-            MarketDataReceived?.Invoke(this, marketData);
+            var drift = (decimal)(_random.NextDouble() - 0.5) * 0.20m;
+            _lastMidPrice = Math.Round(Math.Max(1m, _lastMidPrice + drift), 5);
 
             var sanA = new ExchangeMetrics(
                 Symbol: "BTCUSDT",
-                Bid: marketData.Bid,
-                Ask: marketData.Ask,
-                Spread: marketData.Spread,
+                Bid: _lastMidPrice - 0.005m,
+                Ask: _lastMidPrice + 0.005m,
+                Spread: 0.01m,
                 LatencyMs: 5,
                 Tps: 100,
-                Time: marketData.Timestamp.ToLocalTime().ToString("HH:mm:ss"),
+                Time: DateTime.Now.ToString("HH:mm:ss"),
                 MaxLatMs: 10,
                 AvgLatMs: 7,
                 IsConnected: true,
@@ -91,27 +88,12 @@ public sealed class MockSharedMemoryMarketDataReader : ISharedMemoryReader
 
             var sanB = sanA with
             {
-                Bid = marketData.Bid - 0.01m,
-                Ask = marketData.Ask + 0.01m,
-                Spread = (marketData.Ask + 0.01m) - (marketData.Bid - 0.01m)
+                Bid = sanA.Bid - 0.01m,
+                Ask = sanA.Ask + 0.01m,
+                Spread = (sanA.Ask + 0.01m) - (sanA.Bid - 0.01m)
             };
 
             SnapshotReceived?.Invoke(this, new SharedMemorySnapshot(sanA, sanB, DateTime.UtcNow));
         }
-    }
-
-    private DomainMarketData NextMockTick()
-    {
-        var drift = (decimal)(_random.NextDouble() - 0.5) * 0.20m;
-        _lastMidPrice = Math.Round(Math.Max(1m, _lastMidPrice + drift), 5);
-        var spread = 0.01m + Math.Round((decimal)_random.NextDouble() * 0.04m, 5);
-        var bid = Math.Round(_lastMidPrice - spread / 2m, 5);
-        var ask = Math.Round(_lastMidPrice + spread / 2m, 5);
-
-        return new DomainMarketData(
-            Bid: bid,
-            Ask: ask,
-            Timestamp: DateTime.UtcNow,
-            IsConnected: true);
     }
 }

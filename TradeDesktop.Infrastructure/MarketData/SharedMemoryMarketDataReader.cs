@@ -5,7 +5,6 @@ using System.Text;
 using System.Text.Json;
 using TradeDesktop.Application.Abstractions;
 using TradeDesktop.Application.Models;
-using DomainMarketData = TradeDesktop.Domain.Models.MarketData;
 
 namespace TradeDesktop.Infrastructure.MarketData;
 
@@ -23,7 +22,6 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
         _runtimeConfigProvider = runtimeConfigProvider;
     }
 
-    public event EventHandler<DomainMarketData>? MarketDataReceived;
     public event EventHandler<SharedMemorySnapshot>? SnapshotReceived;
 
     public bool IsRunning { get; private set; }
@@ -95,13 +93,6 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
             var snapshot = new SharedMemorySnapshot(sanA, sanB, timestamp);
             SnapshotReceived?.Invoke(this, snapshot);
 
-            var md = new DomainMarketData(
-                Bid: sanA.Bid ?? 0m,
-                Ask: sanA.Ask ?? 0m,
-                Timestamp: timestamp,
-                IsConnected: sanA.IsConnected);
-
-            MarketDataReceived?.Invoke(this, md);
         }
     }
 

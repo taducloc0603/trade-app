@@ -1,6 +1,5 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
-using System.Windows;
 using Microsoft.Extensions.DependencyInjection;
 using TradeDesktop.App.Commands;
 using TradeDesktop.App.State;
@@ -15,43 +14,49 @@ public sealed class DashboardViewModel : ObservableObject
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly RuntimeConfigState _runtimeConfigState;
-    private readonly IGapCalculator _gapCalculator;
+    private readonly IDashboardMetricsMapper _dashboardMetricsMapper;
 
     private string _runtimeSummary = string.Empty;
     private string _exchangeAHeader = "Sàn A";
     private string _exchangeBHeader = "Sàn B";
-    private string _gapBuy = "0.00000";
-    private string _gapSell = "0.00000";
+    private string _gapBuy = "-";
+    private string _gapSell = "-";
+
+    private string _exchangeASymbol = "-";
+    private string _exchangeABid = "-";
+    private string _exchangeAAsk = "-";
+    private string _exchangeASpread = "-";
+    private string _exchangeALatencyMs = "-";
+    private string _exchangeATps = "-";
+    private string _exchangeATime = "-";
+    private string _exchangeAMaxLatMs = "-";
+    private string _exchangeAAvgLatMs = "-";
+
+    private string _exchangeBSymbol = "-";
+    private string _exchangeBBid = "-";
+    private string _exchangeBAsk = "-";
+    private string _exchangeBSpread = "-";
+    private string _exchangeBLatencyMs = "-";
+    private string _exchangeBTps = "-";
+    private string _exchangeBTime = "-";
+    private string _exchangeBMaxLatMs = "-";
+    private string _exchangeBAvgLatMs = "-";
 
     public DashboardViewModel(
         IServiceProvider serviceProvider,
         RuntimeConfigState runtimeConfigState,
         IConfigService configService,
-        ISharedMemoryReader sharedMemoryReader,
-        IGapCalculator gapCalculator)
+        IExchangePairReader exchangePairReader,
+        IDashboardMetricsMapper dashboardMetricsMapper)
     {
         _serviceProvider = serviceProvider;
         _runtimeConfigState = runtimeConfigState;
-        _gapCalculator = gapCalculator;
-
-        ParameterRows = new ObservableCollection<ParameterRowViewModel>
-        {
-            new("Symbol", "BTCUSDT", "BTCUSDT"),
-            new("Bid", "100.12000", "100.11000"),
-            new("Ask", "100.13000", "100.14000"),
-            new("Spread", "0.01000", "0.03000"),
-            new("Latency(ms)", "8", "10"),
-            new("TPS", "120", "112"),
-            new("Time", DateTime.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture), DateTime.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture)),
-            new("Max Lat(ms)", "15", "18"),
-            new("Avg Lat(ms)", "9", "11")
-        };
+        _dashboardMetricsMapper = dashboardMetricsMapper;
 
         LogItems = new ObservableCollection<string>
         {
-            "[Mock] Connected to market data stream.",
-            "[Mock] UI preview mode - logs panel only.",
-            "[Mock] Waiting for runtime config update..."
+            "[App] Dashboard started.",
+            "[App] Waiting for runtime config and shared memory data..."
         };
 
         OpenConfigCommand = new AsyncRelayCommand(OpenConfigAsync);
@@ -61,11 +66,10 @@ public sealed class DashboardViewModel : ObservableObject
         ApplyRuntimeConfig();
         _ = InitializeRuntimeConfigAsync(configService);
 
-        sharedMemoryReader.SnapshotReceived += OnSnapshotReceived;
-        _ = sharedMemoryReader.StartAsync();
+        exchangePairReader.SnapshotReceived += OnSnapshotReceived;
+        _ = exchangePairReader.StartAsync();
     }
 
-    public ObservableCollection<ParameterRowViewModel> ParameterRows { get; }
     public ObservableCollection<string> LogItems { get; }
 
     public string RuntimeSummary
@@ -98,6 +102,26 @@ public sealed class DashboardViewModel : ObservableObject
         private set => SetProperty(ref _gapSell, value);
     }
 
+    public string ExchangeASymbol { get => _exchangeASymbol; private set => SetProperty(ref _exchangeASymbol, value); }
+    public string ExchangeABid { get => _exchangeABid; private set => SetProperty(ref _exchangeABid, value); }
+    public string ExchangeAAsk { get => _exchangeAAsk; private set => SetProperty(ref _exchangeAAsk, value); }
+    public string ExchangeASpread { get => _exchangeASpread; private set => SetProperty(ref _exchangeASpread, value); }
+    public string ExchangeALatencyMs { get => _exchangeALatencyMs; private set => SetProperty(ref _exchangeALatencyMs, value); }
+    public string ExchangeATps { get => _exchangeATps; private set => SetProperty(ref _exchangeATps, value); }
+    public string ExchangeATime { get => _exchangeATime; private set => SetProperty(ref _exchangeATime, value); }
+    public string ExchangeAMaxLatMs { get => _exchangeAMaxLatMs; private set => SetProperty(ref _exchangeAMaxLatMs, value); }
+    public string ExchangeAAvgLatMs { get => _exchangeAAvgLatMs; private set => SetProperty(ref _exchangeAAvgLatMs, value); }
+
+    public string ExchangeBSymbol { get => _exchangeBSymbol; private set => SetProperty(ref _exchangeBSymbol, value); }
+    public string ExchangeBBid { get => _exchangeBBid; private set => SetProperty(ref _exchangeBBid, value); }
+    public string ExchangeBAsk { get => _exchangeBAsk; private set => SetProperty(ref _exchangeBAsk, value); }
+    public string ExchangeBSpread { get => _exchangeBSpread; private set => SetProperty(ref _exchangeBSpread, value); }
+    public string ExchangeBLatencyMs { get => _exchangeBLatencyMs; private set => SetProperty(ref _exchangeBLatencyMs, value); }
+    public string ExchangeBTps { get => _exchangeBTps; private set => SetProperty(ref _exchangeBTps, value); }
+    public string ExchangeBTime { get => _exchangeBTime; private set => SetProperty(ref _exchangeBTime, value); }
+    public string ExchangeBMaxLatMs { get => _exchangeBMaxLatMs; private set => SetProperty(ref _exchangeBMaxLatMs, value); }
+    public string ExchangeBAvgLatMs { get => _exchangeBAvgLatMs; private set => SetProperty(ref _exchangeBAvgLatMs, value); }
+
     public AsyncRelayCommand OpenConfigCommand { get; }
     public AsyncRelayCommand ClearLogsCommand { get; }
 
@@ -111,6 +135,7 @@ public sealed class DashboardViewModel : ObservableObject
 
     private Task ClearLogsAsync()
     {
+        LogItems.Clear();
         return Task.CompletedTask;
     }
 
@@ -125,7 +150,7 @@ public sealed class DashboardViewModel : ObservableObject
             : $"Sàn B ({_runtimeConfigState.MapName2})";
 
         RuntimeSummary =
-            $"IP: {_runtimeConfigState.CurrentIp}  |  Code: {_runtimeConfigState.CurrentCode}  |  Map 1: {_runtimeConfigState.MapName1}  |  Map 2: {_runtimeConfigState.MapName2}";
+            $"IP: {_runtimeConfigState.CurrentIp}  |  Code: {_runtimeConfigState.CurrentCode}  |  Map 1: {_runtimeConfigState.CurrentMapName1}  |  Map 2: {_runtimeConfigState.CurrentMapName2}";
     }
 
     private async Task InitializeRuntimeConfigAsync(IConfigService configService)
@@ -155,41 +180,45 @@ public sealed class DashboardViewModel : ObservableObject
     {
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
-            _runtimeConfigState.UpdateDashboardMetrics(snapshot);
+            var metrics = _dashboardMetricsMapper.Map(snapshot);
+            _runtimeConfigState.UpdateDashboardMetrics(metrics);
 
-            BindExchangeToRows(snapshot.SanA, snapshot.SanB, snapshot.TimestampUtc);
+            BindDashboardMetrics(metrics);
 
-            var (gapBuy, gapSell) = _gapCalculator.Calculate(snapshot.SanA, snapshot.SanB);
-            GapBuy = FormatNumberOrDash(gapBuy);
-            GapSell = FormatNumberOrDash(gapSell);
+            LogItems.Insert(0,
+                $"[{DateTime.Now:HH:mm:ss}] A:{metrics.ExchangeA.Symbol} ({(metrics.IsConnectedA ? "ON" : "OFF")}) | B:{metrics.ExchangeB.Symbol} ({(metrics.IsConnectedB ? "ON" : "OFF")})");
+
+            while (LogItems.Count > 200)
+            {
+                LogItems.RemoveAt(LogItems.Count - 1);
+            }
         });
     }
 
-    private void BindExchangeToRows(ExchangeMetrics sanA, ExchangeMetrics sanB, DateTime timestampUtc)
+    private void BindDashboardMetrics(DashboardMetrics metrics)
     {
-        SetRowValue("Symbol", FormatTextOrDash(sanA.Symbol), FormatTextOrDash(sanB.Symbol));
-        SetRowValue("Bid", FormatNumberOrDash(sanA.Bid), FormatNumberOrDash(sanB.Bid));
-        SetRowValue("Ask", FormatNumberOrDash(sanA.Ask), FormatNumberOrDash(sanB.Ask));
+        ExchangeASymbol = FormatTextOrDash(metrics.ExchangeA.Symbol);
+        ExchangeABid = FormatNumberOrDash(metrics.ExchangeA.Bid);
+        ExchangeAAsk = FormatNumberOrDash(metrics.ExchangeA.Ask);
+        ExchangeASpread = FormatNumberOrDash(metrics.ExchangeA.Spread);
+        ExchangeALatencyMs = FormatNumberOrDash(metrics.ExchangeA.LatencyMs, 0);
+        ExchangeATps = FormatNumberOrDash(metrics.ExchangeA.Tps, 0);
+        ExchangeATime = FormatTextOrDash(metrics.ExchangeA.Time);
+        ExchangeAMaxLatMs = FormatNumberOrDash(metrics.ExchangeA.MaxLatMs, 0);
+        ExchangeAAvgLatMs = FormatNumberOrDash(metrics.ExchangeA.AvgLatMs, 0);
 
-        var spreadA = sanA.Spread ?? CalculateSpread(sanA.Bid, sanA.Ask);
-        var spreadB = sanB.Spread ?? CalculateSpread(sanB.Bid, sanB.Ask);
-        SetRowValue("Spread", FormatNumberOrDash(spreadA), FormatNumberOrDash(spreadB));
+        ExchangeBSymbol = FormatTextOrDash(metrics.ExchangeB.Symbol);
+        ExchangeBBid = FormatNumberOrDash(metrics.ExchangeB.Bid);
+        ExchangeBAsk = FormatNumberOrDash(metrics.ExchangeB.Ask);
+        ExchangeBSpread = FormatNumberOrDash(metrics.ExchangeB.Spread);
+        ExchangeBLatencyMs = FormatNumberOrDash(metrics.ExchangeB.LatencyMs, 0);
+        ExchangeBTps = FormatNumberOrDash(metrics.ExchangeB.Tps, 0);
+        ExchangeBTime = FormatTextOrDash(metrics.ExchangeB.Time);
+        ExchangeBMaxLatMs = FormatNumberOrDash(metrics.ExchangeB.MaxLatMs, 0);
+        ExchangeBAvgLatMs = FormatNumberOrDash(metrics.ExchangeB.AvgLatMs, 0);
 
-        SetRowValue("Latency(ms)", FormatNumberOrDash(sanA.LatencyMs, 0), FormatNumberOrDash(sanB.LatencyMs, 0));
-        SetRowValue("TPS", FormatNumberOrDash(sanA.Tps, 0), FormatNumberOrDash(sanB.Tps, 0));
-        SetRowValue("Time", FormatTextOrDash(sanA.Time ?? timestampUtc.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture)), FormatTextOrDash(sanB.Time ?? timestampUtc.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture)));
-        SetRowValue("Max Lat(ms)", FormatNumberOrDash(sanA.MaxLatMs, 0), FormatNumberOrDash(sanB.MaxLatMs, 0));
-        SetRowValue("Avg Lat(ms)", FormatNumberOrDash(sanA.AvgLatMs, 0), FormatNumberOrDash(sanB.AvgLatMs, 0));
-    }
-
-    private static decimal? CalculateSpread(decimal? bid, decimal? ask)
-    {
-        if (!bid.HasValue || !ask.HasValue)
-        {
-            return null;
-        }
-
-        return ask.Value - bid.Value;
+        GapBuy = FormatNumberOrDash(metrics.GapBuy);
+        GapSell = FormatNumberOrDash(metrics.GapSell);
     }
 
     private static string FormatNumberOrDash(decimal? value, int decimalPlaces = 5)
@@ -199,43 +228,4 @@ public sealed class DashboardViewModel : ObservableObject
 
     private static string FormatTextOrDash(string? value)
         => string.IsNullOrWhiteSpace(value) ? "-" : value;
-
-    private void SetRowValue(string rowName, string sanAValue, string sanBValue)
-    {
-        var row = ParameterRows.FirstOrDefault(x => x.Name == rowName);
-        if (row is null)
-        {
-            return;
-        }
-
-        row.ExchangeAValue = sanAValue;
-        row.ExchangeBValue = sanBValue;
-    }
-}
-
-public sealed class ParameterRowViewModel : ObservableObject
-{
-    private string _exchangeAValue;
-    private string _exchangeBValue;
-
-    public ParameterRowViewModel(string name, string exchangeAValue, string exchangeBValue)
-    {
-        Name = name;
-        _exchangeAValue = exchangeAValue;
-        _exchangeBValue = exchangeBValue;
-    }
-
-    public string Name { get; }
-
-    public string ExchangeAValue
-    {
-        get => _exchangeAValue;
-        set => SetProperty(ref _exchangeAValue, value);
-    }
-
-    public string ExchangeBValue
-    {
-        get => _exchangeBValue;
-        set => SetProperty(ref _exchangeBValue, value);
-    }
 }

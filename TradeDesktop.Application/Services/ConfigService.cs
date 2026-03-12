@@ -1,7 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
-using System.Text.Json;
 using TradeDesktop.Application.Abstractions;
+using TradeDesktop.Application.Helpers;
 
 namespace TradeDesktop.Application.Services;
 
@@ -27,8 +27,8 @@ public sealed class ConfigService(IConfigRepository configRepository) : IConfigS
             return ConfigLoadResult.NotFound(localIp);
         }
 
-        var (mapName1, mapName2) = ParseSans(record.SansJson);
-        return ConfigLoadResult.Success(localIp, string.Empty, mapName1, mapName2);
+        SansJsonHelper.TryParseSans(record.SansJson, out var mapName1, out var mapName2);
+        return ConfigLoadResult.Success(localIp, record.Code, mapName1, mapName2);
     }
 
     public async Task<ConfigSaveResult> SaveByLocalIpAsync(string mapName1, string mapName2, CancellationToken cancellationToken = default)
@@ -39,7 +39,7 @@ public sealed class ConfigService(IConfigRepository configRepository) : IConfigS
             return ConfigSaveResult.Failed("Không lấy được IP máy hiện tại.");
         }
 
-        var sansJson = BuildSans(mapName1, mapName2);
+        var sansJson = SansJsonHelper.BuildSans(mapName1, mapName2);
 
         var updated = await configRepository.UpdateSansAndIpByIpAsync(localIp, sansJson, cancellationToken);
         if (!updated)
@@ -61,48 +61,6 @@ public sealed class ConfigService(IConfigRepository configRepository) : IConfigS
         }
 
         return ConfigSaveResult.Success(localIp);
-    }
-
-    private static (string MapName1, string MapName2) ParseSans(string? sansJson)
-    {
-        if (string.IsNullOrWhiteSpace(sansJson))
-        {
-            return (string.Empty, string.Empty);
-        }
-
-        try
-        {
-            using var doc = JsonDocument.Parse(sansJson);
-            if (doc.RootElement.ValueKind != JsonValueKind.Array)
-            {
-                return (string.Empty, string.Empty);
-            }
-
-            var mapName1 = doc.RootElement.GetArrayLength() > 0
-                ? doc.RootElement[0].GetString() ?? string.Empty
-                : string.Empty;
-
-            var mapName2 = doc.RootElement.GetArrayLength() > 1
-                ? doc.RootElement[1].GetString() ?? string.Empty
-                : string.Empty;
-
-            return (mapName1, mapName2);
-        }
-        catch
-        {
-            return (string.Empty, string.Empty);
-        }
-    }
-
-    private static string BuildSans(string? mapName1, string? mapName2)
-    {
-        var sans = new[]
-        {
-            mapName1?.Trim() ?? string.Empty,
-            mapName2?.Trim() ?? string.Empty
-        };
-
-        return JsonSerializer.Serialize(sans);
     }
 
     private static string GetLocalIpAddress()

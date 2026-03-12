@@ -41,19 +41,21 @@ public sealed class ConfigViewModel : ObservableObject
         MapName1 = runtimeConfigState.CurrentMapName1;
         MapName2 = runtimeConfigState.CurrentMapName2;
 
-        var hasRuntimeMaps =
-            !string.IsNullOrWhiteSpace(MapName1) &&
+        var hasRuntimeState =
+            !string.IsNullOrWhiteSpace(LocalIp) ||
+            !string.IsNullOrWhiteSpace(Code) ||
+            !string.IsNullOrWhiteSpace(MapName1) ||
             !string.IsNullOrWhiteSpace(MapName2);
 
-        IsExistingRecordLoaded = hasRuntimeMaps;
-        AreMapNamesEnabled = hasRuntimeMaps;
-        LoadStatus = hasRuntimeMaps
+        IsExistingRecordLoaded = hasRuntimeState;
+        AreMapNamesEnabled = hasRuntimeState;
+        LoadStatus = hasRuntimeState
             ? "✔ Đã nạp dữ liệu runtime"
             : "Đang tải theo IP máy...";
 
         RefreshDerivedState();
 
-        if (!hasRuntimeMaps)
+        if (!hasRuntimeState)
         {
             _ = LoadByLocalIpAsync();
         }
@@ -289,7 +291,7 @@ public sealed class ConfigViewModel : ObservableObject
             }
 
             LoadStatus = "✔ Lưu thành công";
-            _runtimeConfigState.Update(LocalIp, MapName1, MapName2);
+            _runtimeConfigState.Update(LocalIp, Code, MapName1, MapName2);
             RequestClose?.Invoke(true);
         }
         catch (Exception ex)
