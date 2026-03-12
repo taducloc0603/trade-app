@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using TradeDesktop.App.Commands;
 using TradeDesktop.App.State;
 using TradeDesktop.Application.Abstractions;
+using TradeDesktop.Application.Services;
 using TradeDesktop.Domain.Models;
 
 namespace TradeDesktop.App.ViewModels;
@@ -23,6 +24,7 @@ public sealed class DashboardViewModel : ObservableObject
     public DashboardViewModel(
         IServiceProvider serviceProvider,
         RuntimeConfigState runtimeConfigState,
+        IConfigService configService,
         IMarketDataReader marketDataReader)
     {
         _serviceProvider = serviceProvider;
@@ -53,6 +55,7 @@ public sealed class DashboardViewModel : ObservableObject
 
         _runtimeConfigState.StateChanged += (_, _) => ApplyRuntimeConfig();
         ApplyRuntimeConfig();
+        _ = InitializeRuntimeConfigAsync(configService);
 
         marketDataReader.MarketDataReceived += OnMarketDataReceived;
         _ = marketDataReader.StartAsync();
@@ -118,7 +121,30 @@ public sealed class DashboardViewModel : ObservableObject
             : $"Sàn B ({_runtimeConfigState.MapName2})";
 
         RuntimeSummary =
-            $"Code: {_runtimeConfigState.Code}  |  Map 1: {_runtimeConfigState.MapName1}  |  Map 2: {_runtimeConfigState.MapName2}";
+            $"IP: {_runtimeConfigState.LocalIp}  |  Map 1: {_runtimeConfigState.MapName1}  |  Map 2: {_runtimeConfigState.MapName2}";
+    }
+
+    private async Task InitializeRuntimeConfigAsync(IConfigService configService)
+    {
+        var result = await configService.LoadByLocalIpAsync();
+        if (result.IsSuccess && result.Exists)
+        {
+            _runtimeConfigState.Update(result.LocalIp, result.MapName1, result.MapName2);
+            return;
+        }
+
+        var warning = string.IsNullOrWhiteSpace(result.LocalIp)
+            ? "[Config] Không lấy được IP local để tải config."
+            : $"[Config] Không tìm thấy config cho IP hiện tại: {result.LocalIp}";
+
+        System.Windows.Application.Current.Dispatcher.Invoke(() =>
+        {
+            LogItems.Insert(0, warning);
+            if (!string.IsNullOrWhiteSpace(result.LocalIp))
+            {
+                _runtimeConfigState.Update(result.LocalIp, _runtimeConfigState.MapName1, _runtimeConfigState.MapName2);
+            }
+        });
     }
 
     private void OnMarketDataReceived(object? sender, MarketData marketData)

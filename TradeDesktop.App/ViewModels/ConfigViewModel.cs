@@ -9,74 +9,47 @@ public sealed class ConfigViewModel : ObservableObject
 {
     private readonly RuntimeConfigState _runtimeConfigState;
     private readonly IConfigService _configService;
-    private string _loadedCode = string.Empty;
+    private string _localIp = string.Empty;
 
-    private string _code = string.Empty;
     private string _mapName1 = string.Empty;
     private string _mapName2 = string.Empty;
 
-    private string _codeCheckStatus = "Chưa kiểm tra";
+    private string _loadStatus = "Đang tải theo IP máy...";
     private string _map1CheckStatus = "Chưa kiểm tra";
     private string _map2CheckStatus = "Chưa kiểm tra";
     private string _errorMessage = string.Empty;
 
-    private bool _isCodeValid;
     private bool _isMap1Valid;
     private bool _isMap2Valid;
     private bool _isExistingRecordLoaded;
-    private bool _isCodeReadOnly;
     private bool _areMapNamesEnabled;
     private bool _canSave;
-    private bool _isApplyingLoadedRecord;
 
     public ConfigViewModel(RuntimeConfigState runtimeConfigState, IConfigService configService)
     {
         _runtimeConfigState = runtimeConfigState;
         _configService = configService;
 
-        CheckCodeCommand = new AsyncRelayCommand(CheckCodeAsync, CanCheckCode);
         CheckMap1Command = new AsyncRelayCommand(CheckMap1Async, CanCheckMap1);
         CheckMap2Command = new AsyncRelayCommand(CheckMap2Async, CanCheckMap2);
         SaveCommand = new AsyncRelayCommand(SaveAsync, CanSaveCommand);
         CancelCommand = new AsyncRelayCommand(CancelAsync);
 
-        Code = runtimeConfigState.Code;
+        LocalIp = runtimeConfigState.LocalIp;
         MapName1 = string.Empty;
         MapName2 = string.Empty;
-        IsCodeReadOnly = false;
         AreMapNamesEnabled = false;
         RefreshDerivedState();
+
+        _ = LoadByLocalIpAsync();
     }
 
     public event Action<bool?>? RequestClose;
 
-    public string Code
+    public string LocalIp
     {
-        get => _code;
-        set
-        {
-            if (!SetProperty(ref _code, value))
-            {
-                return;
-            }
-
-            if (_isApplyingLoadedRecord)
-            {
-                RefreshButtons();
-                return;
-            }
-
-            _loadedCode = string.Empty;
-            ClearError();
-            IsCodeValid = false;
-            IsExistingRecordLoaded = false;
-            IsCodeReadOnly = false;
-            AreMapNamesEnabled = false;
-            CodeCheckStatus = "Chưa kiểm tra";
-            MapName1 = string.Empty;
-            MapName2 = string.Empty;
-            RefreshButtons();
-        }
+        get => _localIp;
+        private set => SetProperty(ref _localIp, value);
     }
 
     public string MapName1
@@ -113,10 +86,10 @@ public sealed class ConfigViewModel : ObservableObject
         }
     }
 
-    public string CodeCheckStatus
+    public string LoadStatus
     {
-        get => _codeCheckStatus;
-        private set => SetProperty(ref _codeCheckStatus, value);
+        get => _loadStatus;
+        private set => SetProperty(ref _loadStatus, value);
     }
 
     public string Map1CheckStatus
@@ -147,12 +120,6 @@ public sealed class ConfigViewModel : ObservableObject
 
     public bool HasError => !string.IsNullOrWhiteSpace(ErrorMessage);
 
-    public bool IsCodeValid
-    {
-        get => _isCodeValid;
-        private set => SetProperty(ref _isCodeValid, value);
-    }
-
     public bool IsMapName1Valid
     {
         get => _isMap1Valid;
@@ -171,12 +138,6 @@ public sealed class ConfigViewModel : ObservableObject
         private set => SetProperty(ref _isExistingRecordLoaded, value);
     }
 
-    public bool IsCodeReadOnly
-    {
-        get => _isCodeReadOnly;
-        private set => SetProperty(ref _isCodeReadOnly, value);
-    }
-
     public bool AreMapNamesEnabled
     {
         get => _areMapNamesEnabled;
@@ -189,13 +150,11 @@ public sealed class ConfigViewModel : ObservableObject
         private set => SetProperty(ref _canSave, value);
     }
 
-    public AsyncRelayCommand CheckCodeCommand { get; }
     public AsyncRelayCommand CheckMap1Command { get; }
     public AsyncRelayCommand CheckMap2Command { get; }
     public AsyncRelayCommand SaveCommand { get; }
     public AsyncRelayCommand CancelCommand { get; }
 
-    private bool CanCheckCode() => !string.IsNullOrWhiteSpace(Code) && !IsCodeReadOnly;
     private bool CanCheckMap1() => AreMapNamesEnabled && !string.IsNullOrWhiteSpace(MapName1);
     private bool CanCheckMap2() => AreMapNamesEnabled && !string.IsNullOrWhiteSpace(MapName2);
 
@@ -204,34 +163,31 @@ public sealed class ConfigViewModel : ObservableObject
         !string.IsNullOrWhiteSpace(MapName1) &&
         !string.IsNullOrWhiteSpace(MapName2);
 
-    private async Task CheckCodeAsync()
+    private async Task LoadByLocalIpAsync()
     {
         try
         {
             ClearError();
-            var inputCode = Code.Trim();
-            var loadResult = await _configService.CheckAndLoadAsync(inputCode);
-            IsCodeValid = loadResult.Exists;
+            var loadResult = await _configService.LoadByLocalIpAsync();
+            LocalIp = loadResult.LocalIp;
 
             if (!loadResult.Exists)
             {
                 IsExistingRecordLoaded = false;
                 AreMapNamesEnabled = false;
-                IsCodeReadOnly = false;
                 MapName1 = string.Empty;
                 MapName2 = string.Empty;
-                CodeCheckStatus = "✖ Code không tồn tại";
+                LoadStatus = $"✖ Không có config cho IP: {LocalIp}";
+                ErrorMessage = "Không tìm thấy record config theo IP máy hiện tại.";
                 RefreshDerivedState();
                 return;
             }
 
-            if (!loadResult.IsSuccess || string.IsNullOrWhiteSpace(loadResult.LoadedCode))
+            if (!loadResult.IsSuccess)
             {
-                IsCodeValid = false;
                 IsExistingRecordLoaded = false;
                 AreMapNamesEnabled = false;
-                IsCodeReadOnly = false;
-                CodeCheckStatus = "✖ Không tải được config";
+                LoadStatus = "✖ Không tải được config";
                 if (!string.IsNullOrWhiteSpace(loadResult.Error))
                 {
                     ErrorMessage = loadResult.Error;
@@ -240,39 +196,24 @@ public sealed class ConfigViewModel : ObservableObject
                 return;
             }
 
-            _isApplyingLoadedRecord = true;
-            try
-            {
-                _loadedCode = loadResult.LoadedCode.Trim();
-                Code = _loadedCode;
-                MapName1 = loadResult.MapName1;
-                MapName2 = loadResult.MapName2;
-            }
-            finally
-            {
-                _isApplyingLoadedRecord = false;
-            }
-
-            IsCodeValid = true;
+            MapName1 = loadResult.MapName1;
+            MapName2 = loadResult.MapName2;
             IsExistingRecordLoaded = true;
-            IsCodeReadOnly = true;
             AreMapNamesEnabled = true;
 
             IsMapName1Valid = false;
             IsMapName2Valid = false;
             Map1CheckStatus = "Chưa kiểm tra";
             Map2CheckStatus = "Chưa kiểm tra";
-            CodeCheckStatus = "✔ Code tồn tại";
+            LoadStatus = "✔ Đã tải config theo IP";
             RefreshDerivedState();
         }
         catch (Exception ex)
         {
-            IsCodeValid = false;
             IsExistingRecordLoaded = false;
             AreMapNamesEnabled = false;
-            IsCodeReadOnly = false;
-            CodeCheckStatus = "✖ Code không tồn tại";
-            ErrorMessage = $"Lỗi check code: {GetErrorMessage(ex)}";
+            LoadStatus = "✖ Không tải được config";
+            ErrorMessage = $"Lỗi load config theo IP: {GetErrorMessage(ex)}";
             RefreshDerivedState();
         }
 
@@ -301,7 +242,7 @@ public sealed class ConfigViewModel : ObservableObject
 
     private async Task SaveAsync()
     {
-        if (!CanSaveCommand() || string.IsNullOrWhiteSpace(_loadedCode))
+        if (!CanSaveCommand() || !IsExistingRecordLoaded)
         {
             ErrorMessage = "Không thể lưu: dữ liệu chưa hợp lệ hoặc chưa load record.";
             return;
@@ -310,23 +251,28 @@ public sealed class ConfigViewModel : ObservableObject
         try
         {
             ClearError();
-            var saveResult = await _configService.SaveAsync(_loadedCode, MapName1, MapName2);
+            var saveResult = await _configService.SaveByLocalIpAsync(MapName1, MapName2);
             if (!saveResult.IsSuccess)
             {
-                CodeCheckStatus = "✖ Save thất bại";
+                LoadStatus = "✖ Save thất bại";
                 ErrorMessage = string.IsNullOrWhiteSpace(saveResult.Error)
                     ? "Lưu thất bại: không có bản ghi nào được cập nhật."
                     : saveResult.Error;
                 return;
             }
 
-            CodeCheckStatus = "✔ Lưu thành công";
-            _runtimeConfigState.Update(_loadedCode, MapName1, MapName2);
+            if (!string.IsNullOrWhiteSpace(saveResult.LocalIp))
+            {
+                LocalIp = saveResult.LocalIp;
+            }
+
+            LoadStatus = "✔ Lưu thành công";
+            _runtimeConfigState.Update(LocalIp, MapName1, MapName2);
             RequestClose?.Invoke(true);
         }
         catch (Exception ex)
         {
-            CodeCheckStatus = "✖ Save thất bại";
+            LoadStatus = "✖ Save thất bại";
             ErrorMessage = $"Lỗi khi save: {GetErrorMessage(ex)}";
         }
     }
@@ -340,7 +286,6 @@ public sealed class ConfigViewModel : ObservableObject
     private void RefreshDerivedState()
     {
         CanSave =
-            IsCodeValid &&
             IsExistingRecordLoaded &&
             !string.IsNullOrWhiteSpace(MapName1) &&
             !string.IsNullOrWhiteSpace(MapName2);
@@ -349,7 +294,6 @@ public sealed class ConfigViewModel : ObservableObject
     private void RefreshButtons()
     {
         RefreshDerivedState();
-        CheckCodeCommand?.RaiseCanExecuteChanged();
         CheckMap1Command?.RaiseCanExecuteChanged();
         CheckMap2Command?.RaiseCanExecuteChanged();
         SaveCommand?.RaiseCanExecuteChanged();

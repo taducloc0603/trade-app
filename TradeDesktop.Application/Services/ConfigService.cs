@@ -7,55 +7,47 @@ namespace TradeDesktop.Application.Services;
 
 public interface IConfigService
 {
-    Task<ConfigLoadResult> CheckAndLoadAsync(string inputCode, CancellationToken cancellationToken = default);
-    Task<ConfigSaveResult> SaveAsync(string loadedCode, string mapName1, string mapName2, CancellationToken cancellationToken = default);
+    Task<ConfigLoadResult> LoadByLocalIpAsync(CancellationToken cancellationToken = default);
+    Task<ConfigSaveResult> SaveByLocalIpAsync(string mapName1, string mapName2, CancellationToken cancellationToken = default);
 }
 
 public sealed class ConfigService(IConfigRepository configRepository) : IConfigService
 {
-    public async Task<ConfigLoadResult> CheckAndLoadAsync(string inputCode, CancellationToken cancellationToken = default)
+    public async Task<ConfigLoadResult> LoadByLocalIpAsync(CancellationToken cancellationToken = default)
     {
-        var normalizedCode = inputCode?.Trim() ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(normalizedCode))
+        var localIp = GetLocalIpAddress();
+        if (string.IsNullOrWhiteSpace(localIp))
         {
-            return ConfigLoadResult.NotFound();
+            return ConfigLoadResult.Failed(string.Empty, "Không lấy được IP máy hiện tại.");
         }
 
-        var exists = await configRepository.ExistsByCodeAsync(normalizedCode, cancellationToken);
-        if (!exists)
-        {
-            return ConfigLoadResult.NotFound();
-        }
-
-        var record = await configRepository.GetByCodeAsync(normalizedCode, cancellationToken);
+        var record = await configRepository.GetByIpAsync(localIp, cancellationToken);
         if (record is null)
         {
-            return ConfigLoadResult.Failed("Không tải được config.");
+            return ConfigLoadResult.NotFound(localIp);
         }
 
         var (mapName1, mapName2) = ParseSans(record.SansJson);
-        return ConfigLoadResult.Success(record.Code.Trim(), mapName1, mapName2);
+        return ConfigLoadResult.Success(localIp, mapName1, mapName2);
     }
 
-    public async Task<ConfigSaveResult> SaveAsync(string loadedCode, string mapName1, string mapName2, CancellationToken cancellationToken = default)
+    public async Task<ConfigSaveResult> SaveByLocalIpAsync(string mapName1, string mapName2, CancellationToken cancellationToken = default)
     {
-        var normalizedCode = loadedCode?.Trim() ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(normalizedCode))
+        var localIp = GetLocalIpAddress();
+        if (string.IsNullOrWhiteSpace(localIp))
         {
-            return ConfigSaveResult.Failed("Thiếu mã record để lưu.");
+            return ConfigSaveResult.Failed("Không lấy được IP máy hiện tại.");
         }
 
         var sansJson = BuildSans(mapName1, mapName2);
-        var localIp = GetLocalIpAddress();
 
-        var updated = await configRepository.UpdateSansAndIpByCodeAsync(normalizedCode, sansJson, localIp, cancellationToken);
+        var updated = await configRepository.UpdateSansAndIpByIpAsync(localIp, sansJson, cancellationToken);
         if (!updated)
         {
             return ConfigSaveResult.Failed("Lưu thất bại: không có bản ghi nào được cập nhật.");
         }
 
-        // Verify lại sau khi update để đảm bảo cột ip thực sự đã được ghi.
-        var refreshed = await configRepository.GetByCodeAsync(normalizedCode, cancellationToken);
+        var refreshed = await configRepository.GetByIpAsync(localIp, cancellationToken);
         if (refreshed is null)
         {
             return ConfigSaveResult.Failed("Đã gọi lưu nhưng không đọc lại được record để xác nhận giá trị ip.");
@@ -131,16 +123,22 @@ public sealed class ConfigService(IConfigRepository configRepository) : IConfigS
     }
 }
 
-public sealed record ConfigLoadResult(bool IsSuccess, bool Exists, string? LoadedCode, string MapName1, string MapName2, string? Error)
+public sealed record ConfigLoadResult(
+    bool IsSuccess,
+    bool Exists,
+    string LocalIp,
+    string MapName1,
+    string MapName2,
+    string? Error)
 {
-    public static ConfigLoadResult Success(string loadedCode, string mapName1, string mapName2) =>
-        new(true, true, loadedCode, mapName1, mapName2, null);
+    public static ConfigLoadResult Success(string localIp, string mapName1, string mapName2) =>
+        new(true, true, localIp, mapName1, mapName2, null);
 
-    public static ConfigLoadResult NotFound() =>
-        new(false, false, null, string.Empty, string.Empty, null);
+    public static ConfigLoadResult NotFound(string localIp) =>
+        new(false, false, localIp, string.Empty, string.Empty, null);
 
-    public static ConfigLoadResult Failed(string error) =>
-        new(false, true, null, string.Empty, string.Empty, error);
+    public static ConfigLoadResult Failed(string localIp, string error) =>
+        new(false, true, localIp, string.Empty, string.Empty, error);
 }
 
 public sealed record ConfigSaveResult(bool IsSuccess, string? LocalIp, string? Error)
