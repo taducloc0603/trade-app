@@ -1,6 +1,7 @@
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using TradeDesktop.Application.Abstractions;
 using TradeDesktop.Application.Models;
 
@@ -170,8 +171,13 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
 
     private sealed class ConfigRow
     {
+        [JsonPropertyName("id")]
         public string? Id { get; set; }
+
+        [JsonPropertyName("sans")]
         public JsonElement Sans { get; set; }
+
+        [JsonPropertyName("ip")]
         public string? Ip { get; set; }
     }
 }
