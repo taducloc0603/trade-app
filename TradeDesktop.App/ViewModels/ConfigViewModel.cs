@@ -1,14 +1,14 @@
 using TradeDesktop.App.Commands;
 using TradeDesktop.App.Helpers;
 using TradeDesktop.App.State;
-using TradeDesktop.Application.Abstractions;
+using TradeDesktop.Application.Services;
 
 namespace TradeDesktop.App.ViewModels;
 
 public sealed class ConfigViewModel : ObservableObject
 {
     private readonly RuntimeConfigState _runtimeConfigState;
-    private readonly IConfigRepository _configRepository;
+    private readonly IConfigService _configService;
     private string _loadedCode = string.Empty;
 
     private string _code = string.Empty;
@@ -29,10 +29,10 @@ public sealed class ConfigViewModel : ObservableObject
     private bool _canSave;
     private bool _isApplyingLoadedRecord;
 
-    public ConfigViewModel(RuntimeConfigState runtimeConfigState, IConfigRepository configRepository)
+    public ConfigViewModel(RuntimeConfigState runtimeConfigState, IConfigService configService)
     {
         _runtimeConfigState = runtimeConfigState;
-        _configRepository = configRepository;
+        _configService = configService;
 
         CheckCodeCommand = new AsyncRelayCommand(CheckCodeAsync, CanCheckCode);
         CheckMap1Command = new AsyncRelayCommand(CheckMap1Async, CanCheckMap1);
@@ -210,10 +210,10 @@ public sealed class ConfigViewModel : ObservableObject
         {
             ClearError();
             var inputCode = Code.Trim();
-            var exists = await _configRepository.ExistsByCodeAsync(inputCode);
-            IsCodeValid = exists;
+            var loadResult = await _configService.CheckAndLoadAsync(inputCode);
+            IsCodeValid = loadResult.Exists;
 
-            if (!exists)
+            if (!loadResult.Exists)
             {
                 IsExistingRecordLoaded = false;
                 AreMapNamesEnabled = false;
@@ -225,27 +225,28 @@ public sealed class ConfigViewModel : ObservableObject
                 return;
             }
 
-            var record = await _configRepository.GetByCodeAsync(inputCode);
-            if (record is null)
+            if (!loadResult.IsSuccess || string.IsNullOrWhiteSpace(loadResult.LoadedCode))
             {
                 IsCodeValid = false;
                 IsExistingRecordLoaded = false;
                 AreMapNamesEnabled = false;
                 IsCodeReadOnly = false;
                 CodeCheckStatus = "✖ Không tải được config";
+                if (!string.IsNullOrWhiteSpace(loadResult.Error))
+                {
+                    ErrorMessage = loadResult.Error;
+                }
                 RefreshDerivedState();
                 return;
             }
 
-            var (mapName1, mapName2) = SansHelper.ParseSans(record.SansJson);
-
             _isApplyingLoadedRecord = true;
             try
             {
-                _loadedCode = record.Code.Trim();
+                _loadedCode = loadResult.LoadedCode.Trim();
                 Code = _loadedCode;
-                MapName1 = mapName1;
-                MapName2 = mapName2;
+                MapName1 = loadResult.MapName1;
+                MapName2 = loadResult.MapName2;
             }
             finally
             {
@@ -309,14 +310,13 @@ public sealed class ConfigViewModel : ObservableObject
         try
         {
             ClearError();
-            var sansJson = SansHelper.BuildSans(MapName1, MapName2);
-            var ip = IpHelper.GetLocalIpAddress();
-
-            var updated = await _configRepository.UpdateSansAndIpByCodeAsync(_loadedCode, sansJson, ip);
-            if (!updated)
+            var saveResult = await _configService.SaveAsync(_loadedCode, MapName1, MapName2);
+            if (!saveResult.IsSuccess)
             {
                 CodeCheckStatus = "✖ Save thất bại";
-                ErrorMessage = "Lưu thất bại: không có bản ghi nào được cập nhật.";
+                ErrorMessage = string.IsNullOrWhiteSpace(saveResult.Error)
+                    ? "Lưu thất bại: không có bản ghi nào được cập nhật."
+                    : saveResult.Error;
                 return;
             }
 
