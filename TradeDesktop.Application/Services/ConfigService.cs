@@ -49,9 +49,26 @@ public sealed class ConfigService(IConfigRepository configRepository) : IConfigS
         var localIp = GetLocalIpAddress();
 
         var updated = await configRepository.UpdateSansAndIpByCodeAsync(normalizedCode, sansJson, localIp, cancellationToken);
-        return updated
-            ? ConfigSaveResult.Success(localIp)
-            : ConfigSaveResult.Failed("Lưu thất bại: không có bản ghi nào được cập nhật.");
+        if (!updated)
+        {
+            return ConfigSaveResult.Failed("Lưu thất bại: không có bản ghi nào được cập nhật.");
+        }
+
+        // Verify lại sau khi update để đảm bảo cột ip thực sự đã được ghi.
+        var refreshed = await configRepository.GetByCodeAsync(normalizedCode, cancellationToken);
+        if (refreshed is null)
+        {
+            return ConfigSaveResult.Failed("Đã gọi lưu nhưng không đọc lại được record để xác nhận giá trị ip.");
+        }
+
+        var savedIp = refreshed.Ip?.Trim() ?? string.Empty;
+        if (!string.Equals(savedIp, localIp, StringComparison.OrdinalIgnoreCase))
+        {
+            return ConfigSaveResult.Failed(
+                $"Lưu chưa hoàn tất: ip trong DB là '{savedIp}' nhưng ip local là '{localIp}'. Kiểm tra quyền update cột ip/RLS hoặc trigger DB.");
+        }
+
+        return ConfigSaveResult.Success(localIp);
     }
 
     private static (string MapName1, string MapName2) ParseSans(string? sansJson)
