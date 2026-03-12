@@ -195,7 +195,14 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
                 $"Supabase UpdateByColumnAsync thất bại. Column={columnName}, Status={(int)response.StatusCode}, Body={errorBody}");
         }
 
-        return true;
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return false;
+        }
+
+        using var doc = JsonDocument.Parse(body);
+        return doc.RootElement.ValueKind == JsonValueKind.Array && doc.RootElement.GetArrayLength() > 0;
     }
 
     private sealed class ConfigRow
