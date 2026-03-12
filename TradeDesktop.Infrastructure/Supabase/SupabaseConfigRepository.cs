@@ -173,7 +173,6 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
     private sealed class ConfigRow
     {
         public string? Id { get; set; }
-        public string? Code { get; set; }
         public JsonElement Sans { get; set; }
         public string? Ip { get; set; }
     }
