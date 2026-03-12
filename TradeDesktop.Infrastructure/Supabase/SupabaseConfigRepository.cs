@@ -129,8 +129,34 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
         }
 
         var json = await response.Content.ReadAsStringAsync(cancellationToken);
-        var rows = JsonSerializer.Deserialize<List<ConfigRow>>(json);
-        return rows?.FirstOrDefault();
+        using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(json) ? "[]" : json);
+        if (doc.RootElement.ValueKind != JsonValueKind.Array || doc.RootElement.GetArrayLength() == 0)
+        {
+            return null;
+        }
+
+        var first = doc.RootElement[0];
+        if (first.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        first.TryGetProperty("id", out var idElement);
+        first.TryGetProperty("sans", out var sansElement);
+
+        // DB column name is lowercase: ip
+        var hasIp = first.TryGetProperty("ip", out var ipElement);
+        if (!hasIp)
+        {
+            first.TryGetProperty("Ip", out ipElement);
+        }
+
+        return new ConfigRow
+        {
+            Id = idElement.ValueKind == JsonValueKind.String ? idElement.GetString() : null,
+            Sans = sansElement,
+            Ip = ipElement.ValueKind == JsonValueKind.String ? ipElement.GetString() : null
+        };
     }
 
     private async Task<bool> UpdateByColumnAsync(
