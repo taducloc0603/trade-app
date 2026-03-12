@@ -154,7 +154,10 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
         return new ConfigRow
         {
             Id = idElement.ValueKind == JsonValueKind.String ? idElement.GetString() : null,
-            Sans = sansElement,
+            // Clone để JsonElement không còn phụ thuộc JsonDocument đã dispose.
+            Sans = sansElement.ValueKind is JsonValueKind.Undefined
+                ? default
+                : sansElement.Clone(),
             Ip = ipElement.ValueKind == JsonValueKind.String ? ipElement.GetString() : null
         };
     }
