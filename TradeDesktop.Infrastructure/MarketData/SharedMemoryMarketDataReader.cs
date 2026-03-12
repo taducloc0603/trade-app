@@ -11,6 +11,15 @@ namespace TradeDesktop.Infrastructure.MarketData;
 public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(400);
+    private const int HeaderSize = 16;
+    private const int QuoteRingOffset = 16;
+    private const int QuoteRingSize = 64;
+    private const int QuoteMessageSize = 48;
+    private const int QuoteTimestampOffset = 8;
+    private const int QuoteBidOffset = 16;
+    private const int QuoteAskOffset = 24;
+    private const int QuoteSymbolOffset = 32;
+    private const int QuoteSymbolLength = 16;
 
     private readonly object _syncRoot = new();
     private readonly IRuntimeConfigProvider _runtimeConfigProvider;
@@ -106,6 +115,13 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
         try
         {
             using var mmf = MemoryMappedFile.OpenExisting(mapName.Trim(), MemoryMappedFileRights.Read);
+
+            using var accessor = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read);
+            if (TryParseMt5QuoteRing(accessor, fallbackSymbol, out var fromMt5))
+            {
+                return fromMt5 with { Error = null, IsConnected = true };
+            }
+
             using var stream = mmf.CreateViewStream(0, 0, MemoryMappedFileAccess.Read);
 
             var raw = ReadAllBytes(stream);
@@ -135,6 +151,86 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
         {
             return Disconnected(fallbackSymbol, ex.Message);
         }
+    }
+
+    private static bool TryParseMt5QuoteRing(
+        MemoryMappedViewAccessor accessor,
+        string fallbackSymbol,
+        out ExchangeMetrics metrics)
+    {
+        metrics = Disconnected(fallbackSymbol, "MT5 quote ring parse failed");
+
+        var capacity = accessor.Capacity;
+        var required = QuoteRingOffset + (QuoteRingSize * QuoteMessageSize);
+        if (capacity < required || capacity < HeaderSize)
+        {
+            return false;
+        }
+
+        var quoteSeq = accessor.ReadUInt32(0);
+        if (quoteSeq == 0)
+        {
+            return false;
+        }
+
+        // Theo cấu trúc hiện tại của MT5/PowerShell monitor: slot = quote_seq % QUOTE_RING_SIZE
+        var slot = (int)(quoteSeq % QuoteRingSize);
+        var baseOffset = QuoteRingOffset + (slot * QuoteMessageSize);
+        if (baseOffset + QuoteMessageSize > capacity)
+        {
+            return false;
+        }
+
+        var timeMsc = accessor.ReadInt64(baseOffset + QuoteTimestampOffset);
+        var bid = accessor.ReadDouble(baseOffset + QuoteBidOffset);
+        var ask = accessor.ReadDouble(baseOffset + QuoteAskOffset);
+        var symbol = ReadAsciiString(accessor, baseOffset + QuoteSymbolOffset, QuoteSymbolLength);
+
+        if (double.IsNaN(bid) || double.IsInfinity(bid) ||
+            double.IsNaN(ask) || double.IsInfinity(ask) ||
+            bid <= 0 || ask <= 0)
+        {
+            return false;
+        }
+
+        var bidDecimal = (decimal)bid;
+        var askDecimal = (decimal)ask;
+        var symbolText = string.IsNullOrWhiteSpace(symbol) ? fallbackSymbol : symbol;
+
+        string timeText;
+        if (timeMsc > 946_684_800_000 && timeMsc < 4_102_444_800_000)
+        {
+            // time_msc từ MT5 thường là unix epoch millisecond
+            timeText = DateTimeOffset.FromUnixTimeMilliseconds(timeMsc)
+                .ToLocalTime()
+                .ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture);
+        }
+        else
+        {
+            timeText = DateTime.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
+        }
+
+        metrics = new ExchangeMetrics(
+            Symbol: symbolText,
+            Bid: bidDecimal,
+            Ask: askDecimal,
+            Spread: askDecimal - bidDecimal,
+            LatencyMs: null,
+            Tps: null,
+            Time: timeText,
+            MaxLatMs: null,
+            AvgLatMs: null,
+            IsConnected: true,
+            Error: null);
+
+        return true;
+    }
+
+    private static string ReadAsciiString(MemoryMappedViewAccessor accessor, long offset, int length)
+    {
+        var bytes = new byte[length];
+        accessor.ReadArray(offset, bytes, 0, length);
+        return Encoding.ASCII.GetString(bytes).TrimEnd('\0', ' ');
     }
 
     private static byte[] ReadAllBytes(Stream stream)
