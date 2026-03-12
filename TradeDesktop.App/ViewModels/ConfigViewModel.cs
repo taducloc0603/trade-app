@@ -18,6 +18,7 @@ public sealed class ConfigViewModel : ObservableObject
     private string _codeCheckStatus = "Chưa kiểm tra";
     private string _map1CheckStatus = "Chưa kiểm tra";
     private string _map2CheckStatus = "Chưa kiểm tra";
+    private string _errorMessage = string.Empty;
 
     private bool _isCodeValid;
     private bool _isMap1Valid;
@@ -66,6 +67,7 @@ public sealed class ConfigViewModel : ObservableObject
             }
 
             _loadedCode = string.Empty;
+            ClearError();
             IsCodeValid = false;
             IsExistingRecordLoaded = false;
             IsCodeReadOnly = false;
@@ -129,6 +131,22 @@ public sealed class ConfigViewModel : ObservableObject
         private set => SetProperty(ref _map2CheckStatus, value);
     }
 
+    public string ErrorMessage
+    {
+        get => _errorMessage;
+        private set
+        {
+            if (!SetProperty(ref _errorMessage, value))
+            {
+                return;
+            }
+
+            OnPropertyChanged(nameof(HasError));
+        }
+    }
+
+    public bool HasError => !string.IsNullOrWhiteSpace(ErrorMessage);
+
     public bool IsCodeValid
     {
         get => _isCodeValid;
@@ -190,6 +208,7 @@ public sealed class ConfigViewModel : ObservableObject
     {
         try
         {
+            ClearError();
             var inputCode = Code.Trim();
             var exists = await _configRepository.ExistsByCodeAsync(inputCode);
             IsCodeValid = exists;
@@ -245,13 +264,14 @@ public sealed class ConfigViewModel : ObservableObject
             CodeCheckStatus = "✔ Code tồn tại";
             RefreshDerivedState();
         }
-        catch
+        catch (Exception ex)
         {
             IsCodeValid = false;
             IsExistingRecordLoaded = false;
             AreMapNamesEnabled = false;
             IsCodeReadOnly = false;
             CodeCheckStatus = "✖ Code không tồn tại";
+            ErrorMessage = $"Lỗi check code: {GetErrorMessage(ex)}";
             RefreshDerivedState();
         }
 
@@ -260,6 +280,7 @@ public sealed class ConfigViewModel : ObservableObject
 
     private Task CheckMap1Async()
     {
+        ClearError();
         IsMapName1Valid = SharedMemoryChecker.MapExists(MapName1.Trim());
         Map1CheckStatus = IsMapName1Valid ? "✔ Map tồn tại" : "✖ Map không tồn tại";
         RefreshDerivedState();
@@ -269,6 +290,7 @@ public sealed class ConfigViewModel : ObservableObject
 
     private Task CheckMap2Async()
     {
+        ClearError();
         IsMapName2Valid = SharedMemoryChecker.MapExists(MapName2.Trim());
         Map2CheckStatus = IsMapName2Valid ? "✔ Map tồn tại" : "✖ Map không tồn tại";
         RefreshDerivedState();
@@ -280,21 +302,33 @@ public sealed class ConfigViewModel : ObservableObject
     {
         if (!CanSaveCommand() || string.IsNullOrWhiteSpace(_loadedCode))
         {
+            ErrorMessage = "Không thể lưu: dữ liệu chưa hợp lệ hoặc chưa load record.";
             return;
         }
 
-        var sansJson = SansHelper.BuildSans(MapName1, MapName2);
-        var ip = IpHelper.GetLocalIpAddress();
+        try
+        {
+            ClearError();
+            var sansJson = SansHelper.BuildSans(MapName1, MapName2);
+            var ip = IpHelper.GetLocalIpAddress();
 
-        var updated = await _configRepository.UpdateSansAndIpByCodeAsync(_loadedCode, sansJson, ip);
-        if (!updated)
+            var updated = await _configRepository.UpdateSansAndIpByCodeAsync(_loadedCode, sansJson, ip);
+            if (!updated)
+            {
+                CodeCheckStatus = "✖ Save thất bại";
+                ErrorMessage = "Lưu thất bại: không có bản ghi nào được cập nhật.";
+                return;
+            }
+
+            CodeCheckStatus = "✔ Lưu thành công";
+            _runtimeConfigState.Update(_loadedCode, MapName1, MapName2);
+            RequestClose?.Invoke(true);
+        }
+        catch (Exception ex)
         {
             CodeCheckStatus = "✖ Save thất bại";
-            return;
+            ErrorMessage = $"Lỗi khi save: {GetErrorMessage(ex)}";
         }
-
-        _runtimeConfigState.Update(_loadedCode, MapName1, MapName2);
-        RequestClose?.Invoke(true);
     }
 
     private Task CancelAsync()
@@ -319,5 +353,18 @@ public sealed class ConfigViewModel : ObservableObject
         CheckMap1Command?.RaiseCanExecuteChanged();
         CheckMap2Command?.RaiseCanExecuteChanged();
         SaveCommand?.RaiseCanExecuteChanged();
+    }
+
+    private void ClearError() => ErrorMessage = string.Empty;
+
+    private static string GetErrorMessage(Exception ex)
+    {
+        var message = ex.Message;
+        if (ex.InnerException is not null)
+        {
+            message = $"{message} | Inner: {ex.InnerException.Message}";
+        }
+
+        return message;
     }
 }
