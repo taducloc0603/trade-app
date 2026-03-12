@@ -20,11 +20,11 @@ public static class SansHelper
             }
 
             var mapName1 = doc.RootElement.GetArrayLength() > 0
-                ? doc.RootElement[0].GetString() ?? string.Empty
+                ? (doc.RootElement[0].GetString() ?? string.Empty).Trim()
                 : string.Empty;
 
             var mapName2 = doc.RootElement.GetArrayLength() > 1
-                ? doc.RootElement[1].GetString() ?? string.Empty
+                ? (doc.RootElement[1].GetString() ?? string.Empty).Trim()
                 : string.Empty;
 
             return (mapName1, mapName2);

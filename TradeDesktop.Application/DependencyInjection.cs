@@ -9,6 +9,7 @@ public static class DependencyInjection
     {
         services.AddSingleton<IDashboardService, DashboardService>();
         services.AddSingleton<IConfigService, ConfigService>();
+        services.AddSingleton<IGapCalculator, GapCalculator>();
         return services;
     }
 }

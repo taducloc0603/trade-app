@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using TradeDesktop.App.ViewModels;
 using TradeDesktop.App.State;
+using TradeDesktop.Application.Abstractions;
 using TradeDesktop.Application;
 using TradeDesktop.Infrastructure;
 
@@ -32,6 +33,8 @@ public partial class App : System.Windows.Application
                     .AddInfrastructure(configuration);
 
                 services.AddSingleton<RuntimeConfigState>();
+                services.AddSingleton<IRuntimeConfigProvider>(sp => sp.GetRequiredService<RuntimeConfigState>());
+                services.AddSingleton<IRuntimeConfigStateUpdater>(sp => sp.GetRequiredService<RuntimeConfigState>());
                 services.AddSingleton<DashboardViewModel>();
                 services.AddTransient<ConfigViewModel>();
                 services.AddTransient<ConfigWindow>();

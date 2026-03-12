@@ -28,7 +28,7 @@ public sealed class ConfigService(IConfigRepository configRepository) : IConfigS
         }
 
         var (mapName1, mapName2) = ParseSans(record.SansJson);
-        return ConfigLoadResult.Success(localIp, mapName1, mapName2);
+        return ConfigLoadResult.Success(localIp, string.Empty, mapName1, mapName2);
     }
 
     public async Task<ConfigSaveResult> SaveByLocalIpAsync(string mapName1, string mapName2, CancellationToken cancellationToken = default)
@@ -127,18 +127,19 @@ public sealed record ConfigLoadResult(
     bool IsSuccess,
     bool Exists,
     string LocalIp,
+    string Code,
     string MapName1,
     string MapName2,
     string? Error)
 {
-    public static ConfigLoadResult Success(string localIp, string mapName1, string mapName2) =>
-        new(true, true, localIp, mapName1, mapName2, null);
+    public static ConfigLoadResult Success(string localIp, string code, string mapName1, string mapName2) =>
+        new(true, true, localIp, code, mapName1, mapName2, null);
 
     public static ConfigLoadResult NotFound(string localIp) =>
-        new(false, false, localIp, string.Empty, string.Empty, null);
+        new(false, false, localIp, string.Empty, string.Empty, string.Empty, null);
 
     public static ConfigLoadResult Failed(string localIp, string error) =>
-        new(false, true, localIp, string.Empty, string.Empty, error);
+        new(false, true, localIp, string.Empty, string.Empty, string.Empty, error);
 }
 
 public sealed record ConfigSaveResult(bool IsSuccess, string? LocalIp, string? Error)

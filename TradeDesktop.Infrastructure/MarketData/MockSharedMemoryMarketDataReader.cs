@@ -1,4 +1,5 @@
 using TradeDesktop.Application.Abstractions;
+using TradeDesktop.Application.Models;
 using TradeDesktop.Domain.Models;
 using DomainMarketData = TradeDesktop.Domain.Models.MarketData;
 
@@ -13,6 +14,7 @@ public sealed class MockSharedMemoryMarketDataReader : ISharedMemoryReader
     private readonly Random _random = new();
 
     public event EventHandler<DomainMarketData>? MarketDataReceived;
+    public event EventHandler<SharedMemorySnapshot>? SnapshotReceived;
 
     public bool IsRunning { get; private set; }
 
@@ -73,6 +75,28 @@ public sealed class MockSharedMemoryMarketDataReader : ISharedMemoryReader
         {
             var marketData = NextMockTick();
             MarketDataReceived?.Invoke(this, marketData);
+
+            var sanA = new ExchangeMetrics(
+                Symbol: "BTCUSDT",
+                Bid: marketData.Bid,
+                Ask: marketData.Ask,
+                Spread: marketData.Spread,
+                LatencyMs: 5,
+                Tps: 100,
+                Time: marketData.Timestamp.ToLocalTime().ToString("HH:mm:ss"),
+                MaxLatMs: 10,
+                AvgLatMs: 7,
+                IsConnected: true,
+                Error: null);
+
+            var sanB = sanA with
+            {
+                Bid = marketData.Bid - 0.01m,
+                Ask = marketData.Ask + 0.01m,
+                Spread = (marketData.Ask + 0.01m) - (marketData.Bid - 0.01m)
+            };
+
+            SnapshotReceived?.Invoke(this, new SharedMemorySnapshot(sanA, sanB, DateTime.UtcNow));
         }
     }
 

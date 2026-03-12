@@ -10,6 +10,7 @@ public sealed class ConfigViewModel : ObservableObject
     private readonly RuntimeConfigState _runtimeConfigState;
     private readonly IConfigService _configService;
     private string _localIp = string.Empty;
+    private string _code = string.Empty;
 
     private string _mapName1 = string.Empty;
     private string _mapName2 = string.Empty;
@@ -35,13 +36,27 @@ public sealed class ConfigViewModel : ObservableObject
         SaveCommand = new AsyncRelayCommand(SaveAsync, CanSaveCommand);
         CancelCommand = new AsyncRelayCommand(CancelAsync);
 
-        LocalIp = runtimeConfigState.LocalIp;
-        MapName1 = string.Empty;
-        MapName2 = string.Empty;
-        AreMapNamesEnabled = false;
+        LocalIp = runtimeConfigState.CurrentIp;
+        Code = runtimeConfigState.CurrentCode;
+        MapName1 = runtimeConfigState.CurrentMapName1;
+        MapName2 = runtimeConfigState.CurrentMapName2;
+
+        var hasRuntimeMaps =
+            !string.IsNullOrWhiteSpace(MapName1) &&
+            !string.IsNullOrWhiteSpace(MapName2);
+
+        IsExistingRecordLoaded = hasRuntimeMaps;
+        AreMapNamesEnabled = hasRuntimeMaps;
+        LoadStatus = hasRuntimeMaps
+            ? "✔ Đã nạp dữ liệu runtime"
+            : "Đang tải theo IP máy...";
+
         RefreshDerivedState();
 
-        _ = LoadByLocalIpAsync();
+        if (!hasRuntimeMaps)
+        {
+            _ = LoadByLocalIpAsync();
+        }
     }
 
     public event Action<bool?>? RequestClose;
@@ -50,6 +65,12 @@ public sealed class ConfigViewModel : ObservableObject
     {
         get => _localIp;
         private set => SetProperty(ref _localIp, value);
+    }
+
+    public string Code
+    {
+        get => _code;
+        private set => SetProperty(ref _code, value);
     }
 
     public string MapName1
@@ -170,6 +191,7 @@ public sealed class ConfigViewModel : ObservableObject
             ClearError();
             var loadResult = await _configService.LoadByLocalIpAsync();
             LocalIp = loadResult.LocalIp;
+            Code = loadResult.Code;
 
             if (!loadResult.Exists)
             {

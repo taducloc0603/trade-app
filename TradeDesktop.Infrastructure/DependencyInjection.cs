@@ -14,7 +14,7 @@ public static class DependencyInjection
 
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
-        services.AddSingleton<ISharedMemoryReader, MockSharedMemoryMarketDataReader>();
+        services.AddSingleton<ISharedMemoryReader, SharedMemoryMarketDataReader>();
         services.AddSingleton<IMarketDataReader>(sp => sp.GetRequiredService<ISharedMemoryReader>());
         services.AddSingleton<ISignalEngine, SimpleSignalEngine>();
         services.AddHttpClient();
