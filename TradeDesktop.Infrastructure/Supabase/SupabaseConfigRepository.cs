@@ -26,13 +26,7 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
 
         var normalizedCode = NormalizeCode(code);
 
-        var existsByCode = await ExistsByColumnAsync("code", normalizedCode, cancellationToken);
-        if (existsByCode)
-        {
-            return true;
-        }
-
-        // Backward-compatible: nhiều môi trường đang dùng id làm khóa nhập ở ô Code.
+        // Theo rule nghiệp vụ hiện tại: ô Code trên UI map trực tiếp tới cột id trong DB.
         return await ExistsByColumnAsync("id", normalizedCode, cancellationToken);
     }
 
@@ -50,8 +44,7 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
 
         var normalizedCode = NormalizeCode(code);
 
-        var row = await GetFirstByColumnAsync("code", normalizedCode, cancellationToken)
-                  ?? await GetFirstByColumnAsync("id", normalizedCode, cancellationToken);
+        var row = await GetFirstByColumnAsync("id", normalizedCode, cancellationToken);
 
         if (row is null)
         {
@@ -63,7 +56,7 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
             : "[]";
 
         return new ConfigRecord(
-            string.IsNullOrWhiteSpace(row.Code) ? normalizedCode : row.Code,
+            string.IsNullOrWhiteSpace(row.Id) ? normalizedCode : row.Id,
             sansJson,
             row.Ip);
     }
@@ -82,13 +75,6 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
 
         var normalizedCode = NormalizeCode(code);
 
-        var updatedByCode = await UpdateByColumnAsync("code", normalizedCode, sansJson, ip, cancellationToken);
-        if (updatedByCode)
-        {
-            return true;
-        }
-
-        // Backward-compatible: fallback update theo id nếu input thực tế là id.
         return await UpdateByColumnAsync("id", normalizedCode, sansJson, ip, cancellationToken);
     }
 
@@ -129,7 +115,7 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
     {
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
-            $"{_supabaseUrl}/rest/v1/configs?select=code,sans,ip&{columnName}=eq.{Uri.EscapeDataString(value)}&limit=1");
+            $"{_supabaseUrl}/rest/v1/configs?select=id,sans,ip&{columnName}=eq.{Uri.EscapeDataString(value)}&limit=1");
 
         AddAuthHeaders(request);
 
@@ -186,6 +172,7 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
 
     private sealed class ConfigRow
     {
+        public string? Id { get; set; }
         public string? Code { get; set; }
         public JsonElement Sans { get; set; }
         public string? Ip { get; set; }
