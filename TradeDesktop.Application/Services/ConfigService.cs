@@ -15,29 +15,47 @@ public sealed class ConfigService(IConfigRepository configRepository) : IConfigS
 {
     public async Task<ConfigLoadResult> LoadByLocalIpAsync(CancellationToken cancellationToken = default)
     {
-        var localIp = GetLocalIpAddress();
-        if (string.IsNullOrWhiteSpace(localIp))
+        var candidateIps = GetLocalIpAddresses();
+        if (candidateIps.Count == 0)
         {
             return ConfigLoadResult.Failed(string.Empty, "Không lấy được IP máy hiện tại.");
         }
 
-        var record = await configRepository.GetByIpAsync(localIp, cancellationToken);
-        if (record is null)
+        foreach (var localIp in candidateIps)
         {
-            return ConfigLoadResult.NotFound(localIp);
+            var record = await configRepository.GetByIpAsync(localIp, cancellationToken);
+            if (record is null)
+            {
+                continue;
+            }
+
+            SansJsonHelper.TryParseSans(record.SansJson, out var mapName1, out var mapName2);
+            return ConfigLoadResult.Success(localIp, record.Code, mapName1, mapName2, record.Point);
         }
 
-        SansJsonHelper.TryParseSans(record.SansJson, out var mapName1, out var mapName2);
-        return ConfigLoadResult.Success(localIp, record.Code, mapName1, mapName2, record.Point);
+        return ConfigLoadResult.NotFound(candidateIps[0]);
     }
 
     public async Task<ConfigSaveResult> SaveByLocalIpAsync(string mapName1, string mapName2, CancellationToken cancellationToken = default)
     {
-        var localIp = GetLocalIpAddress();
-        if (string.IsNullOrWhiteSpace(localIp))
+        var candidateIps = GetLocalIpAddresses();
+        if (candidateIps.Count == 0)
         {
             return ConfigSaveResult.Failed("Không lấy được IP máy hiện tại.");
         }
+
+        string? localIp = null;
+        foreach (var ip in candidateIps)
+        {
+            var existing = await configRepository.GetByIpAsync(ip, cancellationToken);
+            if (existing is not null)
+            {
+                localIp = ip;
+                break;
+            }
+        }
+
+        localIp ??= candidateIps[0];
 
         var sansJson = SansJsonHelper.BuildSans(mapName1, mapName2);
 
@@ -63,22 +81,44 @@ public sealed class ConfigService(IConfigRepository configRepository) : IConfigS
         return ConfigSaveResult.Success(localIp);
     }
 
-    private static string GetLocalIpAddress()
+    private static List<string> GetLocalIpAddresses()
     {
+        var result = new List<string>();
+
         try
         {
             var host = Dns.GetHostEntry(Dns.GetHostName());
-            var ipv4 = host.AddressList.FirstOrDefault(address =>
-                address.AddressFamily == AddressFamily.InterNetwork &&
-                !IPAddress.IsLoopback(address));
+            var privateIps = host.AddressList
+                .Where(address =>
+                    address.AddressFamily == AddressFamily.InterNetwork &&
+                    !IPAddress.IsLoopback(address) &&
+                    !address.ToString().StartsWith("169.254.", StringComparison.Ordinal))
+                .Select(address => address.ToString())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(ip => IsPrivateIp(ip) ? 0 : 1)
+                .ToList();
 
-            return ipv4?.ToString() ?? "127.0.0.1";
+            result.AddRange(privateIps);
         }
         catch
         {
-            return "127.0.0.1";
+            // no-op, fallback below
         }
+
+        if (!result.Contains("127.0.0.1", StringComparer.OrdinalIgnoreCase))
+        {
+            result.Add("127.0.0.1");
+        }
+
+        return result;
     }
+
+    private static bool IsPrivateIp(string ip)
+        => ip.StartsWith("10.", StringComparison.Ordinal) ||
+           ip.StartsWith("192.168.", StringComparison.Ordinal) ||
+           (ip.StartsWith("172.", StringComparison.Ordinal) &&
+            int.TryParse(ip.Split('.')[1], out var secondOctet) &&
+            secondOctet >= 16 && secondOctet <= 31);
 }
 
 public sealed record ConfigLoadResult(

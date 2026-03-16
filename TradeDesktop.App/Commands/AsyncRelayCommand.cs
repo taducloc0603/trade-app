@@ -28,6 +28,11 @@ public sealed class AsyncRelayCommand(Func<Task> execute, Func<bool>? canExecute
             RaiseCanExecuteChanged();
             await _execute();
         }
+        catch (Exception ex)
+        {
+            // Bảo vệ app khỏi crash khi command async phát sinh lỗi không được handle ở tầng gọi.
+            System.Diagnostics.Debug.WriteLine($"[AsyncRelayCommand] Unhandled exception: {ex}");
+        }
         finally
         {
             _isRunning = false;
