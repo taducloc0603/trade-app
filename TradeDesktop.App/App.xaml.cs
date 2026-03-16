@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -20,32 +21,44 @@ public partial class App : System.Windows.Application
     {
         base.OnStartup(e);
 
-        _host = Host.CreateDefaultBuilder()
-            .ConfigureServices(services =>
-            {
-                var configuration = new ConfigurationBuilder()
-                    .AddInMemoryCollection(LoadDotEnv())
-                    .AddEnvironmentVariables()
-                    .Build();
+        DispatcherUnhandledException += OnDispatcherUnhandledException;
+        AppDomain.CurrentDomain.UnhandledException += OnCurrentDomainUnhandledException;
+        TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
 
-                services
-                    .AddApplication()
-                    .AddInfrastructure(configuration);
+        try
+        {
+            _host = Host.CreateDefaultBuilder()
+                .ConfigureServices(services =>
+                {
+                    var configuration = new ConfigurationBuilder()
+                        .AddInMemoryCollection(LoadDotEnv())
+                        .AddEnvironmentVariables()
+                        .Build();
 
-                services.AddSingleton<RuntimeConfigState>();
-                services.AddSingleton<IRuntimeConfigProvider>(sp => sp.GetRequiredService<RuntimeConfigState>());
-                services.AddSingleton<IRuntimeConfigStateUpdater>(sp => sp.GetRequiredService<RuntimeConfigState>());
-                services.AddSingleton<DashboardViewModel>();
-                services.AddTransient<ConfigViewModel>();
-                services.AddTransient<ConfigWindow>();
-                services.AddSingleton<MainWindow>();
-            })
-            .Build();
+                    services
+                        .AddApplication()
+                        .AddInfrastructure(configuration);
 
-        await _host.StartAsync();
+                    services.AddSingleton<RuntimeConfigState>();
+                    services.AddSingleton<IRuntimeConfigProvider>(sp => sp.GetRequiredService<RuntimeConfigState>());
+                    services.AddSingleton<IRuntimeConfigStateUpdater>(sp => sp.GetRequiredService<RuntimeConfigState>());
+                    services.AddSingleton<DashboardViewModel>();
+                    services.AddTransient<ConfigViewModel>();
+                    services.AddTransient<ConfigWindow>();
+                    services.AddSingleton<MainWindow>();
+                })
+                .Build();
 
-        var mainWindow = _host.Services.GetRequiredService<MainWindow>();
-        mainWindow.Show();
+            await _host.StartAsync();
+
+            var mainWindow = _host.Services.GetRequiredService<MainWindow>();
+            mainWindow.Show();
+        }
+        catch (Exception ex)
+        {
+            HandleFatalException("Startup", ex);
+            Shutdown(-1);
+        }
     }
 
     protected override async void OnExit(ExitEventArgs e)
@@ -56,7 +69,68 @@ public partial class App : System.Windows.Application
             _host.Dispose();
         }
 
+        DispatcherUnhandledException -= OnDispatcherUnhandledException;
+        AppDomain.CurrentDomain.UnhandledException -= OnCurrentDomainUnhandledException;
+        TaskScheduler.UnobservedTaskException -= OnUnobservedTaskException;
+
         base.OnExit(e);
+    }
+
+    private void OnDispatcherUnhandledException(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
+    {
+        HandleFatalException("UI Thread", e.Exception);
+        e.Handled = true;
+        Shutdown(-1);
+    }
+
+    private void OnCurrentDomainUnhandledException(object? sender, UnhandledExceptionEventArgs e)
+    {
+        var exception = e.ExceptionObject as Exception ?? new Exception("Unknown unhandled exception.");
+        HandleFatalException("AppDomain", exception);
+    }
+
+    private void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
+    {
+        HandleFatalException("Task", e.Exception);
+        e.SetObserved();
+    }
+
+    private static void HandleFatalException(string source, Exception exception)
+    {
+        try
+        {
+            var path = WriteFatalLog(source, exception);
+            MessageBox.Show(
+                $"Ứng dụng gặp lỗi nghiêm trọng ({source}).\n\nChi tiết đã được ghi vào:\n{path}\n\n{exception.Message}",
+                "TradeDesktop - Fatal Error",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+        catch
+        {
+            // Ignore secondary failures while reporting errors.
+        }
+    }
+
+    private static string WriteFatalLog(string source, Exception exception)
+    {
+        var baseDir = Path.Combine(Path.GetTempPath(), "TradeDesktop.App");
+        Directory.CreateDirectory(baseDir);
+
+        var path = Path.Combine(baseDir, "startup-error.log");
+        var content = new StringBuilder()
+            .AppendLine("=== TradeDesktop Fatal Error ===")
+            .AppendLine($"Time (UTC): {DateTime.UtcNow:O}")
+            .AppendLine($"Source: {source}")
+            .AppendLine($"Machine: {Environment.MachineName}")
+            .AppendLine($"OS: {Environment.OSVersion}")
+            .AppendLine($"Runtime: {Environment.Version}")
+            .AppendLine()
+            .AppendLine(exception.ToString())
+            .ToString();
+
+        File.WriteAllText(path, content, Encoding.UTF8);
+        return path;
     }
 
     private static IDictionary<string, string?> LoadDotEnv()
