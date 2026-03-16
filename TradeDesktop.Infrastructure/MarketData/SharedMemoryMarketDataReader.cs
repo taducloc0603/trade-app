@@ -250,7 +250,7 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
 
         lock (state.Sync)
         {
-            decimal tps = 0;
+            float tps = 0;
 
             if (state.PreviousQuoteSeq.HasValue)
             {
@@ -275,7 +275,7 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
                 var tickDelta = last.CumulativeTicks - first.CumulativeTicks;
                 if (dtMs > 0 && tickDelta >= 0)
                 {
-                    tps = (decimal)(tickDelta * 1000d / dtMs);
+                    tps = (float)(tickDelta * 1000d / dtMs);
                 }
             }
 
@@ -443,7 +443,7 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
             var ask = GetDecimal(obj, "ask", "ask_price", "best_ask");
             var spread = GetDecimal(obj, "spread", "sp") ?? CalculateSpread(bid, ask);
             var latencyMs = GetDecimal(obj, "latencyMs", "latency_ms", "latency");
-            var tps = GetDecimal(obj, "tps", "ticks_per_second");
+            var tps = GetFloat(obj, "tps", "ticks_per_second");
             var time = GetString(obj, "time", "timestamp", "ts");
             var maxLatMs = GetDecimal(obj, "maxLatMs", "max_latency_ms", "max_latency");
             var avgLatMs = GetDecimal(obj, "avgLatMs", "avg_latency_ms", "avg_latency");
@@ -481,7 +481,7 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
         decimal? ask = TryGetNumber(raw, 8);
         decimal? spread = TryGetNumber(raw, 16) ?? CalculateSpread(bid, ask);
         decimal? latency = TryGetNumber(raw, 24);
-        decimal? tps = TryGetNumber(raw, 32);
+        float? tps = TryGetFloat(raw, 32);
 
         if (!bid.HasValue && !ask.HasValue)
         {
@@ -521,6 +521,29 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
             if (!float.IsNaN(f) && !float.IsInfinity(f) && Math.Abs(f) < 1_000_000_000)
             {
                 return (decimal)f;
+            }
+        }
+
+        return null;
+    }
+
+    private static float? TryGetFloat(byte[] raw, int offset)
+    {
+        if (offset + sizeof(double) <= raw.Length)
+        {
+            var d = BitConverter.ToDouble(raw, offset);
+            if (!double.IsNaN(d) && !double.IsInfinity(d) && Math.Abs(d) < 1_000_000_000)
+            {
+                return (float)d;
+            }
+        }
+
+        if (offset + sizeof(float) <= raw.Length)
+        {
+            var f = BitConverter.ToSingle(raw, offset);
+            if (!float.IsNaN(f) && !float.IsInfinity(f) && Math.Abs(f) < 1_000_000_000)
+            {
+                return f;
             }
         }
 
@@ -578,6 +601,30 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
 
             if (element.ValueKind == JsonValueKind.String &&
                 decimal.TryParse(element.GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var parsed))
+            {
+                return parsed;
+            }
+        }
+
+        return null;
+    }
+
+    private static float? GetFloat(JsonElement root, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            if (!root.TryGetProperty(name, out var element))
+            {
+                continue;
+            }
+
+            if (element.ValueKind == JsonValueKind.Number && element.TryGetSingle(out var f))
+            {
+                return f;
+            }
+
+            if (element.ValueKind == JsonValueKind.String &&
+                float.TryParse(element.GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var parsed))
             {
                 return parsed;
             }

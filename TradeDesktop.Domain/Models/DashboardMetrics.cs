@@ -6,7 +6,7 @@ public sealed record ExchangeDashboardMetrics(
     decimal? Ask,
     decimal? Spread,
     decimal? LatencyMs,
-    decimal? Tps,
+    float? Tps,
     string Time,
     decimal? MaxLatMs,
     decimal? AvgLatMs,
@@ -16,8 +16,8 @@ public sealed record ExchangeDashboardMetrics(
 public sealed record DashboardMetrics(
     ExchangeDashboardMetrics ExchangeA,
     ExchangeDashboardMetrics ExchangeB,
-    decimal? GapBuy,
-    decimal? GapSell,
+    int? GapBuy,
+    int? GapSell,
     bool IsConnectedA,
     bool IsConnectedB,
     DateTime TimestampUtc);

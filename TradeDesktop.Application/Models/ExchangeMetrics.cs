@@ -6,7 +6,7 @@ public sealed record ExchangeMetrics(
     decimal? Ask,
     decimal? Spread,
     decimal? LatencyMs,
-    decimal? Tps,
+    float? Tps,
     string? Time,
     decimal? MaxLatMs,
     decimal? AvgLatMs,

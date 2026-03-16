@@ -17,6 +17,8 @@ public sealed class DashboardViewModel : ObservableObject
     private readonly IDashboardMetricsMapper _dashboardMetricsMapper;
 
     private string _runtimeSummary = string.Empty;
+    private string _dbInlineData = string.Empty;
+    private bool _isDbInlineDataVisible;
     private string _exchangeAHeader = "Sàn A";
     private string _exchangeBHeader = "Sàn B";
     private string _gapBuy = "-";
@@ -78,6 +80,18 @@ public sealed class DashboardViewModel : ObservableObject
     {
         get => _runtimeSummary;
         private set => SetProperty(ref _runtimeSummary, value);
+    }
+
+    public string DbInlineData
+    {
+        get => _dbInlineData;
+        private set => SetProperty(ref _dbInlineData, value);
+    }
+
+    public bool IsDbInlineDataVisible
+    {
+        get => _isDbInlineDataVisible;
+        private set => SetProperty(ref _isDbInlineDataVisible, value);
     }
 
     public string ExchangeAHeader
@@ -159,14 +173,39 @@ public sealed class DashboardViewModel : ObservableObject
 
     private async Task InitializeRuntimeConfigAsync(IConfigService configService)
     {
+        const string InlineDbIp = "166.88.167.77";
         LoadingMessage = "Đang tải cấu hình runtime...";
 
         var result = await configService.LoadByLocalIpAsync();
         if (result.IsSuccess && result.Exists)
         {
             _runtimeConfigState.Update(result.LocalIp, result.Code, result.MapName1, result.MapName2, result.Point);
+
+            if (string.Equals(result.LocalIp, InlineDbIp, StringComparison.OrdinalIgnoreCase))
+            {
+                DbInlineData =
+                    $"[DB] id={result.ConfigId} | ip={result.LocalIp} | code={result.Code} | point={result.Point} | sans={result.SansJson}";
+                IsDbInlineDataVisible = true;
+            }
+            else
+            {
+                DbInlineData = string.Empty;
+                IsDbInlineDataVisible = false;
+            }
+
             LoadingMessage = "Đang chờ dữ liệu shared memory...";
             return;
+        }
+
+        if (string.Equals(result.LocalIp, InlineDbIp, StringComparison.OrdinalIgnoreCase))
+        {
+            DbInlineData = "[DB] Không lấy được dữ liệu config từ DB cho IP 166.88.167.77";
+            IsDbInlineDataVisible = true;
+        }
+        else
+        {
+            DbInlineData = string.Empty;
+            IsDbInlineDataVisible = false;
         }
 
         var warning = string.IsNullOrWhiteSpace(result.LocalIp)
@@ -213,32 +252,47 @@ public sealed class DashboardViewModel : ObservableObject
     private void BindDashboardMetrics(DashboardMetrics metrics)
     {
         ExchangeASymbol = FormatTextOrDash(metrics.ExchangeA.Symbol);
-        ExchangeABid = FormatNumberOrDash(metrics.ExchangeA.Bid);
-        ExchangeAAsk = FormatNumberOrDash(metrics.ExchangeA.Ask);
-        ExchangeASpread = FormatNumberOrDash(metrics.ExchangeA.Spread);
+        ExchangeABid = FormatTrimmedNumberOrDash(metrics.ExchangeA.Bid);
+        ExchangeAAsk = FormatTrimmedNumberOrDash(metrics.ExchangeA.Ask);
+        ExchangeASpread = FormatTrimmedNumberOrDash(metrics.ExchangeA.Spread);
         ExchangeALatencyMs = FormatNumberOrDash(metrics.ExchangeA.LatencyMs, 0);
-        ExchangeATps = FormatNumberOrDash(metrics.ExchangeA.Tps, 0);
+        ExchangeATps = FormatTrimmedNumberOrDash(metrics.ExchangeA.Tps, 5);
         ExchangeATime = FormatTextOrDash(metrics.ExchangeA.Time);
         ExchangeAMaxLatMs = FormatNumberOrDash(metrics.ExchangeA.MaxLatMs, 0);
         ExchangeAAvgLatMs = FormatNumberOrDash(metrics.ExchangeA.AvgLatMs, 0);
 
         ExchangeBSymbol = FormatTextOrDash(metrics.ExchangeB.Symbol);
-        ExchangeBBid = FormatNumberOrDash(metrics.ExchangeB.Bid);
-        ExchangeBAsk = FormatNumberOrDash(metrics.ExchangeB.Ask);
-        ExchangeBSpread = FormatNumberOrDash(metrics.ExchangeB.Spread);
+        ExchangeBBid = FormatTrimmedNumberOrDash(metrics.ExchangeB.Bid);
+        ExchangeBAsk = FormatTrimmedNumberOrDash(metrics.ExchangeB.Ask);
+        ExchangeBSpread = FormatTrimmedNumberOrDash(metrics.ExchangeB.Spread);
         ExchangeBLatencyMs = FormatNumberOrDash(metrics.ExchangeB.LatencyMs, 0);
-        ExchangeBTps = FormatNumberOrDash(metrics.ExchangeB.Tps, 0);
+        ExchangeBTps = FormatTrimmedNumberOrDash(metrics.ExchangeB.Tps, 5);
         ExchangeBTime = FormatTextOrDash(metrics.ExchangeB.Time);
         ExchangeBMaxLatMs = FormatNumberOrDash(metrics.ExchangeB.MaxLatMs, 0);
         ExchangeBAvgLatMs = FormatNumberOrDash(metrics.ExchangeB.AvgLatMs, 0);
 
-        GapBuy = FormatNumberOrDash(metrics.GapBuy);
-        GapSell = FormatNumberOrDash(metrics.GapSell);
+        GapBuy = FormatIntegerOrDash(metrics.GapBuy);
+        GapSell = FormatIntegerOrDash(metrics.GapSell);
     }
 
     private static string FormatNumberOrDash(decimal? value, int decimalPlaces = 5)
         => value.HasValue
             ? value.Value.ToString($"F{decimalPlaces}", CultureInfo.InvariantCulture)
+            : "-";
+
+    private static string FormatTrimmedNumberOrDash(decimal? value, int maxDecimalPlaces = 5)
+        => value.HasValue
+            ? value.Value.ToString($"0.{new string('#', maxDecimalPlaces)}", CultureInfo.InvariantCulture)
+            : "-";
+
+    private static string FormatTrimmedNumberOrDash(float? value, int maxDecimalPlaces = 5)
+        => value.HasValue
+            ? value.Value.ToString($"0.{new string('#', maxDecimalPlaces)}", CultureInfo.InvariantCulture)
+            : "-";
+
+    private static string FormatIntegerOrDash(int? value)
+        => value.HasValue
+            ? value.Value.ToString(CultureInfo.InvariantCulture)
             : "-";
 
     private static string FormatTextOrDash(string? value)

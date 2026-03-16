@@ -5,28 +5,30 @@ namespace TradeDesktop.Application.Services;
 
 public interface IGapCalculator
 {
-    (decimal? GapBuy, decimal? GapSell) Calculate(ExchangeMetrics sanA, ExchangeMetrics sanB);
+    (int? GapBuy, int? GapSell) Calculate(ExchangeMetrics sanA, ExchangeMetrics sanB);
 }
 
 public sealed class GapCalculator(IRuntimeConfigProvider runtimeConfigProvider) : IGapCalculator
 {
-    public (decimal? GapBuy, decimal? GapSell) Calculate(ExchangeMetrics sanA, ExchangeMetrics sanB)
+    public (int? GapBuy, int? GapSell) Calculate(ExchangeMetrics sanA, ExchangeMetrics sanB)
     {
         var pointMultiplier = runtimeConfigProvider.CurrentPoint > 0
             ? runtimeConfigProvider.CurrentPoint
             : 1;
 
-        decimal? gapBuy = null;
-        decimal? gapSell = null;
+        int? gapBuy = null;
+        int? gapSell = null;
 
         if (sanB.Bid.HasValue && sanA.Ask.HasValue)
         {
-            gapBuy = (sanB.Bid.Value - sanA.Ask.Value) * pointMultiplier;
+            var value = (sanB.Bid.Value - sanA.Ask.Value) * pointMultiplier;
+            gapBuy = decimal.ToInt32(decimal.Round(value, 0, MidpointRounding.AwayFromZero));
         }
 
         if (sanA.Bid.HasValue && sanB.Ask.HasValue)
         {
-            gapSell = (sanA.Bid.Value - sanB.Ask.Value) * pointMultiplier;
+            var value = (sanA.Bid.Value - sanB.Ask.Value) * pointMultiplier;
+            gapSell = decimal.ToInt32(decimal.Round(value, 0, MidpointRounding.AwayFromZero));
         }
 
         return (gapBuy, gapSell);
