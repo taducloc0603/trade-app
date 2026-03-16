@@ -11,6 +11,10 @@
         MinWidth="1100"
         WindowStartupLocation="CenterScreen"
         Background="#F4F6FA">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+    </Window.Resources>
+
     <Grid Margin="20">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -186,6 +190,25 @@
                     </StackPanel>
                 </Border>
             </Grid>
+        </Border>
+
+        <Border Grid.RowSpan="5"
+                CornerRadius="12"
+                Background="#99000000"
+                Visibility="{Binding IsLoading, Converter={StaticResource BoolToVisibilityConverter}}">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                <Border Background="White" CornerRadius="10" Padding="20" BorderBrush="#D0D5DD" BorderThickness="1">
+                    <StackPanel Width="280">
+                        <TextBlock Text="Đang tải..." FontWeight="SemiBold" FontSize="16" HorizontalAlignment="Center" />
+                        <ProgressBar Margin="0,12,0,0" IsIndeterminate="True" Height="6" />
+                        <TextBlock Margin="0,12,0,0"
+                                   Text="{Binding LoadingMessage}"
+                                   Foreground="#475467"
+                                   TextAlignment="Center"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
         </Border>
     </Grid>
 </Window>

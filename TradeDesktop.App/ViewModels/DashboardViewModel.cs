@@ -41,6 +41,8 @@ public sealed class DashboardViewModel : ObservableObject
     private string _exchangeBTime = "-";
     private string _exchangeBMaxLatMs = "-";
     private string _exchangeBAvgLatMs = "-";
+    private bool _isLoading = true;
+    private string _loadingMessage = "Đang chờ dữ liệu shared memory...";
 
     public DashboardViewModel(
         IServiceProvider serviceProvider,
@@ -121,6 +123,8 @@ public sealed class DashboardViewModel : ObservableObject
     public string ExchangeBTime { get => _exchangeBTime; private set => SetProperty(ref _exchangeBTime, value); }
     public string ExchangeBMaxLatMs { get => _exchangeBMaxLatMs; private set => SetProperty(ref _exchangeBMaxLatMs, value); }
     public string ExchangeBAvgLatMs { get => _exchangeBAvgLatMs; private set => SetProperty(ref _exchangeBAvgLatMs, value); }
+    public bool IsLoading { get => _isLoading; private set => SetProperty(ref _isLoading, value); }
+    public string LoadingMessage { get => _loadingMessage; private set => SetProperty(ref _loadingMessage, value); }
 
     public AsyncRelayCommand OpenConfigCommand { get; }
     public AsyncRelayCommand ClearLogsCommand { get; }
@@ -155,10 +159,13 @@ public sealed class DashboardViewModel : ObservableObject
 
     private async Task InitializeRuntimeConfigAsync(IConfigService configService)
     {
+        LoadingMessage = "Đang tải cấu hình runtime...";
+
         var result = await configService.LoadByLocalIpAsync();
         if (result.IsSuccess && result.Exists)
         {
             _runtimeConfigState.Update(result.LocalIp, result.Code, result.MapName1, result.MapName2, result.Point);
+            LoadingMessage = "Đang chờ dữ liệu shared memory...";
             return;
         }
 
@@ -178,6 +185,8 @@ public sealed class DashboardViewModel : ObservableObject
                     _runtimeConfigState.MapName2,
                     _runtimeConfigState.CurrentPoint);
             }
+
+            LoadingMessage = "Đang chờ dữ liệu shared memory...";
         });
     }
 
@@ -187,6 +196,7 @@ public sealed class DashboardViewModel : ObservableObject
         {
             var metrics = _dashboardMetricsMapper.Map(snapshot);
             _runtimeConfigState.UpdateDashboardMetrics(metrics);
+            IsLoading = false;
 
             BindDashboardMetrics(metrics);
 
