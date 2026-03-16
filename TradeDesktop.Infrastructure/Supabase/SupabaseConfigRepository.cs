@@ -27,7 +27,8 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
 
         var normalizedIp = NormalizeCode(ip);
 
-        var row = await GetFirstByColumnAsync("ip", normalizedIp, cancellationToken);
+        var row = await GetFirstByColumnAsync("ip", normalizedIp, cancellationToken)
+                  ?? await GetFirstByColumnLikeAsync("ip", normalizedIp, cancellationToken);
 
         if (row is null)
         {
@@ -40,7 +41,9 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
 
         return new ConfigRecord(
             Id: string.IsNullOrWhiteSpace(row.Id) ? string.Empty : row.Id,
-            Code: string.IsNullOrWhiteSpace(row.Code) ? (row.Id ?? string.Empty) : row.Code,
+            Code: !string.IsNullOrWhiteSpace(row.Code)
+                ? row.Code
+                : (!string.IsNullOrWhiteSpace(row.GroupName) ? row.GroupName : (row.Id ?? string.Empty)),
             SansJson: sansJson,
             Ip: row.Ip,
             Point: row.Point > 0 ? row.Point : 1);
@@ -79,7 +82,7 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
     {
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
-            $"{_supabaseUrl}/rest/v1/configs?select=id,code,sans,ip,point&{columnName}=eq.{Uri.EscapeDataString(value)}&limit=1");
+            $"{_supabaseUrl}/rest/v1/configs?select=*&{columnName}=eq.{Uri.EscapeDataString(value)}&limit=1");
 
         AddAuthHeaders(request);
 
@@ -106,6 +109,7 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
 
         first.TryGetProperty("id", out var idElement);
         first.TryGetProperty("code", out var codeElement);
+        first.TryGetProperty("group_name", out var groupNameElement);
         first.TryGetProperty("sans", out var sansElement);
         first.TryGetProperty("point", out var pointElement);
 
@@ -120,7 +124,62 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
         {
             Id = idElement.ValueKind == JsonValueKind.String ? idElement.GetString() : null,
             Code = codeElement.ValueKind == JsonValueKind.String ? codeElement.GetString() : null,
+            GroupName = groupNameElement.ValueKind == JsonValueKind.String ? groupNameElement.GetString() : null,
             // Clone để JsonElement không còn phụ thuộc JsonDocument đã dispose.
+            Sans = sansElement.ValueKind is JsonValueKind.Undefined
+                ? default
+                : sansElement.Clone(),
+            Ip = ipElement.ValueKind == JsonValueKind.String ? ipElement.GetString() : null,
+            Point = pointElement.ValueKind == JsonValueKind.Number && pointElement.TryGetInt32(out var p) ? p : 1
+        };
+    }
+
+    private async Task<ConfigRow?> GetFirstByColumnLikeAsync(string columnName, string value, CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"{_supabaseUrl}/rest/v1/configs?select=*&{columnName}=ilike.*{Uri.EscapeDataString(value)}*&limit=1");
+
+        AddAuthHeaders(request);
+
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
+            throw new HttpRequestException(
+                $"Supabase GetFirstByColumnLikeAsync thất bại. Column={columnName}, Status={(int)response.StatusCode}, Body={errorBody}");
+        }
+
+        var json = await response.Content.ReadAsStringAsync(cancellationToken);
+        using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(json) ? "[]" : json);
+        if (doc.RootElement.ValueKind != JsonValueKind.Array || doc.RootElement.GetArrayLength() == 0)
+        {
+            return null;
+        }
+
+        var first = doc.RootElement[0];
+        if (first.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        first.TryGetProperty("id", out var idElement);
+        first.TryGetProperty("code", out var codeElement);
+        first.TryGetProperty("group_name", out var groupNameElement);
+        first.TryGetProperty("sans", out var sansElement);
+        first.TryGetProperty("point", out var pointElement);
+
+        var hasIp = first.TryGetProperty("ip", out var ipElement);
+        if (!hasIp)
+        {
+            first.TryGetProperty("Ip", out ipElement);
+        }
+
+        return new ConfigRow
+        {
+            Id = idElement.ValueKind == JsonValueKind.String ? idElement.GetString() : null,
+            Code = codeElement.ValueKind == JsonValueKind.String ? codeElement.GetString() : null,
+            GroupName = groupNameElement.ValueKind == JsonValueKind.String ? groupNameElement.GetString() : null,
             Sans = sansElement.ValueKind is JsonValueKind.Undefined
                 ? default
                 : sansElement.Clone(),
@@ -182,6 +241,9 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
 
         [JsonPropertyName("code")]
         public string? Code { get; set; }
+
+        [JsonPropertyName("group_name")]
+        public string? GroupName { get; set; }
 
         [JsonPropertyName("ip")]
         public string? Ip { get; set; }

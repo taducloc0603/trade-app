@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Sockets;
+using System.Net.Http;
 using TradeDesktop.Application.Abstractions;
 using TradeDesktop.Application.Helpers;
 
@@ -13,6 +14,11 @@ public interface IConfigService
 
 public sealed class ConfigService(IConfigRepository configRepository) : IConfigService
 {
+    private static readonly HttpClient PublicIpHttpClient = new()
+    {
+        Timeout = TimeSpan.FromSeconds(2)
+    };
+
     public async Task<ConfigLoadResult> LoadByLocalIpAsync(CancellationToken cancellationToken = default)
     {
         var candidateIps = GetLocalIpAddresses();
@@ -110,7 +116,36 @@ public sealed class ConfigService(IConfigRepository configRepository) : IConfigS
             result.Add("127.0.0.1");
         }
 
+        var publicIp = TryGetPublicIpAddress();
+        if (!string.IsNullOrWhiteSpace(publicIp) && !result.Contains(publicIp, StringComparer.OrdinalIgnoreCase))
+        {
+            // Public IP hữu ích khi DB đang lưu IP WAN thay vì IP LAN.
+            result.Insert(0, publicIp);
+        }
+
         return result;
+    }
+
+    private static string? TryGetPublicIpAddress()
+    {
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, "https://api.ipify.org");
+            using var response = PublicIpHttpClient.Send(request);
+            if (!response.IsSuccessStatusCode)
+            {
+                return null;
+            }
+
+            var ip = response.Content.ReadAsStringAsync().GetAwaiter().GetResult().Trim();
+            return IPAddress.TryParse(ip, out var parsed) && parsed.AddressFamily == AddressFamily.InterNetwork
+                ? ip
+                : null;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static bool IsPrivateIp(string ip)
