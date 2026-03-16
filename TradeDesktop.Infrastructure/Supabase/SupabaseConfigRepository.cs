@@ -41,9 +41,7 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
 
         return new ConfigRecord(
             Id: string.IsNullOrWhiteSpace(row.Id) ? string.Empty : row.Id,
-            Code: !string.IsNullOrWhiteSpace(row.Code)
-                ? row.Code
-                : (!string.IsNullOrWhiteSpace(row.GroupName) ? row.GroupName : (row.Id ?? string.Empty)),
+            Code: string.Empty,
             SansJson: sansJson,
             Ip: row.Ip,
             Point: row.Point > 0 ? row.Point : 1);
@@ -82,7 +80,7 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
     {
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
-            $"{_supabaseUrl}/rest/v1/configs?select=*&{columnName}=eq.{Uri.EscapeDataString(value)}&limit=1");
+            $"{_supabaseUrl}/rest/v1/configs?select=id,sans,ip,point&{columnName}=eq.{Uri.EscapeDataString(value)}&limit=1");
 
         AddAuthHeaders(request);
 
@@ -108,8 +106,6 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
         }
 
         first.TryGetProperty("id", out var idElement);
-        first.TryGetProperty("code", out var codeElement);
-        first.TryGetProperty("group_name", out var groupNameElement);
         first.TryGetProperty("sans", out var sansElement);
         first.TryGetProperty("point", out var pointElement);
 
@@ -123,8 +119,6 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
         return new ConfigRow
         {
             Id = idElement.ValueKind == JsonValueKind.String ? idElement.GetString() : null,
-            Code = codeElement.ValueKind == JsonValueKind.String ? codeElement.GetString() : null,
-            GroupName = groupNameElement.ValueKind == JsonValueKind.String ? groupNameElement.GetString() : null,
             // Clone để JsonElement không còn phụ thuộc JsonDocument đã dispose.
             Sans = sansElement.ValueKind is JsonValueKind.Undefined
                 ? default
@@ -138,7 +132,7 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
     {
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
-            $"{_supabaseUrl}/rest/v1/configs?select=*&{columnName}=ilike.*{Uri.EscapeDataString(value)}*&limit=1");
+            $"{_supabaseUrl}/rest/v1/configs?select=id,sans,ip,point&{columnName}=ilike.*{Uri.EscapeDataString(value)}*&limit=1");
 
         AddAuthHeaders(request);
 
@@ -164,8 +158,6 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
         }
 
         first.TryGetProperty("id", out var idElement);
-        first.TryGetProperty("code", out var codeElement);
-        first.TryGetProperty("group_name", out var groupNameElement);
         first.TryGetProperty("sans", out var sansElement);
         first.TryGetProperty("point", out var pointElement);
 
@@ -178,8 +170,6 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
         return new ConfigRow
         {
             Id = idElement.ValueKind == JsonValueKind.String ? idElement.GetString() : null,
-            Code = codeElement.ValueKind == JsonValueKind.String ? codeElement.GetString() : null,
-            GroupName = groupNameElement.ValueKind == JsonValueKind.String ? groupNameElement.GetString() : null,
             Sans = sansElement.ValueKind is JsonValueKind.Undefined
                 ? default
                 : sansElement.Clone(),
@@ -238,12 +228,6 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
 
         [JsonPropertyName("sans")]
         public JsonElement Sans { get; set; }
-
-        [JsonPropertyName("code")]
-        public string? Code { get; set; }
-
-        [JsonPropertyName("group_name")]
-        public string? GroupName { get; set; }
 
         [JsonPropertyName("ip")]
         public string? Ip { get; set; }
