@@ -27,7 +27,9 @@ public sealed class DashboardMetricsMapper(IGapCalculator gapCalculator) : IDash
     {
         // TODO: Khi chốt schema SHM chính thức, map Time/Latency/TPS theo field name cố định.
         var spread = source.Spread ?? CalculateSpread(source.Bid, source.Ask);
-        var localTime = source.Time ?? timestampUtc.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture);
+        var localTime = string.IsNullOrWhiteSpace(source.Time)
+            ? timestampUtc.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture)
+            : source.Time;
 
         return new ExchangeDashboardMetrics(
             Symbol: string.IsNullOrWhiteSpace(source.Symbol) ? "-" : source.Symbol,

@@ -150,7 +150,7 @@ public sealed class DashboardViewModel : ObservableObject
             : $"Sàn B ({_runtimeConfigState.MapName2})";
 
         RuntimeSummary =
-            $"IP: {_runtimeConfigState.CurrentIp}  |  Code: {_runtimeConfigState.CurrentCode}  |  Map 1: {_runtimeConfigState.CurrentMapName1}  |  Map 2: {_runtimeConfigState.CurrentMapName2}";
+            $"IP: {_runtimeConfigState.CurrentIp}  |  Code: {_runtimeConfigState.CurrentCode}  |  Point: {_runtimeConfigState.CurrentPoint}  |  Map 1: {_runtimeConfigState.CurrentMapName1}  |  Map 2: {_runtimeConfigState.CurrentMapName2}";
     }
 
     private async Task InitializeRuntimeConfigAsync(IConfigService configService)
@@ -158,7 +158,7 @@ public sealed class DashboardViewModel : ObservableObject
         var result = await configService.LoadByLocalIpAsync();
         if (result.IsSuccess && result.Exists)
         {
-            _runtimeConfigState.Update(result.LocalIp, result.Code, result.MapName1, result.MapName2);
+            _runtimeConfigState.Update(result.LocalIp, result.Code, result.MapName1, result.MapName2, result.Point);
             return;
         }
 
@@ -171,7 +171,12 @@ public sealed class DashboardViewModel : ObservableObject
             LogItems.Insert(0, warning);
             if (!string.IsNullOrWhiteSpace(result.LocalIp))
             {
-                _runtimeConfigState.Update(result.LocalIp, _runtimeConfigState.CurrentCode, _runtimeConfigState.MapName1, _runtimeConfigState.MapName2);
+                _runtimeConfigState.Update(
+                    result.LocalIp,
+                    _runtimeConfigState.CurrentCode,
+                    _runtimeConfigState.MapName1,
+                    _runtimeConfigState.MapName2,
+                    _runtimeConfigState.CurrentPoint);
             }
         });
     }

@@ -7,6 +7,7 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
 {
     public string CurrentIp { get; private set; } = string.Empty;
     public string CurrentCode { get; private set; } = string.Empty;
+    public int CurrentPoint { get; private set; }
     public string CurrentMapName1 { get; private set; } = string.Empty;
     public string CurrentMapName2 { get; private set; } = string.Empty;
     public DashboardMetrics? CurrentDashboardMetrics { get; private set; }
@@ -18,17 +19,21 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
 
     public event EventHandler? StateChanged;
 
-    public void Update(string localIp, string code, string mapName1, string mapName2)
+    public void Update(string localIp, string code, string mapName1, string mapName2, int point)
     {
         CurrentIp = (localIp ?? string.Empty).Trim();
         CurrentCode = (code ?? string.Empty).Trim();
+        CurrentPoint = point > 0 ? point : 1;
         CurrentMapName1 = (mapName1 ?? string.Empty).Trim();
         CurrentMapName2 = (mapName2 ?? string.Empty).Trim();
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
+    public void Update(string localIp, string code, string mapName1, string mapName2)
+        => Update(localIp, code, mapName1, mapName2, CurrentPoint);
+
     public void Update(string localIp, string mapName1, string mapName2)
-        => Update(localIp, CurrentCode, mapName1, mapName2);
+        => Update(localIp, CurrentCode, mapName1, mapName2, CurrentPoint);
 
     public void UpdateDashboardMetrics(DashboardMetrics snapshot)
     {

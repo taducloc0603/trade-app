@@ -28,7 +28,7 @@ public sealed class ConfigService(IConfigRepository configRepository) : IConfigS
         }
 
         SansJsonHelper.TryParseSans(record.SansJson, out var mapName1, out var mapName2);
-        return ConfigLoadResult.Success(localIp, record.Code, mapName1, mapName2);
+        return ConfigLoadResult.Success(localIp, record.Code, mapName1, mapName2, record.Point);
     }
 
     public async Task<ConfigSaveResult> SaveByLocalIpAsync(string mapName1, string mapName2, CancellationToken cancellationToken = default)
@@ -86,18 +86,19 @@ public sealed record ConfigLoadResult(
     bool Exists,
     string LocalIp,
     string Code,
+    int Point,
     string MapName1,
     string MapName2,
     string? Error)
 {
-    public static ConfigLoadResult Success(string localIp, string code, string mapName1, string mapName2) =>
-        new(true, true, localIp, code, mapName1, mapName2, null);
+    public static ConfigLoadResult Success(string localIp, string code, string mapName1, string mapName2, int point) =>
+        new(true, true, localIp, code, point > 0 ? point : 1, mapName1, mapName2, null);
 
     public static ConfigLoadResult NotFound(string localIp) =>
-        new(false, false, localIp, string.Empty, string.Empty, string.Empty, null);
+        new(false, false, localIp, string.Empty, 1, string.Empty, string.Empty, null);
 
     public static ConfigLoadResult Failed(string localIp, string error) =>
-        new(false, true, localIp, string.Empty, string.Empty, string.Empty, error);
+        new(false, true, localIp, string.Empty, 1, string.Empty, string.Empty, error);
 }
 
 public sealed record ConfigSaveResult(bool IsSuccess, string? LocalIp, string? Error)

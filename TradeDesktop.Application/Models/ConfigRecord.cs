@@ -4,4 +4,5 @@ public sealed record ConfigRecord(
     string Id,
     string Code,
     string SansJson,
-    string? Ip);
+    string? Ip,
+    int Point);

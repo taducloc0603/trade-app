@@ -222,6 +222,7 @@ public sealed class ConfigViewModel : ObservableObject
 
             MapName1 = loadResult.MapName1;
             MapName2 = loadResult.MapName2;
+            _runtimeConfigState.Update(loadResult.LocalIp, loadResult.Code, loadResult.MapName1, loadResult.MapName2, loadResult.Point);
             IsExistingRecordLoaded = true;
             AreMapNamesEnabled = true;
 
@@ -291,7 +292,7 @@ public sealed class ConfigViewModel : ObservableObject
             }
 
             LoadStatus = "✔ Lưu thành công";
-            _runtimeConfigState.Update(LocalIp, Code, MapName1, MapName2);
+            _runtimeConfigState.Update(LocalIp, Code, MapName1, MapName2, _runtimeConfigState.CurrentPoint);
             RequestClose?.Invoke(true);
         }
         catch (Exception ex)

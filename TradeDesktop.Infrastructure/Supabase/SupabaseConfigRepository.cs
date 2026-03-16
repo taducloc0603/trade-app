@@ -42,7 +42,8 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
             Id: string.IsNullOrWhiteSpace(row.Id) ? string.Empty : row.Id,
             Code: string.IsNullOrWhiteSpace(row.Code) ? (row.Id ?? string.Empty) : row.Code,
             SansJson: sansJson,
-            Ip: row.Ip);
+            Ip: row.Ip,
+            Point: row.Point > 0 ? row.Point : 1);
     }
 
     public async Task<bool> UpdateSansAndIpByIpAsync(string ip, string sansJson, CancellationToken cancellationToken = default)
@@ -78,7 +79,7 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
     {
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
-            $"{_supabaseUrl}/rest/v1/configs?select=id,sans,ip&{columnName}=eq.{Uri.EscapeDataString(value)}&limit=1");
+            $"{_supabaseUrl}/rest/v1/configs?select=id,code,sans,ip,point&{columnName}=eq.{Uri.EscapeDataString(value)}&limit=1");
 
         AddAuthHeaders(request);
 
@@ -106,6 +107,7 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
         first.TryGetProperty("id", out var idElement);
         first.TryGetProperty("code", out var codeElement);
         first.TryGetProperty("sans", out var sansElement);
+        first.TryGetProperty("point", out var pointElement);
 
         // DB column name is lowercase: ip
         var hasIp = first.TryGetProperty("ip", out var ipElement);
@@ -122,7 +124,8 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
             Sans = sansElement.ValueKind is JsonValueKind.Undefined
                 ? default
                 : sansElement.Clone(),
-            Ip = ipElement.ValueKind == JsonValueKind.String ? ipElement.GetString() : null
+            Ip = ipElement.ValueKind == JsonValueKind.String ? ipElement.GetString() : null,
+            Point = pointElement.ValueKind == JsonValueKind.Number && pointElement.TryGetInt32(out var p) ? p : 1
         };
     }
 
@@ -182,5 +185,8 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
 
         [JsonPropertyName("ip")]
         public string? Ip { get; set; }
+
+        [JsonPropertyName("point")]
+        public int Point { get; set; }
     }
 }
