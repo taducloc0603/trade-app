@@ -22,13 +22,13 @@ public sealed class GapCalculator(IRuntimeConfigProvider runtimeConfigProvider) 
         if (sanB.Bid.HasValue && sanA.Ask.HasValue)
         {
             var value = (sanB.Bid.Value - sanA.Ask.Value) * pointMultiplier;
-            gapBuy = decimal.ToInt32(decimal.Round(value, 0, MidpointRounding.AwayFromZero));
+            gapBuy = (int)value;
         }
 
-        if (sanA.Bid.HasValue && sanB.Ask.HasValue)
+        if (sanB.Ask.HasValue && sanA.Bid.HasValue)
         {
-            var value = (sanA.Bid.Value - sanB.Ask.Value) * pointMultiplier;
-            gapSell = decimal.ToInt32(decimal.Round(value, 0, MidpointRounding.AwayFromZero));
+            var value = (sanB.Ask.Value - sanA.Bid.Value) * pointMultiplier;
+            gapSell = (int)value;
         }
 
         return (gapBuy, gapSell);

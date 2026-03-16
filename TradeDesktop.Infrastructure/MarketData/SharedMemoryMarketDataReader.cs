@@ -11,7 +11,7 @@ namespace TradeDesktop.Infrastructure.MarketData;
 
 public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
 {
-    private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(400);
+    private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(120);
     private static readonly TimeSpan TpsRollingWindow = TimeSpan.FromSeconds(1);
     private const double MaxReasonableLatencyMs = 60_000;
     private const int HeaderSize = 16;
@@ -27,6 +27,7 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
     private readonly object _syncRoot = new();
     private readonly IRuntimeConfigProvider _runtimeConfigProvider;
     private readonly ConcurrentDictionary<string, Mt5RealtimeState> _mt5StatsByMap = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, MapReaderHandle> _mapReaders = new(StringComparer.OrdinalIgnoreCase);
     private CancellationTokenSource? _cts;
     private Task? _worker;
 
@@ -88,6 +89,10 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
         {
             // expected on shutdown
         }
+        finally
+        {
+            DisposeAllMapReaders();
+        }
     }
 
     private async Task PollLoopAsync(CancellationToken cancellationToken)
@@ -98,6 +103,8 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
         {
             var mapName1 = _runtimeConfigProvider.CurrentMapName1;
             var mapName2 = _runtimeConfigProvider.CurrentMapName2;
+
+            RefreshMapReaders(mapName1, mapName2);
 
             var sanA = ReadExchangeMetrics(mapName1, "SanA");
             var sanB = ReadExchangeMetrics(mapName2, "SanB");
@@ -120,15 +127,13 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
 
         try
         {
-            using var mmf = MemoryMappedFile.OpenExisting(normalizedMapName, MemoryMappedFileRights.Read);
-
-            using var accessor = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read);
-            if (TryParseMt5QuoteRing(accessor, fallbackSymbol, out var fromMt5, out var quoteSeq, out var timeMsc))
+            var handle = GetOrCreateMapReader(normalizedMapName);
+            if (TryParseMt5QuoteRing(handle.Accessor, fallbackSymbol, out var fromMt5, out var quoteSeq, out var timeMsc))
             {
                 return ApplyMt5RealtimeMetrics(normalizedMapName, fromMt5, quoteSeq, timeMsc) with { Error = null, IsConnected = true };
             }
 
-            using var stream = mmf.CreateViewStream(0, 0, MemoryMappedFileAccess.Read);
+            using var stream = handle.Mmf.CreateViewStream(0, 0, MemoryMappedFileAccess.Read);
 
             var raw = ReadAllBytes(stream);
             if (raw.Length == 0)
@@ -155,13 +160,84 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
         }
         catch (FileNotFoundException)
         {
+            RemoveMapReader(normalizedMapName);
             _mt5StatsByMap.TryRemove(normalizedMapName, out _);
             return Disconnected(fallbackSymbol, $"Map không tồn tại: {mapName}");
         }
         catch (Exception ex)
         {
+            RemoveMapReader(normalizedMapName);
             _mt5StatsByMap.TryRemove(normalizedMapName, out _);
             return Disconnected(fallbackSymbol, ex.Message);
+        }
+    }
+
+    private MapReaderHandle GetOrCreateMapReader(string mapName)
+    {
+        lock (_syncRoot)
+        {
+            if (_mapReaders.TryGetValue(mapName, out var existing))
+            {
+                return existing;
+            }
+
+            var mmf = MemoryMappedFile.OpenExisting(mapName, MemoryMappedFileRights.Read);
+            var accessor = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read);
+            var created = new MapReaderHandle(mmf, accessor);
+            _mapReaders[mapName] = created;
+            return created;
+        }
+    }
+
+    private void RefreshMapReaders(string? mapName1, string? mapName2)
+    {
+        var keep = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(mapName1))
+        {
+            keep.Add(mapName1.Trim());
+        }
+
+        if (!string.IsNullOrWhiteSpace(mapName2))
+        {
+            keep.Add(mapName2.Trim());
+        }
+
+        lock (_syncRoot)
+        {
+            var stale = _mapReaders.Keys.Where(k => !keep.Contains(k)).ToList();
+            foreach (var key in stale)
+            {
+                _mapReaders[key].Dispose();
+                _mapReaders.Remove(key);
+                _mt5StatsByMap.TryRemove(key, out _);
+            }
+        }
+    }
+
+    private void RemoveMapReader(string mapName)
+    {
+        lock (_syncRoot)
+        {
+            if (!_mapReaders.TryGetValue(mapName, out var handle))
+            {
+                return;
+            }
+
+            handle.Dispose();
+            _mapReaders.Remove(mapName);
+        }
+    }
+
+    private void DisposeAllMapReaders()
+    {
+        lock (_syncRoot)
+        {
+            foreach (var handle in _mapReaders.Values)
+            {
+                handle.Dispose();
+            }
+
+            _mapReaders.Clear();
         }
     }
 
@@ -400,6 +476,18 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
         public decimal MaxLatencyMs { get; set; }
         public decimal TotalLatencyMs { get; set; }
         public int LatencySamples { get; set; }
+    }
+
+    private sealed class MapReaderHandle(MemoryMappedFile mmf, MemoryMappedViewAccessor accessor) : IDisposable
+    {
+        public MemoryMappedFile Mmf { get; } = mmf;
+        public MemoryMappedViewAccessor Accessor { get; } = accessor;
+
+        public void Dispose()
+        {
+            Accessor.Dispose();
+            Mmf.Dispose();
+        }
     }
 
     private sealed record TickSample(DateTimeOffset TimestampUtc, long CumulativeTicks);
