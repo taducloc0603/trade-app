@@ -80,7 +80,7 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
     {
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
-            $"{_supabaseUrl}/rest/v1/configs?select=id,code,sans,ip,point&{columnName}=eq.{Uri.EscapeDataString(value)}&limit=1");
+            $"{_supabaseUrl}/rest/v1/configs?select=*&{columnName}=eq.{Uri.EscapeDataString(value)}&limit=1");
 
         AddAuthHeaders(request);
 
@@ -134,7 +134,7 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
     {
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
-            $"{_supabaseUrl}/rest/v1/configs?select=id,code,sans,ip,point&{columnName}=ilike.*{Uri.EscapeDataString(value)}*&limit=1");
+            $"{_supabaseUrl}/rest/v1/configs?select=*&{columnName}=ilike.*{Uri.EscapeDataString(value)}*&limit=1");
 
         AddAuthHeaders(request);
 

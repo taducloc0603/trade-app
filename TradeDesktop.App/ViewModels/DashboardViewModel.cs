@@ -145,9 +145,17 @@ public sealed class DashboardViewModel : ObservableObject
 
     private Task OpenConfigAsync()
     {
-        var configWindow = _serviceProvider.GetRequiredService<ConfigWindow>();
-        configWindow.Owner = System.Windows.Application.Current.MainWindow;
-        configWindow.ShowDialog();
+        try
+        {
+            var configWindow = _serviceProvider.GetRequiredService<ConfigWindow>();
+            configWindow.Owner = System.Windows.Application.Current.MainWindow;
+            configWindow.ShowDialog();
+        }
+        catch (Exception ex)
+        {
+            LogItems.Insert(0, $"[Config] Không mở được cửa sổ Config: {ex.Message}");
+        }
+
         return Task.CompletedTask;
     }
 
@@ -174,17 +182,34 @@ public sealed class DashboardViewModel : ObservableObject
     private async Task InitializeRuntimeConfigAsync(IConfigService configService)
     {
         const string InlineDbIp = "166.88.167.77";
-        LoadingMessage = "Đang tải cấu hình runtime...";
-
-        var result = await configService.LoadByLocalIpAsync();
-        if (result.IsSuccess && result.Exists)
+        try
         {
-            _runtimeConfigState.Update(result.LocalIp, result.Code, result.MapName1, result.MapName2, result.Point);
+            LoadingMessage = "Đang tải cấu hình runtime...";
+
+            var result = await configService.LoadByLocalIpAsync();
+            if (result.IsSuccess && result.Exists)
+            {
+                _runtimeConfigState.Update(result.LocalIp, result.Code, result.MapName1, result.MapName2, result.Point);
+
+                if (string.Equals(result.LocalIp, InlineDbIp, StringComparison.OrdinalIgnoreCase))
+                {
+                    DbInlineData =
+                        $"[DB] id={result.ConfigId} | ip={result.LocalIp} | code={result.Code} | point={result.Point} | sans={result.SansJson}";
+                    IsDbInlineDataVisible = true;
+                }
+                else
+                {
+                    DbInlineData = string.Empty;
+                    IsDbInlineDataVisible = false;
+                }
+
+                LoadingMessage = "Đang chờ dữ liệu shared memory...";
+                return;
+            }
 
             if (string.Equals(result.LocalIp, InlineDbIp, StringComparison.OrdinalIgnoreCase))
             {
-                DbInlineData =
-                    $"[DB] id={result.ConfigId} | ip={result.LocalIp} | code={result.Code} | point={result.Point} | sans={result.SansJson}";
+                DbInlineData = "[DB] Không lấy được dữ liệu config từ DB cho IP 166.88.167.77";
                 IsDbInlineDataVisible = true;
             }
             else
@@ -193,40 +218,34 @@ public sealed class DashboardViewModel : ObservableObject
                 IsDbInlineDataVisible = false;
             }
 
-            LoadingMessage = "Đang chờ dữ liệu shared memory...";
-            return;
-        }
+            var warning = string.IsNullOrWhiteSpace(result.LocalIp)
+                ? "[Config] Không lấy được IP local để tải config."
+                : $"[Config] Không tìm thấy config cho IP hiện tại: {result.LocalIp}";
 
-        if (string.Equals(result.LocalIp, InlineDbIp, StringComparison.OrdinalIgnoreCase))
-        {
-            DbInlineData = "[DB] Không lấy được dữ liệu config từ DB cho IP 166.88.167.77";
-            IsDbInlineDataVisible = true;
-        }
-        else
-        {
-            DbInlineData = string.Empty;
-            IsDbInlineDataVisible = false;
-        }
-
-        var warning = string.IsNullOrWhiteSpace(result.LocalIp)
-            ? "[Config] Không lấy được IP local để tải config."
-            : $"[Config] Không tìm thấy config cho IP hiện tại: {result.LocalIp}";
-
-        System.Windows.Application.Current.Dispatcher.Invoke(() =>
-        {
-            LogItems.Insert(0, warning);
-            if (!string.IsNullOrWhiteSpace(result.LocalIp))
+            System.Windows.Application.Current.Dispatcher.Invoke(() =>
             {
-                _runtimeConfigState.Update(
-                    result.LocalIp,
-                    _runtimeConfigState.CurrentCode,
-                    _runtimeConfigState.MapName1,
-                    _runtimeConfigState.MapName2,
-                    _runtimeConfigState.CurrentPoint);
-            }
+                LogItems.Insert(0, warning);
+                if (!string.IsNullOrWhiteSpace(result.LocalIp))
+                {
+                    _runtimeConfigState.Update(
+                        result.LocalIp,
+                        _runtimeConfigState.CurrentCode,
+                        _runtimeConfigState.MapName1,
+                        _runtimeConfigState.MapName2,
+                        _runtimeConfigState.CurrentPoint);
+                }
 
-            LoadingMessage = "Đang chờ dữ liệu shared memory...";
-        });
+                LoadingMessage = "Đang chờ dữ liệu shared memory...";
+            });
+        }
+        catch (Exception ex)
+        {
+            System.Windows.Application.Current.Dispatcher.Invoke(() =>
+            {
+                LogItems.Insert(0, $"[Config] Lỗi tải config runtime: {ex.Message}");
+                LoadingMessage = "Đang chờ dữ liệu shared memory...";
+            });
+        }
     }
 
     private void OnSnapshotReceived(object? sender, SharedMemorySnapshot snapshot)
