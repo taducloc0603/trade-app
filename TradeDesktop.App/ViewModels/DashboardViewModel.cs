@@ -15,6 +15,7 @@ public sealed class DashboardViewModel : ObservableObject
     private readonly IServiceProvider _serviceProvider;
     private readonly RuntimeConfigState _runtimeConfigState;
     private readonly IDashboardMetricsMapper _dashboardMetricsMapper;
+    private readonly IMachineIdentityService _machineIdentityService;
 
     private string _runtimeSummary = string.Empty;
     private string _dbInlineData = string.Empty;
@@ -51,15 +52,22 @@ public sealed class DashboardViewModel : ObservableObject
         RuntimeConfigState runtimeConfigState,
         IConfigService configService,
         IExchangePairReader exchangePairReader,
-        IDashboardMetricsMapper dashboardMetricsMapper)
+        IDashboardMetricsMapper dashboardMetricsMapper,
+        IMachineIdentityService machineIdentityService)
     {
         _serviceProvider = serviceProvider;
         _runtimeConfigState = runtimeConfigState;
         _dashboardMetricsMapper = dashboardMetricsMapper;
+        _machineIdentityService = machineIdentityService;
+
+        var rawHostName = _machineIdentityService.GetRawHostName();
+        var normalizedHostName = _machineIdentityService.GetHostName();
 
         LogItems = new ObservableCollection<string>
         {
             "[App] Dashboard started.",
+            $"[Config] Detected host name: {rawHostName}",
+            $"[Config] Normalized host name: {normalizedHostName}",
             "[App] Waiting for runtime config and shared memory data..."
         };
 
@@ -176,25 +184,25 @@ public sealed class DashboardViewModel : ObservableObject
             : $"Sàn B ({_runtimeConfigState.MapName2})";
 
         RuntimeSummary =
-            $"IP: {_runtimeConfigState.CurrentIp}  |  Code: {_runtimeConfigState.CurrentCode}  |  Point: {_runtimeConfigState.CurrentPoint}  |  Map 1: {_runtimeConfigState.CurrentMapName1}  |  Map 2: {_runtimeConfigState.CurrentMapName2}";
+            $"Host Name: {_runtimeConfigState.CurrentMachineHostName}  |  Point: {_runtimeConfigState.CurrentPoint}  |  Map 1: {_runtimeConfigState.CurrentMapName1}  |  Map 2: {_runtimeConfigState.CurrentMapName2}";
     }
 
     private async Task InitializeRuntimeConfigAsync(IConfigService configService)
     {
-        const string InlineDbIp = "166.88.167.77";
+        const string InlineDbHostName = "win-vps-01";
         try
         {
             LoadingMessage = "Đang tải cấu hình runtime...";
 
-            var result = await configService.LoadByLocalIpAsync();
+            var result = await configService.LoadByMachineHostNameAsync();
             if (result.IsSuccess && result.Exists)
             {
-                _runtimeConfigState.Update(result.LocalIp, result.Code, result.MapName1, result.MapName2, result.Point);
+                _runtimeConfigState.Update(result.MachineHostName, result.MapName1, result.MapName2, result.Point);
 
-                if (string.Equals(result.LocalIp, InlineDbIp, StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(result.MachineHostName, InlineDbHostName, StringComparison.OrdinalIgnoreCase))
                 {
                     DbInlineData =
-                        $"[DB] id={result.ConfigId} | ip={result.LocalIp} | code={result.Code} | point={result.Point} | sans={result.SansJson}";
+                        $"[DB] id={result.ConfigId} | hostname={result.MachineHostName} | point={result.Point} | sans={result.SansJson}";
                     IsDbInlineDataVisible = true;
                 }
                 else
@@ -207,9 +215,9 @@ public sealed class DashboardViewModel : ObservableObject
                 return;
             }
 
-            if (string.Equals(result.LocalIp, InlineDbIp, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(result.MachineHostName, InlineDbHostName, StringComparison.OrdinalIgnoreCase))
             {
-                DbInlineData = "[DB] Không lấy được dữ liệu config từ DB cho IP 166.88.167.77";
+                DbInlineData = "[DB] Không lấy được dữ liệu config từ DB cho hostname win-vps-01";
                 IsDbInlineDataVisible = true;
             }
             else
@@ -218,18 +226,17 @@ public sealed class DashboardViewModel : ObservableObject
                 IsDbInlineDataVisible = false;
             }
 
-            var warning = string.IsNullOrWhiteSpace(result.LocalIp)
-                ? "[Config] Không lấy được IP local để tải config."
-                : $"[Config] Không tìm thấy config cho IP hiện tại: {result.LocalIp}";
+            var warning = string.IsNullOrWhiteSpace(result.MachineHostName)
+                ? "[Config] Không lấy được host name local để tải config."
+                : $"[Config] Không tìm thấy config cho host name hiện tại: {result.MachineHostName}";
 
             System.Windows.Application.Current.Dispatcher.Invoke(() =>
             {
                 LogItems.Insert(0, warning);
-                if (!string.IsNullOrWhiteSpace(result.LocalIp))
+                if (!string.IsNullOrWhiteSpace(result.MachineHostName))
                 {
                     _runtimeConfigState.Update(
-                        result.LocalIp,
-                        _runtimeConfigState.CurrentCode,
+                        result.MachineHostName,
                         _runtimeConfigState.MapName1,
                         _runtimeConfigState.MapName2,
                         _runtimeConfigState.CurrentPoint);

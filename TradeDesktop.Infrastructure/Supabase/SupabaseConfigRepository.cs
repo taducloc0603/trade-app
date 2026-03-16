@@ -13,22 +13,22 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
     private readonly string? _supabaseUrl = supabaseUrl?.TrimEnd('/');
     private readonly string? _supabaseKey = supabaseKey;
 
-    public async Task<ConfigRecord?> GetByIpAsync(string ip, CancellationToken cancellationToken = default)
+    public async Task<ConfigRecord?> GetByHostNameAsync(string hostName, CancellationToken cancellationToken = default)
     {
         if (!IsConfigured())
         {
             throw new InvalidOperationException("Thiếu SUPABASE_URL hoặc SUPABASE_KEY/SUPABASE_ANON_KEY.");
         }
 
-        if (string.IsNullOrWhiteSpace(ip))
+        if (string.IsNullOrWhiteSpace(hostName))
         {
             return null;
         }
 
-        var normalizedIp = NormalizeCode(ip);
+        var normalizedHostName = NormalizeHostName(hostName);
 
-        var row = await GetFirstByColumnAsync("ip", normalizedIp, cancellationToken)
-                  ?? await GetFirstByColumnLikeAsync("ip", normalizedIp, cancellationToken);
+        var row = await GetFirstByColumnAsync("hostname", normalizedHostName, cancellationToken)
+                  ?? await GetFirstByColumnLikeAsync("hostname", normalizedHostName, cancellationToken);
 
         if (row is null)
         {
@@ -41,30 +41,29 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
 
         return new ConfigRecord(
             Id: string.IsNullOrWhiteSpace(row.Id) ? string.Empty : row.Id,
-            Code: row.Code?.Trim() ?? string.Empty,
             SansJson: sansJson,
-            Ip: row.Ip,
+            HostName: row.HostName,
             Point: row.Point > 0 ? row.Point : 1);
     }
 
-    public async Task<bool> UpdateSansAndIpByIpAsync(string ip, string sansJson, CancellationToken cancellationToken = default)
+    public async Task<bool> UpdateSansAndHostNameByHostNameAsync(string hostName, string sansJson, CancellationToken cancellationToken = default)
     {
         if (!IsConfigured())
         {
             throw new InvalidOperationException("Thiếu SUPABASE_URL hoặc SUPABASE_KEY/SUPABASE_ANON_KEY.");
         }
 
-        if (string.IsNullOrWhiteSpace(ip))
+        if (string.IsNullOrWhiteSpace(hostName))
         {
             return false;
         }
 
-        var normalizedIp = NormalizeCode(ip);
+        var normalizedHostName = NormalizeHostName(hostName);
 
-        return await UpdateByColumnAsync("ip", normalizedIp, sansJson, normalizedIp, cancellationToken);
+        return await UpdateByColumnAsync("hostname", normalizedHostName, sansJson, normalizedHostName, cancellationToken);
     }
 
-    private static string NormalizeCode(string code) => code.Trim();
+    private static string NormalizeHostName(string hostName) => hostName.Trim().ToLower();
 
     private bool IsConfigured() =>
         !string.IsNullOrWhiteSpace(_supabaseUrl) &&
@@ -106,26 +105,24 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
         }
 
         first.TryGetProperty("id", out var idElement);
-        first.TryGetProperty("code", out var codeElement);
         first.TryGetProperty("sans", out var sansElement);
         first.TryGetProperty("point", out var pointElement);
 
-        // DB column name is lowercase: ip
-        var hasIp = first.TryGetProperty("ip", out var ipElement);
-        if (!hasIp)
+        // DB column name is lowercase: hostname
+        var hasHostName = first.TryGetProperty("hostname", out var hostNameElement);
+        if (!hasHostName)
         {
-            first.TryGetProperty("Ip", out ipElement);
+            first.TryGetProperty("HostName", out hostNameElement);
         }
 
         return new ConfigRow
         {
             Id = idElement.ValueKind == JsonValueKind.String ? idElement.GetString() : null,
-            Code = codeElement.ValueKind == JsonValueKind.String ? codeElement.GetString() : null,
             // Clone để JsonElement không còn phụ thuộc JsonDocument đã dispose.
             Sans = sansElement.ValueKind is JsonValueKind.Undefined
                 ? default
                 : sansElement.Clone(),
-            Ip = ipElement.ValueKind == JsonValueKind.String ? ipElement.GetString() : null,
+            HostName = hostNameElement.ValueKind == JsonValueKind.String ? hostNameElement.GetString() : null,
             Point = pointElement.ValueKind == JsonValueKind.Number && pointElement.TryGetInt32(out var p) ? p : 1
         };
     }
@@ -160,24 +157,22 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
         }
 
         first.TryGetProperty("id", out var idElement);
-        first.TryGetProperty("code", out var codeElement);
         first.TryGetProperty("sans", out var sansElement);
         first.TryGetProperty("point", out var pointElement);
 
-        var hasIp = first.TryGetProperty("ip", out var ipElement);
-        if (!hasIp)
+        var hasHostName = first.TryGetProperty("hostname", out var hostNameElement);
+        if (!hasHostName)
         {
-            first.TryGetProperty("Ip", out ipElement);
+            first.TryGetProperty("HostName", out hostNameElement);
         }
 
         return new ConfigRow
         {
             Id = idElement.ValueKind == JsonValueKind.String ? idElement.GetString() : null,
-            Code = codeElement.ValueKind == JsonValueKind.String ? codeElement.GetString() : null,
             Sans = sansElement.ValueKind is JsonValueKind.Undefined
                 ? default
                 : sansElement.Clone(),
-            Ip = ipElement.ValueKind == JsonValueKind.String ? ipElement.GetString() : null,
+            HostName = hostNameElement.ValueKind == JsonValueKind.String ? hostNameElement.GetString() : null,
             Point = pointElement.ValueKind == JsonValueKind.Number && pointElement.TryGetInt32(out var p) ? p : 1
         };
     }
@@ -186,7 +181,7 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
         string columnName,
         string value,
         string sansJson,
-        string ip,
+        string hostName,
         CancellationToken cancellationToken)
     {
         using var sansDoc = JsonDocument.Parse(string.IsNullOrWhiteSpace(sansJson) ? "[]" : sansJson);
@@ -194,7 +189,7 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
         var payload = JsonSerializer.Serialize(new
         {
             sans = sansDoc.RootElement,
-            ip = ip.Trim()
+            hostname = hostName.Trim().ToLower()
         });
 
         using var request = new HttpRequestMessage(
@@ -230,14 +225,11 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
         [JsonPropertyName("id")]
         public string? Id { get; set; }
 
-        [JsonPropertyName("code")]
-        public string? Code { get; set; }
-
         [JsonPropertyName("sans")]
         public JsonElement Sans { get; set; }
 
-        [JsonPropertyName("ip")]
-        public string? Ip { get; set; }
+        [JsonPropertyName("hostname")]
+        public string? HostName { get; set; }
 
         [JsonPropertyName("point")]
         public int Point { get; set; }

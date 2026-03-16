@@ -9,13 +9,12 @@ public sealed class ConfigViewModel : ObservableObject
 {
     private readonly RuntimeConfigState _runtimeConfigState;
     private readonly IConfigService _configService;
-    private string _localIp = string.Empty;
-    private string _code = string.Empty;
+    private string _machineHostName = string.Empty;
 
     private string _mapName1 = string.Empty;
     private string _mapName2 = string.Empty;
 
-    private string _loadStatus = "Đang tải theo IP máy...";
+    private string _loadStatus = "Đang tải theo host name máy...";
     private string _map1CheckStatus = "Chưa kiểm tra";
     private string _map2CheckStatus = "Chưa kiểm tra";
     private string _errorMessage = string.Empty;
@@ -36,14 +35,12 @@ public sealed class ConfigViewModel : ObservableObject
         SaveCommand = new AsyncRelayCommand(SaveAsync, CanSaveCommand);
         CancelCommand = new AsyncRelayCommand(CancelAsync);
 
-        LocalIp = runtimeConfigState.CurrentIp;
-        Code = runtimeConfigState.CurrentCode;
+        MachineHostName = runtimeConfigState.CurrentMachineHostName;
         MapName1 = runtimeConfigState.CurrentMapName1;
         MapName2 = runtimeConfigState.CurrentMapName2;
 
         var hasRuntimeState =
-            !string.IsNullOrWhiteSpace(LocalIp) ||
-            !string.IsNullOrWhiteSpace(Code) ||
+            !string.IsNullOrWhiteSpace(MachineHostName) ||
             !string.IsNullOrWhiteSpace(MapName1) ||
             !string.IsNullOrWhiteSpace(MapName2);
 
@@ -51,28 +48,22 @@ public sealed class ConfigViewModel : ObservableObject
         AreMapNamesEnabled = hasRuntimeState;
         LoadStatus = hasRuntimeState
             ? "✔ Đã nạp dữ liệu runtime"
-            : "Đang tải theo IP máy...";
+            : "Đang tải theo host name máy...";
 
         RefreshDerivedState();
 
         if (!hasRuntimeState)
         {
-            _ = LoadByLocalIpAsync();
+            _ = LoadByMachineHostNameAsync();
         }
     }
 
     public event Action<bool?>? RequestClose;
 
-    public string LocalIp
+    public string MachineHostName
     {
-        get => _localIp;
-        private set => SetProperty(ref _localIp, value);
-    }
-
-    public string Code
-    {
-        get => _code;
-        private set => SetProperty(ref _code, value);
+        get => _machineHostName;
+        private set => SetProperty(ref _machineHostName, value);
     }
 
     public string MapName1
@@ -186,14 +177,13 @@ public sealed class ConfigViewModel : ObservableObject
         !string.IsNullOrWhiteSpace(MapName1) &&
         !string.IsNullOrWhiteSpace(MapName2);
 
-    private async Task LoadByLocalIpAsync()
+    private async Task LoadByMachineHostNameAsync()
     {
         try
         {
             ClearError();
-            var loadResult = await _configService.LoadByLocalIpAsync();
-            LocalIp = loadResult.LocalIp;
-            Code = loadResult.Code;
+            var loadResult = await _configService.LoadByMachineHostNameAsync();
+            MachineHostName = loadResult.MachineHostName;
 
             if (!loadResult.Exists)
             {
@@ -201,8 +191,8 @@ public sealed class ConfigViewModel : ObservableObject
                 AreMapNamesEnabled = false;
                 MapName1 = string.Empty;
                 MapName2 = string.Empty;
-                LoadStatus = $"✖ Không có config cho IP: {LocalIp}";
-                ErrorMessage = "Không tìm thấy record config theo IP máy hiện tại.";
+                LoadStatus = $"✖ Không có config cho host name: {MachineHostName}";
+                ErrorMessage = "Không tìm thấy record config theo host name máy hiện tại.";
                 RefreshDerivedState();
                 return;
             }
@@ -222,7 +212,7 @@ public sealed class ConfigViewModel : ObservableObject
 
             MapName1 = loadResult.MapName1;
             MapName2 = loadResult.MapName2;
-            _runtimeConfigState.Update(loadResult.LocalIp, loadResult.Code, loadResult.MapName1, loadResult.MapName2, loadResult.Point);
+            _runtimeConfigState.Update(loadResult.MachineHostName, loadResult.MapName1, loadResult.MapName2, loadResult.Point);
             IsExistingRecordLoaded = true;
             AreMapNamesEnabled = true;
 
@@ -230,7 +220,7 @@ public sealed class ConfigViewModel : ObservableObject
             IsMapName2Valid = false;
             Map1CheckStatus = "Chưa kiểm tra";
             Map2CheckStatus = "Chưa kiểm tra";
-            LoadStatus = "✔ Đã tải config theo IP";
+            LoadStatus = "✔ Đã tải config theo host name";
             RefreshDerivedState();
         }
         catch (Exception ex)
@@ -238,7 +228,7 @@ public sealed class ConfigViewModel : ObservableObject
             IsExistingRecordLoaded = false;
             AreMapNamesEnabled = false;
             LoadStatus = "✖ Không tải được config";
-            ErrorMessage = $"Lỗi load config theo IP: {GetErrorMessage(ex)}";
+            ErrorMessage = $"Lỗi load config theo host name: {GetErrorMessage(ex)}";
             RefreshDerivedState();
         }
 
@@ -276,7 +266,7 @@ public sealed class ConfigViewModel : ObservableObject
         try
         {
             ClearError();
-            var saveResult = await _configService.SaveByLocalIpAsync(MapName1, MapName2);
+            var saveResult = await _configService.SaveByMachineHostNameAsync(MapName1, MapName2);
             if (!saveResult.IsSuccess)
             {
                 LoadStatus = "✖ Save thất bại";
@@ -286,13 +276,13 @@ public sealed class ConfigViewModel : ObservableObject
                 return;
             }
 
-            if (!string.IsNullOrWhiteSpace(saveResult.LocalIp))
+            if (!string.IsNullOrWhiteSpace(saveResult.MachineHostName))
             {
-                LocalIp = saveResult.LocalIp;
+                MachineHostName = saveResult.MachineHostName;
             }
 
             LoadStatus = "✔ Lưu thành công";
-            _runtimeConfigState.Update(LocalIp, Code, MapName1, MapName2, _runtimeConfigState.CurrentPoint);
+            _runtimeConfigState.Update(MachineHostName, MapName1, MapName2, _runtimeConfigState.CurrentPoint);
             RequestClose?.Invoke(true);
         }
         catch (Exception ex)

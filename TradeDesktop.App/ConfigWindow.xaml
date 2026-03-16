@@ -34,27 +34,22 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="12" />
                     <RowDefinition Height="Auto" />
-                    <RowDefinition Height="12" />
-                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="Local IP" FontWeight="SemiBold" />
-                <TextBox Grid.Row="0" Grid.Column="1" Margin="0,0,10,0" Height="32" VerticalContentAlignment="Center" IsReadOnly="True" Text="{Binding LocalIp}" />
+                <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="Host Name" FontWeight="SemiBold" />
+                <TextBox Grid.Row="0" Grid.Column="1" Margin="0,0,10,0" Height="32" VerticalContentAlignment="Center" IsReadOnly="True" Text="{Binding MachineHostName}" />
                 <Border Grid.Row="0" Grid.Column="2" Width="78" Height="32" Background="#F2F4F7" CornerRadius="4" />
                 <TextBlock Grid.Row="0" Grid.Column="3" Margin="10,0,0,0" VerticalAlignment="Center" Text="{Binding LoadStatus}" Foreground="#344054" />
 
-                <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Text="Code" FontWeight="SemiBold" />
-                <TextBox Grid.Row="2" Grid.Column="1" Margin="0,0,10,0" Height="32" VerticalContentAlignment="Center" IsReadOnly="True" Text="{Binding Code}" />
+                <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Text="Map Name 1" FontWeight="SemiBold" />
+                <TextBox Grid.Row="2" Grid.Column="1" Margin="0,0,10,0" Height="32" VerticalContentAlignment="Center" IsEnabled="{Binding AreMapNamesEnabled}" Text="{Binding MapName1, UpdateSourceTrigger=PropertyChanged}" />
+                <Button Grid.Row="2" Grid.Column="2" Content="Check" Width="78" Height="32" IsEnabled="{Binding AreMapNamesEnabled}" Command="{Binding CheckMap1Command}" />
+                <TextBlock Grid.Row="2" Grid.Column="3" Margin="10,0,0,0" VerticalAlignment="Center" Text="{Binding Map1CheckStatus}" Foreground="#344054" />
 
-                <TextBlock Grid.Row="4" Grid.Column="0" VerticalAlignment="Center" Text="Map Name 1" FontWeight="SemiBold" />
-                <TextBox Grid.Row="4" Grid.Column="1" Margin="0,0,10,0" Height="32" VerticalContentAlignment="Center" IsEnabled="{Binding AreMapNamesEnabled}" Text="{Binding MapName1, UpdateSourceTrigger=PropertyChanged}" />
-                <Button Grid.Row="4" Grid.Column="2" Content="Check" Width="78" Height="32" IsEnabled="{Binding AreMapNamesEnabled}" Command="{Binding CheckMap1Command}" />
-                <TextBlock Grid.Row="4" Grid.Column="3" Margin="10,0,0,0" VerticalAlignment="Center" Text="{Binding Map1CheckStatus}" Foreground="#344054" />
-
-                <TextBlock Grid.Row="6" Grid.Column="0" VerticalAlignment="Center" Text="Map Name 2" FontWeight="SemiBold" />
-                <TextBox Grid.Row="6" Grid.Column="1" Margin="0,0,10,0" Height="32" VerticalContentAlignment="Center" IsEnabled="{Binding AreMapNamesEnabled}" Text="{Binding MapName2, UpdateSourceTrigger=PropertyChanged}" />
-                <Button Grid.Row="6" Grid.Column="2" Content="Check" Width="78" Height="32" IsEnabled="{Binding AreMapNamesEnabled}" Command="{Binding CheckMap2Command}" />
-                <TextBlock Grid.Row="6" Grid.Column="3" Margin="10,0,0,0" VerticalAlignment="Center" Text="{Binding Map2CheckStatus}" Foreground="#344054" />
+                <TextBlock Grid.Row="4" Grid.Column="0" VerticalAlignment="Center" Text="Map Name 2" FontWeight="SemiBold" />
+                <TextBox Grid.Row="4" Grid.Column="1" Margin="0,0,10,0" Height="32" VerticalContentAlignment="Center" IsEnabled="{Binding AreMapNamesEnabled}" Text="{Binding MapName2, UpdateSourceTrigger=PropertyChanged}" />
+                <Button Grid.Row="4" Grid.Column="2" Content="Check" Width="78" Height="32" IsEnabled="{Binding AreMapNamesEnabled}" Command="{Binding CheckMap2Command}" />
+                <TextBlock Grid.Row="4" Grid.Column="3" Margin="10,0,0,0" VerticalAlignment="Center" Text="{Binding Map2CheckStatus}" Foreground="#344054" />
             </Grid>
         </Border>
 

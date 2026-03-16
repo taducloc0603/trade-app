@@ -10,6 +10,7 @@ public static class DependencyInjection
     {
         services.AddSingleton<IDashboardService, DashboardService>();
         services.AddSingleton<IConfigService, ConfigService>();
+        services.AddSingleton<IMachineIdentityService, MachineIdentityService>();
         services.AddSingleton<IGapCalculator, GapCalculator>();
         services.AddSingleton<IDashboardMetricsMapper, DashboardMetricsMapper>();
         return services;

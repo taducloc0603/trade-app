@@ -4,6 +4,6 @@ namespace TradeDesktop.Application.Abstractions;
 
 public interface IConfigRepository
 {
-    Task<ConfigRecord?> GetByIpAsync(string ip, CancellationToken cancellationToken = default);
-    Task<bool> UpdateSansAndIpByIpAsync(string ip, string sansJson, CancellationToken cancellationToken = default);
+    Task<ConfigRecord?> GetByHostNameAsync(string hostName, CancellationToken cancellationToken = default);
+    Task<bool> UpdateSansAndHostNameByHostNameAsync(string hostName, string sansJson, CancellationToken cancellationToken = default);
 }
