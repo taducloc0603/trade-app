@@ -51,6 +51,17 @@
                 </StackPanel>
 
                 <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
+                    <TextBox Width="170"
+                             Height="36"
+                             Margin="0,0,8,0"
+                             VerticalContentAlignment="Center"
+                             IsReadOnly="True"
+                             Text="{Binding MachineHostName}" />
+                    <Button Content="Copy Host"
+                            Width="100"
+                            Height="36"
+                            Margin="0,0,8,0"
+                            Command="{Binding CopyHostNameCommand}" />
                     <Button Content="Reconnect"
                             Width="120"
                             Height="36"

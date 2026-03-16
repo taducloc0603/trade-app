@@ -2,7 +2,6 @@ using TradeDesktop.App.Commands;
 using TradeDesktop.App.Helpers;
 using TradeDesktop.App.State;
 using TradeDesktop.Application.Services;
-using System.Windows;
 
 namespace TradeDesktop.App.ViewModels;
 
@@ -35,7 +34,6 @@ public sealed class ConfigViewModel : ObservableObject
         CheckMap2Command = new AsyncRelayCommand(CheckMap2Async, CanCheckMap2);
         SaveCommand = new AsyncRelayCommand(SaveAsync, CanSaveCommand);
         CancelCommand = new AsyncRelayCommand(CancelAsync);
-        CopyHostNameCommand = new AsyncRelayCommand(CopyHostNameAsync);
 
         MachineHostName = runtimeConfigState.CurrentMachineHostName;
         MapName1 = runtimeConfigState.CurrentMapName1;
@@ -54,10 +52,7 @@ public sealed class ConfigViewModel : ObservableObject
 
         RefreshDerivedState();
 
-        if (!hasRuntimeState)
-        {
-            _ = LoadByMachineHostNameAsync();
-        }
+        _ = LoadByMachineHostNameAsync();
     }
 
     public event Action<bool?>? RequestClose;
@@ -170,7 +165,6 @@ public sealed class ConfigViewModel : ObservableObject
     public AsyncRelayCommand CheckMap2Command { get; }
     public AsyncRelayCommand SaveCommand { get; }
     public AsyncRelayCommand CancelCommand { get; }
-    public AsyncRelayCommand CopyHostNameCommand { get; }
 
     private bool CanCheckMap1() => AreMapNamesEnabled && !string.IsNullOrWhiteSpace(MapName1);
     private bool CanCheckMap2() => AreMapNamesEnabled && !string.IsNullOrWhiteSpace(MapName2);
@@ -298,28 +292,6 @@ public sealed class ConfigViewModel : ObservableObject
     private Task CancelAsync()
     {
         RequestClose?.Invoke(false);
-        return Task.CompletedTask;
-    }
-
-    private Task CopyHostNameAsync()
-    {
-        try
-        {
-            ClearError();
-            if (string.IsNullOrWhiteSpace(MachineHostName))
-            {
-                ErrorMessage = "Host name hiện tại đang rỗng, không thể copy.";
-                return Task.CompletedTask;
-            }
-
-            Clipboard.SetText(MachineHostName);
-            LoadStatus = "✔ Đã copy host name";
-        }
-        catch (Exception ex)
-        {
-            ErrorMessage = $"Không thể copy host name: {GetErrorMessage(ex)}";
-        }
-
         return Task.CompletedTask;
     }
 

@@ -17,6 +17,7 @@ public sealed class DashboardViewModel : ObservableObject
     private readonly IConfigService _configService;
     private readonly IDashboardMetricsMapper _dashboardMetricsMapper;
     private readonly IMachineIdentityService _machineIdentityService;
+    private readonly string _normalizedHostName;
 
     private string _runtimeSummary = string.Empty;
     private string _dbInlineData = string.Empty;
@@ -49,6 +50,7 @@ public sealed class DashboardViewModel : ObservableObject
     private string _exchangeBAvgLatMs = "-";
     private bool _isLoading = true;
     private string _loadingMessage = "Đang chờ dữ liệu shared memory...";
+    private string _machineHostName = string.Empty;
 
     public DashboardViewModel(
         IServiceProvider serviceProvider,
@@ -66,6 +68,8 @@ public sealed class DashboardViewModel : ObservableObject
 
         var rawHostName = _machineIdentityService.GetRawHostName();
         var normalizedHostName = _machineIdentityService.GetHostName();
+        _normalizedHostName = normalizedHostName;
+        MachineHostName = normalizedHostName;
 
         LogItems = new ObservableCollection<string>
         {
@@ -78,6 +82,7 @@ public sealed class DashboardViewModel : ObservableObject
         OpenConfigCommand = new AsyncRelayCommand(OpenConfigAsync);
         ReconnectConfigCommand = new AsyncRelayCommand(ReconnectConfigAsync);
         ClearLogsCommand = new AsyncRelayCommand(ClearLogsAsync);
+        CopyHostNameCommand = new AsyncRelayCommand(CopyHostNameAsync);
 
         _runtimeConfigState.StateChanged += (_, _) => ApplyRuntimeConfig();
         ApplyRuntimeConfig();
@@ -164,10 +169,37 @@ public sealed class DashboardViewModel : ObservableObject
     public string ExchangeBAvgLatMs { get => _exchangeBAvgLatMs; private set => SetProperty(ref _exchangeBAvgLatMs, value); }
     public bool IsLoading { get => _isLoading; private set => SetProperty(ref _isLoading, value); }
     public string LoadingMessage { get => _loadingMessage; private set => SetProperty(ref _loadingMessage, value); }
+    public string MachineHostName { get => _machineHostName; private set => SetProperty(ref _machineHostName, value); }
 
     public AsyncRelayCommand OpenConfigCommand { get; }
     public AsyncRelayCommand ReconnectConfigCommand { get; }
     public AsyncRelayCommand ClearLogsCommand { get; }
+    public AsyncRelayCommand CopyHostNameCommand { get; }
+
+    private Task CopyHostNameAsync()
+    {
+        try
+        {
+            var hostNameToCopy = string.IsNullOrWhiteSpace(_normalizedHostName)
+                ? MachineHostName
+                : _normalizedHostName;
+
+            if (string.IsNullOrWhiteSpace(hostNameToCopy))
+            {
+                LogItems.Insert(0, "[Config] Host name rỗng, không thể copy.");
+                return Task.CompletedTask;
+            }
+
+            System.Windows.Clipboard.SetText(hostNameToCopy);
+            LogItems.Insert(0, $"[Config] Đã copy host name: {hostNameToCopy}");
+        }
+        catch (Exception ex)
+        {
+            LogItems.Insert(0, $"[Config] Không thể copy host name: {ex.Message}");
+        }
+
+        return Task.CompletedTask;
+    }
 
     private Task OpenConfigAsync()
     {
