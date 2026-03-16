@@ -14,6 +14,7 @@ public sealed class DashboardViewModel : ObservableObject
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly RuntimeConfigState _runtimeConfigState;
+    private readonly IConfigService _configService;
     private readonly IDashboardMetricsMapper _dashboardMetricsMapper;
     private readonly IMachineIdentityService _machineIdentityService;
 
@@ -57,6 +58,7 @@ public sealed class DashboardViewModel : ObservableObject
     {
         _serviceProvider = serviceProvider;
         _runtimeConfigState = runtimeConfigState;
+        _configService = configService;
         _dashboardMetricsMapper = dashboardMetricsMapper;
         _machineIdentityService = machineIdentityService;
 
@@ -72,11 +74,12 @@ public sealed class DashboardViewModel : ObservableObject
         };
 
         OpenConfigCommand = new AsyncRelayCommand(OpenConfigAsync);
+        ReconnectConfigCommand = new AsyncRelayCommand(ReconnectConfigAsync);
         ClearLogsCommand = new AsyncRelayCommand(ClearLogsAsync);
 
         _runtimeConfigState.StateChanged += (_, _) => ApplyRuntimeConfig();
         ApplyRuntimeConfig();
-        _ = InitializeRuntimeConfigAsync(configService);
+        _ = InitializeRuntimeConfigAsync();
 
         exchangePairReader.SnapshotReceived += OnSnapshotReceived;
         _ = exchangePairReader.StartAsync();
@@ -149,6 +152,7 @@ public sealed class DashboardViewModel : ObservableObject
     public string LoadingMessage { get => _loadingMessage; private set => SetProperty(ref _loadingMessage, value); }
 
     public AsyncRelayCommand OpenConfigCommand { get; }
+    public AsyncRelayCommand ReconnectConfigCommand { get; }
     public AsyncRelayCommand ClearLogsCommand { get; }
 
     private Task OpenConfigAsync()
@@ -156,12 +160,17 @@ public sealed class DashboardViewModel : ObservableObject
         try
         {
             var configWindow = _serviceProvider.GetRequiredService<ConfigWindow>();
-            configWindow.Owner = System.Windows.Application.Current.MainWindow;
+            var mainWindow = System.Windows.Application.Current?.MainWindow;
+            if (mainWindow is not null && !ReferenceEquals(mainWindow, configWindow))
+            {
+                configWindow.Owner = mainWindow;
+            }
+
             configWindow.ShowDialog();
         }
         catch (Exception ex)
         {
-            LogItems.Insert(0, $"[Config] Không mở được cửa sổ Config: {ex.Message}");
+            LogItems.Insert(0, $"[Config] Không mở được cửa sổ Config: {ex}");
         }
 
         return Task.CompletedTask;
@@ -171,6 +180,12 @@ public sealed class DashboardViewModel : ObservableObject
     {
         LogItems.Clear();
         return Task.CompletedTask;
+    }
+
+    private async Task ReconnectConfigAsync()
+    {
+        LogItems.Insert(0, "[Config] Reconnect: đang tải lại config từ DB theo host name...");
+        await InitializeRuntimeConfigAsync();
     }
 
     private void ApplyRuntimeConfig()
@@ -187,14 +202,14 @@ public sealed class DashboardViewModel : ObservableObject
             $"Host Name: {_runtimeConfigState.CurrentMachineHostName}  |  Point: {_runtimeConfigState.CurrentPoint}  |  Map 1: {_runtimeConfigState.CurrentMapName1}  |  Map 2: {_runtimeConfigState.CurrentMapName2}";
     }
 
-    private async Task InitializeRuntimeConfigAsync(IConfigService configService)
+    private async Task InitializeRuntimeConfigAsync()
     {
         const string InlineDbHostName = "win-vps-01";
         try
         {
             LoadingMessage = "Đang tải cấu hình runtime...";
 
-            var result = await configService.LoadByMachineHostNameAsync();
+            var result = await _configService.LoadByMachineHostNameAsync();
             if (result.IsSuccess && result.Exists)
             {
                 _runtimeConfigState.Update(result.MachineHostName, result.MapName1, result.MapName2, result.Point);
@@ -212,6 +227,11 @@ public sealed class DashboardViewModel : ObservableObject
                 }
 
                 LoadingMessage = "Đang chờ dữ liệu shared memory...";
+                System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                {
+                    LogItems.Insert(0,
+                        $"[Config] Reconnect thành công cho host '{result.MachineHostName}' (Map1: {result.MapName1}, Map2: {result.MapName2}).");
+                });
                 return;
             }
 
