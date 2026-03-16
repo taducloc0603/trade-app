@@ -21,6 +21,8 @@ public sealed class DashboardViewModel : ObservableObject
     private string _runtimeSummary = string.Empty;
     private string _dbInlineData = string.Empty;
     private bool _isDbInlineDataVisible;
+    private string _configErrorMessage = string.Empty;
+    private bool _isConfigErrorVisible;
     private string _exchangeAHeader = "Sàn A";
     private string _exchangeBHeader = "Sàn B";
     private string _gapBuy = "-";
@@ -105,6 +107,18 @@ public sealed class DashboardViewModel : ObservableObject
         private set => SetProperty(ref _isDbInlineDataVisible, value);
     }
 
+    public string ConfigErrorMessage
+    {
+        get => _configErrorMessage;
+        private set => SetProperty(ref _configErrorMessage, value);
+    }
+
+    public bool IsConfigErrorVisible
+    {
+        get => _isConfigErrorVisible;
+        private set => SetProperty(ref _isConfigErrorVisible, value);
+    }
+
     public string ExchangeAHeader
     {
         get => _exchangeAHeader;
@@ -159,6 +173,7 @@ public sealed class DashboardViewModel : ObservableObject
     {
         try
         {
+            ClearConfigError();
             var configWindow = _serviceProvider.GetRequiredService<ConfigWindow>();
             var mainWindow = System.Windows.Application.Current?.MainWindow;
             if (mainWindow is not null && !ReferenceEquals(mainWindow, configWindow))
@@ -170,7 +185,17 @@ public sealed class DashboardViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            LogItems.Insert(0, $"[Config] Không mở được cửa sổ Config: {ex}");
+            var error = $"[Config] Không mở được cửa sổ Config: {ex.Message}";
+            LogItems.Insert(0, error);
+            ShowConfigError(error);
+
+            var owner = System.Windows.Application.Current?.MainWindow;
+            System.Windows.MessageBox.Show(
+                owner,
+                error,
+                "Config Error",
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Error);
         }
 
         return Task.CompletedTask;
@@ -180,6 +205,18 @@ public sealed class DashboardViewModel : ObservableObject
     {
         LogItems.Clear();
         return Task.CompletedTask;
+    }
+
+    private void ShowConfigError(string message)
+    {
+        ConfigErrorMessage = message;
+        IsConfigErrorVisible = !string.IsNullOrWhiteSpace(message);
+    }
+
+    private void ClearConfigError()
+    {
+        ConfigErrorMessage = string.Empty;
+        IsConfigErrorVisible = false;
     }
 
     private async Task ReconnectConfigAsync()

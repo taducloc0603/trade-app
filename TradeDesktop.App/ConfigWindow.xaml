@@ -38,7 +38,18 @@
 
                 <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="Host Name" FontWeight="SemiBold" />
                 <TextBox Grid.Row="0" Grid.Column="1" Margin="0,0,10,0" Height="32" VerticalContentAlignment="Center" IsReadOnly="True" Text="{Binding MachineHostName}" />
-                <Button Grid.Row="0" Grid.Column="2" Content="Copy" Width="78" Height="32" Command="{Binding CopyHostNameCommand}" />
+                <Button Grid.Row="0"
+                        Grid.Column="2"
+                        Width="36"
+                        Height="32"
+                        FontSize="15"
+                        ToolTip="Copy hostname"
+                        Command="{Binding CopyHostNameCommand}">
+                    <TextBlock Text="&#xE8C8;"
+                               FontFamily="Segoe MDL2 Assssets"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center" />
+                </Button>
                 <TextBlock Grid.Row="0" Grid.Column="3" Margin="10,0,0,0" VerticalAlignment="Center" Text="{Binding LoadStatus}" Foreground="#344054" />
 
                 <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Text="Map Name 1" FontWeight="SemiBold" />
