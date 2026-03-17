@@ -59,9 +59,9 @@
                             Height="36"
                             Margin="0,0,8,0">
                         <TextBlock VerticalAlignment="Center"
-                                   Foreground="{Binding TradingLogicStatusBrush}"
+                                   Foreground="{Binding TradingLogicStatusBrush, Mode=OneWay}"
                                    FontWeight="SemiBold"
-                                   Text="{Binding TradingLogicStatusText, StringFormat=Trading Logic Status: {0}}" />
+                                   Text="{Binding TradingLogicStatusText, Mode=OneWay, StringFormat=Trading Logic Status: {0}}" />
                     </Border>
                     <Button Content="Start"
                             Width="68"
@@ -199,12 +199,12 @@
 
                             <TextBlock FontWeight="SemiBold" Foreground="#344054">
                                 <Run Text="Trading Logic Status: " />
-                                <Run Text="{Binding TradingLogicStatusText}" Foreground="{Binding TradingLogicStatusBrush}" />
+                                <Run Text="{Binding TradingLogicStatusText, Mode=OneWay}" Foreground="{Binding TradingLogicStatusBrush, Mode=OneWay}" />
                             </TextBlock>
 
                             <StackPanel Grid.Row="2" Orientation="Horizontal">
                                 <TextBlock Text="Last Signal: " FontWeight="SemiBold" Foreground="#344054" />
-                                <TextBlock Text="{Binding LastSignalText}" Foreground="#101828" TextWrapping="Wrap" />
+                                <TextBlock Text="{Binding LastSignalText, Mode=OneWay}" Foreground="#101828" TextWrapping="Wrap" />
                             </StackPanel>
                         </Grid>
                     </Border>
