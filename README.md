@@ -217,6 +217,47 @@ Nếu bạn muốn tự build từ source thì mới cần cài .NET SDK/Visual 
 
 ---
 
+## 5.3) Troubleshoot lỗi "double-click exe nhưng không thấy app"
+
+Nếu app thoát im lặng trên Windows sau khi build/publish, hãy kiểm tra theo thứ tự sau:
+
+1. **Mở log startup**
+   - App hiện đã ghi log tại:
+   - `%LOCALAPPDATA%\TradeDesktop\logs\startup.log`
+   - Nếu startup lỗi, app sẽ hiển thị popup kèm đường dẫn file log.
+
+2. **Publish đúng runtime Windows**
+
+```bash
+dotnet publish TradeDesktop.App/TradeDesktop.App.csproj \
+  -c Release \
+  -r win-x64 \
+  --self-contained true \
+  -p:PublishSingleFile=true \
+  -p:IncludeNativeLibrariesForSelfExtract=true
+```
+
+3. **Nếu vẫn lỗi, thử bản không single-file để khoanh vùng**
+
+```bash
+dotnet publish TradeDesktop.App/TradeDesktop.App.csproj \
+  -c Release \
+  -r win-x64 \
+  --self-contained true \
+  -p:PublishSingleFile=false
+```
+
+4. **Kiểm tra Event Viewer trên Windows**
+   - Mở: `Event Viewer -> Windows Logs -> Application`
+   - Tìm lỗi nguồn `.NET Runtime` hoặc `Application Error` tại thời điểm chạy app.
+
+5. **Các nguyên nhân hay gặp**
+   - Build/publish sai kiến trúc (x64/x86/arm64).
+   - Dependency khởi tạo sớm bị exception (shared memory/config/network) làm app thoát trước khi render UI.
+   - Thiếu file/phần native khi publish.
+
+---
+
 ## 6) CI/CD và `.env`
 
 - Bạn đã có `.github/workflows/build.yml` để build/release.

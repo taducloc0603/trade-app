@@ -89,7 +89,7 @@ public sealed class DashboardViewModel : ObservableObject
         _ = InitializeRuntimeConfigAsync();
 
         exchangePairReader.SnapshotReceived += OnSnapshotReceived;
-        _ = exchangePairReader.StartAsync();
+        _ = StartExchangeReaderSafeAsync(exchangePairReader);
     }
 
     public ObservableCollection<string> LogItems { get; }
@@ -340,6 +340,22 @@ public sealed class DashboardViewModel : ObservableObject
             {
                 LogItems.Insert(0, $"[Config] Lỗi tải config runtime: {ex.Message}");
                 LoadingMessage = "Đang chờ dữ liệu shared memory...";
+            });
+        }
+    }
+
+    private async Task StartExchangeReaderSafeAsync(IExchangePairReader exchangePairReader)
+    {
+        try
+        {
+            await exchangePairReader.StartAsync();
+        }
+        catch (Exception ex)
+        {
+            System.Windows.Application.Current.Dispatcher.Invoke(() =>
+            {
+                LogItems.Insert(0, $"[Reader] Không thể start shared memory reader: {ex.Message}");
+                LoadingMessage = "Không thể kết nối shared memory. Mở Config hoặc kiểm tra log.";
             });
         }
     }

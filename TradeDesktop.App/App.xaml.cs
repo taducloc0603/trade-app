@@ -1,6 +1,8 @@
 using System.Windows;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
+using System.Windows.Threading;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -15,37 +17,53 @@ namespace TradeDesktop.App;
 public partial class App : System.Windows.Application
 {
     private IHost? _host;
+    private static readonly object LogLock = new();
+    private static bool _fatalDialogShown;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
 
-        _host = Host.CreateDefaultBuilder()
-            .ConfigureServices(services =>
-            {
-                var configuration = new ConfigurationBuilder()
-                    .AddInMemoryCollection(LoadDotEnv())
-                    .AddEnvironmentVariables()
-                    .Build();
+        RegisterGlobalExceptionHandlers();
+        WriteStartupLog($"OnStartup begin. BaseDirectory={AppContext.BaseDirectory}");
 
-                services
-                    .AddApplication()
-                    .AddInfrastructure(configuration);
+        try
+        {
+            _host = Host.CreateDefaultBuilder()
+                .ConfigureServices(services =>
+                {
+                    var configuration = new ConfigurationBuilder()
+                        .AddInMemoryCollection(LoadDotEnv())
+                        .AddEnvironmentVariables()
+                        .Build();
 
-                services.AddSingleton<RuntimeConfigState>();
-                services.AddSingleton<IRuntimeConfigProvider>(sp => sp.GetRequiredService<RuntimeConfigState>());
-                services.AddSingleton<IRuntimeConfigStateUpdater>(sp => sp.GetRequiredService<RuntimeConfigState>());
-                services.AddSingleton<DashboardViewModel>();
-                services.AddTransient<ConfigViewModel>();
-                services.AddTransient<ConfigWindow>();
-                services.AddSingleton<MainWindow>();
-            })
-            .Build();
+                    services
+                        .AddApplication()
+                        .AddInfrastructure(configuration);
 
-        await _host.StartAsync();
+                    services.AddSingleton<RuntimeConfigState>();
+                    services.AddSingleton<IRuntimeConfigProvider>(sp => sp.GetRequiredService<RuntimeConfigState>());
+                    services.AddSingleton<IRuntimeConfigStateUpdater>(sp => sp.GetRequiredService<RuntimeConfigState>());
+                    services.AddSingleton<DashboardViewModel>();
+                    services.AddTransient<ConfigViewModel>();
+                    services.AddTransient<ConfigWindow>();
+                    services.AddSingleton<MainWindow>();
+                })
+                .Build();
 
-        var mainWindow = _host.Services.GetRequiredService<MainWindow>();
-        mainWindow.Show();
+            await _host.StartAsync();
+            WriteStartupLog("Host started successfully.");
+
+            var mainWindow = _host.Services.GetRequiredService<MainWindow>();
+            MainWindow = mainWindow;
+            mainWindow.Show();
+            WriteStartupLog("MainWindow shown.");
+        }
+        catch (Exception ex)
+        {
+            HandleFatalStartupException("Lỗi khởi động ứng dụng", ex);
+            Shutdown(-1);
+        }
     }
 
     protected override async void OnExit(ExitEventArgs e)
@@ -134,5 +152,72 @@ public partial class App : System.Windows.Application
         }
 
         return FindInCurrentAndParents(Directory.GetCurrentDirectory());
+    }
+
+    private void RegisterGlobalExceptionHandlers()
+    {
+        DispatcherUnhandledException += OnDispatcherUnhandledException;
+        AppDomain.CurrentDomain.UnhandledException += OnCurrentDomainUnhandledException;
+        TaskScheduler.UnobservedTaskException += OnTaskSchedulerUnobservedTaskException;
+    }
+
+    private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
+    {
+        HandleFatalStartupException("Lỗi không xử lý (UI thread)", e.Exception);
+        e.Handled = true;
+    }
+
+    private void OnCurrentDomainUnhandledException(object? sender, UnhandledExceptionEventArgs e)
+    {
+        var ex = e.ExceptionObject as Exception ?? new Exception(e.ExceptionObject?.ToString() ?? "Unknown domain exception");
+        HandleFatalStartupException("Lỗi không xử lý (AppDomain)", ex);
+    }
+
+    private void OnTaskSchedulerUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
+    {
+        HandleFatalStartupException("Lỗi task không được observe", e.Exception);
+        e.SetObserved();
+    }
+
+    private static string GetStartupLogPath()
+    {
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var logDirectory = Path.Combine(localAppData, "TradeDesktop", "logs");
+        Directory.CreateDirectory(logDirectory);
+        return Path.Combine(logDirectory, "startup.log");
+    }
+
+    private static void WriteStartupLog(string message)
+    {
+        var line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}";
+
+        lock (LogLock)
+        {
+            File.AppendAllText(GetStartupLogPath(), line + Environment.NewLine, Encoding.UTF8);
+        }
+    }
+
+    private static void HandleFatalStartupException(string title, Exception ex)
+    {
+        WriteStartupLog($"{title}: {ex}");
+
+        if (_fatalDialogShown)
+        {
+            return;
+        }
+
+        _fatalDialogShown = true;
+
+        var logPath = GetStartupLogPath();
+        var message =
+            $"{title}.\n\n" +
+            $"Chi tiết: {ex.Message}\n\n" +
+            $"Vui lòng gửi file log:\n{logPath}";
+
+        MessageBox.Show(
+            message,
+            "TradeDesktop Startup Error",
+            MessageBoxButton.OK,
+            MessageBoxImage.Error);
     }
 }

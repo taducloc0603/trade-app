@@ -3,6 +3,7 @@ name: Build and Release Windows App
 on:
   push:
     branches: [ dev ]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -32,6 +33,8 @@ jobs:
           echo "VERSION=$version" >> $env:GITHUB_ENV
           echo "VERSIONED_EXE=${{ env.APP_NAME }}-$version.exe" >> $env:GITHUB_ENV
           echo "LATEST_EXE=${{ env.APP_NAME }}-latest.exe" >> $env:GITHUB_ENV
+          echo "VERSIONED_ZIP=${{ env.APP_NAME }}-$version-portable-win-x64.zip" >> $env:GITHUB_ENV
+          echo "LATEST_ZIP=${{ env.APP_NAME }}-latest-portable-win-x64.zip" >> $env:GITHUB_ENV
           echo "TAG=v$version" >> $env:GITHUB_ENV
 
       - name: Restore dependencies
@@ -51,19 +54,57 @@ jobs:
             /p:FileVersion=${{ env.VERSION }} `
             -o publish
 
+      - name: Publish app (portable folder for fallback)
+        shell: pwsh
+        run: |
+          dotnet publish TradeDesktop.App/TradeDesktop.App.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained true `
+            /p:PublishSingleFile=false `
+            /p:Version=${{ env.VERSION }} `
+            /p:AssemblyVersion=${{ env.VERSION }} `
+            /p:FileVersion=${{ env.VERSION }} `
+            -o publish-portable
+
+      - name: Validate publish outputs
+        shell: pwsh
+        run: |
+          if (!(Test-Path "publish/${{ env.APP_NAME }}.exe")) {
+            throw "Single-file exe not found: publish/${{ env.APP_NAME }}.exe"
+          }
+
+          if (!(Test-Path "publish-portable/${{ env.APP_NAME }}.exe")) {
+            throw "Portable exe not found: publish-portable/${{ env.APP_NAME }}.exe"
+          }
+
       - name: Prepare release files
         shell: pwsh
         run: |
           Copy-Item "publish/${{ env.APP_NAME }}.exe" "publish/${{ env.VERSIONED_EXE }}"
           Copy-Item "publish/${{ env.APP_NAME }}.exe" "publish/${{ env.LATEST_EXE }}"
 
+          Compress-Archive -Path "publish-portable/*" -DestinationPath "publish/${{ env.VERSIONED_ZIP }}" -Force
+          Copy-Item "publish/${{ env.VERSIONED_ZIP }}" "publish/${{ env.LATEST_ZIP }}"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG }}
           name: Release ${{ env.VERSION }}
+          body: |
+            Assets:
+            - `${{ env.VERSIONED_EXE }}`: single-file self-contained (recommended)
+            - `${{ env.VERSIONED_ZIP }}`: portable fallback (non-single-file)
+
+            If exe does not start on Windows:
+            1) Right click file -> Properties -> Unblock (if present)
+            2) Try portable zip asset
+            3) Check `%LOCALAPPDATA%\TradeDesktop\logs\startup.log`
           files: |
             publish/${{ env.VERSIONED_EXE }}
             publish/${{ env.LATEST_EXE }}
+            publish/${{ env.VERSIONED_ZIP }}
+            publish/${{ env.LATEST_ZIP }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
