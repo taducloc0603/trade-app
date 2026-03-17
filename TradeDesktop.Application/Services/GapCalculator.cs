@@ -25,9 +25,13 @@ public sealed class GapCalculator(IRuntimeConfigProvider runtimeConfigProvider) 
             gapBuy = (int)value;
         }
 
-        if (sanB.Ask.HasValue && sanA.Bid.HasValue)
+        // SELL gap is intentionally opposite sign of BUY confirmation contract:
+        // - Confirm SELL requires gap <= -confirm
+        // - Open SELL requires last gap <= -open
+        // Therefore, when sell opportunity increases, gapSell should move more negative.
+        if (sanA.Bid.HasValue && sanB.Ask.HasValue)
         {
-            var value = (sanB.Ask.Value - sanA.Bid.Value) * pointMultiplier;
+            var value = (sanA.Bid.Value - sanB.Ask.Value) * pointMultiplier;
             gapSell = (int)value;
         }
 
