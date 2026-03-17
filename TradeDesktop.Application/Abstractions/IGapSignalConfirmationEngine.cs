@@ -8,7 +8,5 @@ public interface IGapSignalConfirmationEngine
         GapSignalSnapshot snapshot,
         GapSignalConfirmationConfig config);
 
-    IReadOnlyList<GapSignalDebugEvent> LastDebugEvents { get; }
-
     void Reset();
 }

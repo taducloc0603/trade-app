@@ -28,23 +28,3 @@ public sealed record GapSignalTriggerResult(
     GapSignalSide Side,
     IReadOnlyList<int> Gaps,
     DateTime TriggeredAtUtc);
-
-public enum GapSignalDebugStage
-{
-    HoldStart = 0,
-    HoldProgress = 1,
-    ConfirmFailReset = 2,
-    HoldReachedOpenFailReset = 3,
-    OpenTriggered = 4
-}
-
-public sealed record GapSignalDebugEvent(
-    DateTime TimestampUtc,
-    GapSignalSide Side,
-    GapSignalDebugStage Stage,
-    int? Gap,
-    double ElapsedMs,
-    int ConfirmGapPts,
-    int OpenPts,
-    int HoldConfirmMs,
-    string Reason);
