@@ -51,6 +51,27 @@
                 </StackPanel>
 
                 <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Border Background="#F2F4F7"
+                            BorderBrush="#D0D5DD"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="10,0"
+                            Height="36"
+                            Margin="0,0,8,0">
+                        <TextBlock VerticalAlignment="Center"
+                                   Foreground="#344054"
+                                   Text="{Binding TradingLogicStatusText, StringFormat=Trading Logic Status: {0}}" />
+                    </Border>
+                    <Button Content="Start"
+                            Width="80"
+                            Height="36"
+                            Margin="0,0,8,0"
+                            Command="{Binding StartTradingLogicCommand}" />
+                    <Button Content="Stop"
+                            Width="80"
+                            Height="36"
+                            Margin="0,0,8,0"
+                            Command="{Binding StopTradingLogicCommand}" />
                     <TextBox Width="170"
                              Height="36"
                              Margin="0,0,8,0"

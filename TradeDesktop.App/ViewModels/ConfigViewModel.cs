@@ -209,7 +209,14 @@ public sealed class ConfigViewModel : ObservableObject
 
             MapName1 = loadResult.MapName1;
             MapName2 = loadResult.MapName2;
-            _runtimeConfigState.Update(loadResult.MachineHostName, loadResult.MapName1, loadResult.MapName2, loadResult.Point);
+            _runtimeConfigState.Update(
+                loadResult.MachineHostName,
+                loadResult.MapName1,
+                loadResult.MapName2,
+                loadResult.Point,
+                loadResult.OpenPts,
+                loadResult.ConfirmGapPts,
+                loadResult.HoldConfirmMs);
             IsExistingRecordLoaded = true;
             AreMapNamesEnabled = true;
 

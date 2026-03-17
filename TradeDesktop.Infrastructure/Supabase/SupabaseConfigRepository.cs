@@ -43,7 +43,10 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
             Id: string.IsNullOrWhiteSpace(row.Id) ? string.Empty : row.Id,
             SansJson: sansJson,
             HostName: row.HostName,
-            Point: row.Point > 0 ? row.Point : 1);
+            Point: row.Point > 0 ? row.Point : 1,
+            OpenPts: row.OpenPts,
+            ConfirmGapPts: row.ConfirmGapPts,
+            HoldConfirmMs: row.HoldConfirmMs);
     }
 
     public async Task<bool> UpdateSansAndHostNameByHostNameAsync(string hostName, string sansJson, CancellationToken cancellationToken = default)
@@ -107,6 +110,9 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
         first.TryGetProperty("id", out var idElement);
         first.TryGetProperty("sans", out var sansElement);
         first.TryGetProperty("point", out var pointElement);
+        first.TryGetProperty("open_pts", out var openPtsElement);
+        first.TryGetProperty("confirm_gap_pts", out var confirmGapPtsElement);
+        first.TryGetProperty("hold_confirm_ms", out var holdConfirmMsElement);
 
         // DB column name is lowercase: hostname
         var hasHostName = first.TryGetProperty("hostname", out var hostNameElement);
@@ -123,7 +129,10 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
                 ? default
                 : sansElement.Clone(),
             HostName = hostNameElement.ValueKind == JsonValueKind.String ? hostNameElement.GetString() : null,
-            Point = pointElement.ValueKind == JsonValueKind.Number && pointElement.TryGetInt32(out var p) ? p : 1
+            Point = pointElement.ValueKind == JsonValueKind.Number && pointElement.TryGetInt32(out var p) ? p : 1,
+            OpenPts = openPtsElement.ValueKind == JsonValueKind.Number && openPtsElement.TryGetInt32(out var openPts) ? openPts : 0,
+            ConfirmGapPts = confirmGapPtsElement.ValueKind == JsonValueKind.Number && confirmGapPtsElement.TryGetInt32(out var confirmGapPts) ? confirmGapPts : 0,
+            HoldConfirmMs = holdConfirmMsElement.ValueKind == JsonValueKind.Number && holdConfirmMsElement.TryGetInt32(out var holdConfirmMs) ? holdConfirmMs : 0
         };
     }
 
@@ -159,6 +168,9 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
         first.TryGetProperty("id", out var idElement);
         first.TryGetProperty("sans", out var sansElement);
         first.TryGetProperty("point", out var pointElement);
+        first.TryGetProperty("open_pts", out var openPtsElement);
+        first.TryGetProperty("confirm_gap_pts", out var confirmGapPtsElement);
+        first.TryGetProperty("hold_confirm_ms", out var holdConfirmMsElement);
 
         var hasHostName = first.TryGetProperty("hostname", out var hostNameElement);
         if (!hasHostName)
@@ -173,7 +185,10 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
                 ? default
                 : sansElement.Clone(),
             HostName = hostNameElement.ValueKind == JsonValueKind.String ? hostNameElement.GetString() : null,
-            Point = pointElement.ValueKind == JsonValueKind.Number && pointElement.TryGetInt32(out var p) ? p : 1
+            Point = pointElement.ValueKind == JsonValueKind.Number && pointElement.TryGetInt32(out var p) ? p : 1,
+            OpenPts = openPtsElement.ValueKind == JsonValueKind.Number && openPtsElement.TryGetInt32(out var openPts) ? openPts : 0,
+            ConfirmGapPts = confirmGapPtsElement.ValueKind == JsonValueKind.Number && confirmGapPtsElement.TryGetInt32(out var confirmGapPts) ? confirmGapPts : 0,
+            HoldConfirmMs = holdConfirmMsElement.ValueKind == JsonValueKind.Number && holdConfirmMsElement.TryGetInt32(out var holdConfirmMs) ? holdConfirmMs : 0
         };
     }
 
@@ -233,5 +248,14 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
 
         [JsonPropertyName("point")]
         public int Point { get; set; }
+
+        [JsonPropertyName("open_pts")]
+        public int OpenPts { get; set; }
+
+        [JsonPropertyName("confirm_gap_pts")]
+        public int ConfirmGapPts { get; set; }
+
+        [JsonPropertyName("hold_confirm_ms")]
+        public int HoldConfirmMs { get; set; }
     }
 }

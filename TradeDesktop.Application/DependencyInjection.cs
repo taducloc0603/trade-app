@@ -13,6 +13,7 @@ public static class DependencyInjection
         services.AddSingleton<IMachineIdentityService, MachineIdentityService>();
         services.AddSingleton<IGapCalculator, GapCalculator>();
         services.AddSingleton<IDashboardMetricsMapper, DashboardMetricsMapper>();
+        services.AddSingleton<IGapSignalConfirmationEngine, GapSignalConfirmationEngine>();
         return services;
     }
 }

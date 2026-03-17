@@ -16,6 +16,7 @@ public sealed class DashboardViewModel : ObservableObject
     private readonly RuntimeConfigState _runtimeConfigState;
     private readonly IConfigService _configService;
     private readonly IDashboardMetricsMapper _dashboardMetricsMapper;
+    private readonly IGapSignalConfirmationEngine _gapSignalConfirmationEngine;
     private readonly IMachineIdentityService _machineIdentityService;
     private readonly string _normalizedHostName;
 
@@ -48,6 +49,7 @@ public sealed class DashboardViewModel : ObservableObject
     private string _exchangeBTime = "-";
     private string _exchangeBMaxLatMs = "-";
     private string _exchangeBAvgLatMs = "-";
+    private bool _isTradingLogicEnabled;
     private bool _isLoading = true;
     private string _loadingMessage = "Đang chờ dữ liệu shared memory...";
     private string _machineHostName = string.Empty;
@@ -58,12 +60,14 @@ public sealed class DashboardViewModel : ObservableObject
         IConfigService configService,
         IExchangePairReader exchangePairReader,
         IDashboardMetricsMapper dashboardMetricsMapper,
+        IGapSignalConfirmationEngine gapSignalConfirmationEngine,
         IMachineIdentityService machineIdentityService)
     {
         _serviceProvider = serviceProvider;
         _runtimeConfigState = runtimeConfigState;
         _configService = configService;
         _dashboardMetricsMapper = dashboardMetricsMapper;
+        _gapSignalConfirmationEngine = gapSignalConfirmationEngine;
         _machineIdentityService = machineIdentityService;
 
         var rawHostName = _machineIdentityService.GetRawHostName();
@@ -76,13 +80,16 @@ public sealed class DashboardViewModel : ObservableObject
             "[App] Dashboard started.",
             $"[Config] Detected host name: {rawHostName}",
             $"[Config] Normalized host name: {normalizedHostName}",
-            "[App] Waiting for runtime config and shared memory data..."
+            "[App] Waiting for runtime config and shared memory data...",
+            $"{DateTime.Now:yyyy-M-d HH:mm:ss} | System | Trading logic stopped"
         };
 
         OpenConfigCommand = new AsyncRelayCommand(OpenConfigAsync);
         ReconnectConfigCommand = new AsyncRelayCommand(ReconnectConfigAsync);
         ClearLogsCommand = new AsyncRelayCommand(ClearLogsAsync);
         CopyHostNameCommand = new AsyncRelayCommand(CopyHostNameAsync);
+        StartTradingLogicCommand = new AsyncRelayCommand(StartTradingLogicAsync, CanStartTradingLogic);
+        StopTradingLogicCommand = new AsyncRelayCommand(StopTradingLogicAsync, CanStopTradingLogic);
 
         _runtimeConfigState.StateChanged += (_, _) => ApplyRuntimeConfig();
         ApplyRuntimeConfig();
@@ -170,11 +177,64 @@ public sealed class DashboardViewModel : ObservableObject
     public bool IsLoading { get => _isLoading; private set => SetProperty(ref _isLoading, value); }
     public string LoadingMessage { get => _loadingMessage; private set => SetProperty(ref _loadingMessage, value); }
     public string MachineHostName { get => _machineHostName; private set => SetProperty(ref _machineHostName, value); }
+    public bool IsTradingLogicEnabled
+    {
+        get => _isTradingLogicEnabled;
+        private set
+        {
+            if (!SetProperty(ref _isTradingLogicEnabled, value))
+            {
+                return;
+            }
+
+            OnPropertyChanged(nameof(TradingLogicStatusText));
+            StartTradingLogicCommand.RaiseCanExecuteChanged();
+            StopTradingLogicCommand.RaiseCanExecuteChanged();
+        }
+    }
+    public string TradingLogicStatusText => IsTradingLogicEnabled ? "Running" : "Stopped";
 
     public AsyncRelayCommand OpenConfigCommand { get; }
     public AsyncRelayCommand ReconnectConfigCommand { get; }
     public AsyncRelayCommand ClearLogsCommand { get; }
     public AsyncRelayCommand CopyHostNameCommand { get; }
+    public AsyncRelayCommand StartTradingLogicCommand { get; }
+    public AsyncRelayCommand StopTradingLogicCommand { get; }
+
+    private bool CanStartTradingLogic() => !IsTradingLogicEnabled;
+
+    private bool CanStopTradingLogic() => IsTradingLogicEnabled;
+
+    private Task StartTradingLogicAsync()
+    {
+        if (IsTradingLogicEnabled)
+        {
+            return Task.CompletedTask;
+        }
+
+        ResetTradingLogicState();
+        IsTradingLogicEnabled = true;
+        LogItems.Insert(0, $"{DateTime.Now:yyyy-M-d HH:mm:ss} | System | Trading logic started");
+        return Task.CompletedTask;
+    }
+
+    private Task StopTradingLogicAsync()
+    {
+        if (!IsTradingLogicEnabled)
+        {
+            return Task.CompletedTask;
+        }
+
+        IsTradingLogicEnabled = false;
+        ResetTradingLogicState();
+        LogItems.Insert(0, $"{DateTime.Now:yyyy-M-d HH:mm:ss} | System | Trading logic stopped");
+        return Task.CompletedTask;
+    }
+
+    private void ResetTradingLogicState()
+    {
+        _gapSignalConfirmationEngine.Reset();
+    }
 
     private Task CopyHostNameAsync()
     {
@@ -268,7 +328,7 @@ public sealed class DashboardViewModel : ObservableObject
             : $"Sàn B ({_runtimeConfigState.MapName2})";
 
         RuntimeSummary =
-            $"Host Name: {_runtimeConfigState.CurrentMachineHostName}  |  Point: {_runtimeConfigState.CurrentPoint}  |  Map 1: {_runtimeConfigState.CurrentMapName1}  |  Map 2: {_runtimeConfigState.CurrentMapName2}";
+            $"Host Name: {_runtimeConfigState.CurrentMachineHostName}  |  Point: {_runtimeConfigState.CurrentPoint}  |  OpenPts: {_runtimeConfigState.CurrentOpenPts}  |  ConfirmGapPts: {_runtimeConfigState.CurrentConfirmGapPts}  |  HoldConfirmMs: {_runtimeConfigState.CurrentHoldConfirmMs}  |  Map 1: {_runtimeConfigState.CurrentMapName1}  |  Map 2: {_runtimeConfigState.CurrentMapName2}";
     }
 
     private async Task InitializeRuntimeConfigAsync()
@@ -281,12 +341,20 @@ public sealed class DashboardViewModel : ObservableObject
             var result = await _configService.LoadByMachineHostNameAsync();
             if (result.IsSuccess && result.Exists)
             {
-                _runtimeConfigState.Update(result.MachineHostName, result.MapName1, result.MapName2, result.Point);
+                _runtimeConfigState.Update(
+                    result.MachineHostName,
+                    result.MapName1,
+                    result.MapName2,
+                    result.Point,
+                    result.OpenPts,
+                    result.ConfirmGapPts,
+                    result.HoldConfirmMs);
+                ResetTradingLogicState();
 
                 if (string.Equals(result.MachineHostName, InlineDbHostName, StringComparison.OrdinalIgnoreCase))
                 {
                     DbInlineData =
-                        $"[DB] id={result.ConfigId} | hostname={result.MachineHostName} | point={result.Point} | sans={result.SansJson}";
+                        $"[DB] id={result.ConfigId} | hostname={result.MachineHostName} | point={result.Point} | open_pts={result.OpenPts} | confirm_gap_pts={result.ConfirmGapPts} | hold_confirm_ms={result.HoldConfirmMs} | sans={result.SansJson}";
                     IsDbInlineDataVisible = true;
                 }
                 else
@@ -369,6 +437,29 @@ public sealed class DashboardViewModel : ObservableObject
             IsLoading = false;
 
             BindDashboardMetrics(metrics);
+
+            if (IsTradingLogicEnabled)
+            {
+                var triggerResults = _gapSignalConfirmationEngine.ProcessSnapshot(
+                    new GapSignalSnapshot(metrics.TimestampUtc, metrics.GapBuy, metrics.GapSell),
+                    new GapSignalConfirmationConfig(
+                        ConfirmGapPts: _runtimeConfigState.CurrentConfirmGapPts,
+                        OpenPts: _runtimeConfigState.CurrentOpenPts,
+                        HoldConfirmMs: _runtimeConfigState.CurrentHoldConfirmMs));
+
+                foreach (var trigger in triggerResults)
+                {
+                    if (!trigger.Triggered || trigger.Action != GapSignalAction.Open)
+                    {
+                        continue;
+                    }
+
+                    var sideText = trigger.Side == GapSignalSide.Buy ? "BUY" : "SELL";
+                    var joinedGaps = string.Join("|", trigger.Gaps);
+                    var triggeredAtLocal = trigger.TriggeredAtUtc.ToLocalTime();
+                    LogItems.Insert(0, $"{triggeredAtLocal:yyyy-M-d HH:mm:ss} | Open | {sideText} | {joinedGaps}");
+                }
+            }
 
             LogItems.Insert(0,
                 $"[{DateTime.Now:HH:mm:ss}] A:{metrics.ExchangeA.Symbol} ({(metrics.IsConnectedA ? "ON" : "OFF")}) | B:{metrics.ExchangeB.Symbol} ({(metrics.IsConnectedB ? "ON" : "OFF")})");
