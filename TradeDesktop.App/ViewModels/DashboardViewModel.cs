@@ -13,6 +13,10 @@ namespace TradeDesktop.App.ViewModels;
 
 public sealed class DashboardViewModel : ObservableObject
 {
+    private const bool EnableGapDebugLog = true;
+    private const bool IncludeHoldProgressDebugLog = false;
+    private const int MaxLogItems = 300;
+
     private readonly IServiceProvider _serviceProvider;
     private readonly RuntimeConfigState _runtimeConfigState;
     private readonly IConfigService _configService;
@@ -456,6 +460,19 @@ public sealed class DashboardViewModel : ObservableObject
                         OpenPts: _runtimeConfigState.CurrentOpenPts,
                         HoldConfirmMs: _runtimeConfigState.CurrentHoldConfirmMs));
 
+                if (EnableGapDebugLog)
+                {
+                    foreach (var debugEvent in _gapSignalConfirmationEngine.LastDebugEvents)
+                    {
+                        if (!IncludeHoldProgressDebugLog && debugEvent.Stage == GapSignalDebugStage.HoldProgress)
+                        {
+                            continue;
+                        }
+
+                        AppendLogItem(FormatGapDebugLog(debugEvent));
+                    }
+                }
+
                 foreach (var trigger in triggerResults)
                 {
                     if (!trigger.Triggered || trigger.Action != GapSignalAction.Open)
@@ -467,10 +484,29 @@ public sealed class DashboardViewModel : ObservableObject
                     var joinedGaps = string.Join("|", trigger.Gaps);
                     var triggeredAtLocal = trigger.TriggeredAtUtc.ToLocalTime();
                     LastSignalText = $"[{triggeredAtLocal:HH:mm:ss}] OPEN {sideText} ({joinedGaps})";
-                    LogItems.Insert(0, $"{triggeredAtLocal:yyyy-M-d HH:mm:ss} | Open | {sideText} | {joinedGaps}");
+                    AppendLogItem($"{triggeredAtLocal:yyyy-M-d HH:mm:ss} | Open | {sideText} | {joinedGaps}");
                 }
             }
         });
+    }
+
+    private void AppendLogItem(string message)
+    {
+        LogItems.Insert(0, message);
+
+        while (LogItems.Count > MaxLogItems)
+        {
+            LogItems.RemoveAt(LogItems.Count - 1);
+        }
+    }
+
+    private static string FormatGapDebugLog(GapSignalDebugEvent debugEvent)
+    {
+        var localTime = debugEvent.TimestampUtc.ToLocalTime();
+        var sideText = debugEvent.Side == GapSignalSide.Buy ? "BUY" : "SELL";
+        var gapText = debugEvent.Gap?.ToString(CultureInfo.InvariantCulture) ?? "null";
+
+        return $"{localTime:yyyy-M-d HH:mm:ss} | Debug | {sideText} | stage={debugEvent.Stage} | gap={gapText} | elapsedMs={debugEvent.ElapsedMs:F0} | confirm={debugEvent.ConfirmGapPts} | open={debugEvent.OpenPts} | holdMs={debugEvent.HoldConfirmMs} | reason={debugEvent.Reason}";
     }
 
     private void BindDashboardMetrics(DashboardMetrics metrics)

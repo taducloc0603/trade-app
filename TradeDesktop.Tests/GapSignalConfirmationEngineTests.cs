@@ -103,6 +103,49 @@ public sealed class GapSignalConfirmationEngineTests
         Assert.Equal(new[] { 9, 9 }, trigger.Gaps);
     }
 
+    [Fact]
+    public void ProcessSnapshot_EmitsDebugEvent_WhenConfirmFailsAndWindowResets()
+    {
+        var sut = new GapSignalConfirmationEngine();
+        var ts = new DateTime(2026, 3, 17, 5, 0, 0, DateTimeKind.Utc);
+
+        _ = Process(sut, ts, gapBuy: 0, gapSell: null);
+
+        var debug = Assert.Single(sut.LastDebugEvents);
+        Assert.Equal(GapSignalSide.Buy, debug.Side);
+        Assert.Equal(GapSignalDebugStage.ConfirmFailReset, debug.Stage);
+        Assert.Equal("gap-below-confirm-reset-window", debug.Reason);
+    }
+
+    [Fact]
+    public void ProcessSnapshot_EmitsDebugEvents_ForOpenFailAndTrigger()
+    {
+        var sut = new GapSignalConfirmationEngine();
+        var start = new DateTime(2026, 3, 17, 5, 10, 0, DateTimeKind.Utc);
+
+        _ = Process(sut, start.AddMilliseconds(0), gapBuy: 5, gapSell: null);
+        _ = Process(sut, start.AddMilliseconds(250), gapBuy: 6, gapSell: null);
+
+        // Hold reached but open not reached.
+        _ = Process(sut, start.AddMilliseconds(600), gapBuy: 7, gapSell: null);
+        Assert.Contains(
+            sut.LastDebugEvents,
+            e => e.Side == GapSignalSide.Buy
+                 && e.Stage == GapSignalDebugStage.HoldReachedOpenFailReset
+                 && e.Reason == "hold-reached-but-last-gap-below-open-reset-window");
+
+        // New cycle, now trigger.
+        _ = Process(sut, start.AddMilliseconds(700), gapBuy: 5, gapSell: null);
+        _ = Process(sut, start.AddMilliseconds(900), gapBuy: 6, gapSell: null);
+        _ = Process(sut, start.AddMilliseconds(1300), gapBuy: 8, gapSell: null);
+
+        Assert.Contains(
+            sut.LastDebugEvents,
+            e => e.Side == GapSignalSide.Buy
+                 && e.Stage == GapSignalDebugStage.OpenTriggered
+                 && e.Reason == "hold-reached-and-last-gap-pass-open-trigger-open");
+    }
+
     private static IReadOnlyList<GapSignalTriggerResult> Process(
         GapSignalConfirmationEngine sut,
         DateTime timestampUtc,
