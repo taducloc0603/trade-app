@@ -467,6 +467,7 @@ public sealed class DashboardViewModel : ObservableObject
                     var joinedGaps = string.Join("|", trigger.Gaps);
                     var triggeredAtLocal = trigger.TriggeredAtUtc.ToLocalTime();
                     LastSignalText = $"[{triggeredAtLocal:HH:mm:ss}] OPEN {sideText} ({joinedGaps})";
+                    LogItems.Insert(0, $"{triggeredAtLocal:yyyy-M-d HH:mm:ss} | Open | {sideText} | {joinedGaps}");
                 }
             }
         });

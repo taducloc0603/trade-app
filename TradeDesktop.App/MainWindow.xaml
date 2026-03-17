@@ -184,7 +184,7 @@
                         <RowDefinition Height="12" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="10" />
-                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
                     <TextBlock Text="Trading Signal" FontSize="18" FontWeight="SemiBold" />
@@ -206,6 +206,27 @@
                                 <TextBlock Text="Last Signal: " FontWeight="SemiBold" Foreground="#344054" />
                                 <TextBlock Text="{Binding LastSignalText, Mode=OneWay}" Foreground="#101828" TextWrapping="Wrap" />
                             </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <Border Grid.Row="4" BorderBrush="#EEF1F5" BorderThickness="1" CornerRadius="8" Padding="10" Background="#FAFBFC">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="8" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Text="Signal Logs" FontWeight="SemiBold" Foreground="#344054" />
+
+                            <ListBox Grid.Row="2"
+                                     ItemsSource="{Binding LogItems}"
+                                     BorderThickness="0"
+                                     Background="Transparent"
+                                     Foreground="#101828"
+                                     FontFamily="Consolas"
+                                     FontSize="12"
+                                     ScrollViewer.VerticalScrollBarVisibility="Auto" />
                         </Grid>
                     </Border>
 
