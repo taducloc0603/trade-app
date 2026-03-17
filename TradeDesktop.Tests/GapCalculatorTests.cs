@@ -13,14 +13,14 @@ public sealed class GapCalculatorTests
         var sut = new GapCalculator(new StubRuntimeConfigProvider(point: 100));
 
         // BUY opportunity: SanB.Bid > SanA.Ask => positive buy gap
-        // SELL opportunity: SanA.Bid < SanB.Ask => negative sell gap
+        // SELL opportunity: SanB.Ask > SanA.Bid => positive sell gap
         var sanA = CreateExchange(bid: 100.00m, ask: 100.01m);
         var sanB = CreateExchange(bid: 100.10m, ask: 100.11m);
 
         var (gapBuy, gapSell) = sut.Calculate(sanA, sanB);
 
         Assert.Equal(9, gapBuy);
-        Assert.Equal(-11, gapSell);
+        Assert.Equal(11, gapSell);
     }
 
     [Fact]
@@ -36,10 +36,10 @@ public sealed class GapCalculatorTests
         var fallback = sutFallback.Calculate(sanA, sanB);
 
         Assert.Equal(2, withPoint.GapBuy);
-        Assert.Equal(-6, withPoint.GapSell);
+        Assert.Equal(6, withPoint.GapSell);
 
         // (100.04 - 100.02) * 1 = 0.02 -> int cast => 0
-        // (100.00 - 100.06) * 1 = -0.06 -> int cast => 0 (towards zero)
+        // (100.06 - 100.00) * 1 = 0.06 -> int cast => 0
         Assert.Equal(0, fallback.GapBuy);
         Assert.Equal(0, fallback.GapSell);
     }

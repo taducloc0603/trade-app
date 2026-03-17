@@ -35,16 +35,16 @@ public sealed class GapSignalConfirmationEngineTests
         var sut = new GapSignalConfirmationEngine();
         var start = new DateTime(2026, 3, 17, 4, 35, 24, DateTimeKind.Utc);
 
-        Assert.Empty(Process(sut, start.AddMilliseconds(0), gapBuy: null, gapSell: -5));
-        Assert.Empty(Process(sut, start.AddMilliseconds(100), gapBuy: null, gapSell: -6));
-        Assert.Empty(Process(sut, start.AddMilliseconds(220), gapBuy: null, gapSell: -7));
+        Assert.Empty(Process(sut, start.AddMilliseconds(0), gapBuy: null, gapSell: 5));
+        Assert.Empty(Process(sut, start.AddMilliseconds(100), gapBuy: null, gapSell: 6));
+        Assert.Empty(Process(sut, start.AddMilliseconds(220), gapBuy: null, gapSell: 7));
 
-        var results = Process(sut, start.AddMilliseconds(540), gapBuy: null, gapSell: -8);
+        var results = Process(sut, start.AddMilliseconds(540), gapBuy: null, gapSell: 8);
 
         var trigger = Assert.Single(results);
         Assert.Equal(GapSignalAction.Open, trigger.Action);
         Assert.Equal(GapSignalSide.Sell, trigger.Side);
-        Assert.Equal(new[] { -5, -6, -7, -8 }, trigger.Gaps);
+        Assert.Equal(new[] { 5, 6, 7, 8 }, trigger.Gaps);
     }
 
     [Fact]

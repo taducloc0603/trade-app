@@ -37,8 +37,8 @@ public sealed class GapSignalConfirmationEngine : IGapSignalConfirmationEngine
             timestampUtc: snapshot.TimestampUtc,
             state: _sellState,
             holdConfirmMs: normalizedHoldMs,
-            isConfirmSatisfied: value => value <= -normalizedConfirm,
-            isOpenSatisfied: value => value <= -normalizedOpen);
+            isConfirmSatisfied: value => value >= normalizedConfirm,
+            isOpenSatisfied: value => value >= normalizedOpen);
         if (sellResult is not null)
         {
             results.Add(sellResult);
