@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
 using Microsoft.Extensions.DependencyInjection;
+using System.Windows.Media;
 using TradeDesktop.App.Commands;
 using TradeDesktop.App.State;
 using TradeDesktop.Application.Abstractions;
@@ -50,6 +51,7 @@ public sealed class DashboardViewModel : ObservableObject
     private string _exchangeBMaxLatMs = "-";
     private string _exchangeBAvgLatMs = "-";
     private bool _isTradingLogicEnabled;
+    private string _lastSignalText = "-";
     private bool _isLoading = true;
     private string _loadingMessage = "Đang chờ dữ liệu shared memory...";
     private string _machineHostName = string.Empty;
@@ -177,6 +179,11 @@ public sealed class DashboardViewModel : ObservableObject
     public bool IsLoading { get => _isLoading; private set => SetProperty(ref _isLoading, value); }
     public string LoadingMessage { get => _loadingMessage; private set => SetProperty(ref _loadingMessage, value); }
     public string MachineHostName { get => _machineHostName; private set => SetProperty(ref _machineHostName, value); }
+    public string LastSignalText
+    {
+        get => _lastSignalText;
+        private set => SetProperty(ref _lastSignalText, value);
+    }
     public bool IsTradingLogicEnabled
     {
         get => _isTradingLogicEnabled;
@@ -188,11 +195,13 @@ public sealed class DashboardViewModel : ObservableObject
             }
 
             OnPropertyChanged(nameof(TradingLogicStatusText));
+            OnPropertyChanged(nameof(TradingLogicStatusBrush));
             StartTradingLogicCommand.RaiseCanExecuteChanged();
             StopTradingLogicCommand.RaiseCanExecuteChanged();
         }
     }
     public string TradingLogicStatusText => IsTradingLogicEnabled ? "Running" : "Stopped";
+    public Brush TradingLogicStatusBrush => IsTradingLogicEnabled ? Brushes.ForestGreen : Brushes.Gray;
 
     public AsyncRelayCommand OpenConfigCommand { get; }
     public AsyncRelayCommand ReconnectConfigCommand { get; }
@@ -214,7 +223,7 @@ public sealed class DashboardViewModel : ObservableObject
 
         ResetTradingLogicState();
         IsTradingLogicEnabled = true;
-        LogItems.Insert(0, $"{DateTime.Now:yyyy-M-d HH:mm:ss} | System | Trading logic started");
+        LastSignalText = "-";
         return Task.CompletedTask;
     }
 
@@ -227,7 +236,7 @@ public sealed class DashboardViewModel : ObservableObject
 
         IsTradingLogicEnabled = false;
         ResetTradingLogicState();
-        LogItems.Insert(0, $"{DateTime.Now:yyyy-M-d HH:mm:ss} | System | Trading logic stopped");
+        LastSignalText = "-";
         return Task.CompletedTask;
     }
 
@@ -457,16 +466,8 @@ public sealed class DashboardViewModel : ObservableObject
                     var sideText = trigger.Side == GapSignalSide.Buy ? "BUY" : "SELL";
                     var joinedGaps = string.Join("|", trigger.Gaps);
                     var triggeredAtLocal = trigger.TriggeredAtUtc.ToLocalTime();
-                    LogItems.Insert(0, $"{triggeredAtLocal:yyyy-M-d HH:mm:ss} | Open | {sideText} | {joinedGaps}");
+                    LastSignalText = $"[{triggeredAtLocal:HH:mm:ss}] OPEN {sideText} ({joinedGaps})";
                 }
-            }
-
-            LogItems.Insert(0,
-                $"[{DateTime.Now:HH:mm:ss}] A:{metrics.ExchangeA.Symbol} ({(metrics.IsConnectedA ? "ON" : "OFF")}) | B:{metrics.ExchangeB.Symbol} ({(metrics.IsConnectedB ? "ON" : "OFF")})");
-
-            while (LogItems.Count > 200)
-            {
-                LogItems.RemoveAt(LogItems.Count - 1);
             }
         });
     }

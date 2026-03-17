@@ -59,16 +59,17 @@
                             Height="36"
                             Margin="0,0,8,0">
                         <TextBlock VerticalAlignment="Center"
-                                   Foreground="#344054"
+                                   Foreground="{Binding TradingLogicStatusBrush}"
+                                   FontWeight="SemiBold"
                                    Text="{Binding TradingLogicStatusText, StringFormat=Trading Logic Status: {0}}" />
                     </Border>
                     <Button Content="Start"
-                            Width="80"
+                            Width="68"
                             Height="36"
                             Margin="0,0,8,0"
                             Command="{Binding StartTradingLogicCommand}" />
                     <Button Content="Stop"
-                            Width="80"
+                            Width="68"
                             Height="36"
                             Margin="0,0,8,0"
                             Command="{Binding StopTradingLogicCommand}" />
@@ -79,17 +80,17 @@
                              IsReadOnly="True"
                              Text="{Binding MachineHostName, Mode=OneWay}" />
                     <Button Content="Copy Host"
-                            Width="100"
+                            Width="84"
                             Height="36"
                             Margin="0,0,8,0"
                             Command="{Binding CopyHostNameCommand}" />
                     <Button Content="Reconnect"
-                            Width="120"
+                            Width="96"
                             Height="36"
                             Margin="0,0,8,0"
                             Command="{Binding ReconnectConfigCommand}" />
                     <Button Content="Config"
-                            Width="120"
+                            Width="82"
                             Height="36"
                             Command="{Binding OpenConfigCommand}" />
                 </StackPanel>
@@ -181,32 +182,33 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="12" />
-                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="10" />
+                        <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
 
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
+                    <TextBlock Text="Trading Signal" FontSize="18" FontWeight="SemiBold" />
 
-                        <TextBlock Text="Logs" FontSize="18" FontWeight="SemiBold" />
-                        <Button Grid.Column="1" Content="Clear all" Width="90" Command="{Binding ClearLogsCommand}" />
-                    </Grid>
+                    <Border Grid.Row="2" BorderBrush="#EEF1F5" BorderThickness="1" CornerRadius="8" Padding="12" Background="#FAFBFC">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="10" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
 
-                    <Border Grid.Row="2" BorderBrush="#EEF1F5" BorderThickness="1" CornerRadius="8" Padding="8">
-                        <ScrollViewer VerticalScrollBarVisibility="Auto">
-                            <ItemsControl ItemsSource="{Binding LogItems}">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <Border Padding="0,6" BorderBrush="#EEF1F5" BorderThickness="0,0,0,1">
-                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" Foreground="#344054" />
-                                        </Border>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </ScrollViewer>
+                            <TextBlock FontWeight="SemiBold" Foreground="#344054">
+                                <Run Text="Trading Logic Status: " />
+                                <Run Text="{Binding TradingLogicStatusText}" Foreground="{Binding TradingLogicStatusBrush}" />
+                            </TextBlock>
+
+                            <StackPanel Grid.Row="2" Orientation="Horizontal">
+                                <TextBlock Text="Last Signal: " FontWeight="SemiBold" Foreground="#344054" />
+                                <TextBlock Text="{Binding LastSignalText}" Foreground="#101828" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Grid>
                     </Border>
+
                 </Grid>
             </Border>
         </Grid>
