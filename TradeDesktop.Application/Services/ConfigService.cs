@@ -36,6 +36,9 @@ public sealed class ConfigService(
             record.OpenPts,
             record.ConfirmGapPts,
             record.HoldConfirmMs,
+            record.ClosePts,
+            record.CloseConfirmGapPts,
+            record.CloseHoldConfirmMs,
             record.Id,
             record.SansJson);
     }
@@ -81,6 +84,9 @@ public sealed record ConfigLoadResult(
     int OpenPts,
     int ConfirmGapPts,
     int HoldConfirmMs,
+    int ClosePts,
+    int CloseConfirmGapPts,
+    int CloseHoldConfirmMs,
     string MapName1,
     string MapName2,
     string ConfigId,
@@ -95,6 +101,9 @@ public sealed record ConfigLoadResult(
         int openPts,
         int confirmGapPts,
         int holdConfirmMs,
+        int closePts,
+        int closeConfirmGapPts,
+        int closeHoldConfirmMs,
         string configId,
         string sansJson) =>
         new(
@@ -105,6 +114,9 @@ public sealed record ConfigLoadResult(
             Math.Abs(openPts),
             Math.Abs(confirmGapPts),
             Math.Max(0, holdConfirmMs),
+            Math.Abs(closePts),
+            Math.Abs(closeConfirmGapPts),
+            Math.Max(0, closeHoldConfirmMs),
             mapName1,
             mapName2,
             configId,
@@ -112,10 +124,10 @@ public sealed record ConfigLoadResult(
             null);
 
     public static ConfigLoadResult NotFound(string machineHostName) =>
-        new(false, false, machineHostName, 1, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", null);
+        new(false, false, machineHostName, 1, 0, 0, 0, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", null);
 
     public static ConfigLoadResult Failed(string machineHostName, string error) =>
-        new(false, true, machineHostName, 1, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", error);
+        new(false, true, machineHostName, 1, 0, 0, 0, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", error);
 }
 
 public sealed record ConfigSaveResult(bool IsSuccess, string? MachineHostName, string? Error)

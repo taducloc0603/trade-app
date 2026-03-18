@@ -46,7 +46,10 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
             Point: row.Point > 0 ? row.Point : 1,
             OpenPts: row.OpenPts,
             ConfirmGapPts: row.ConfirmGapPts,
-            HoldConfirmMs: row.HoldConfirmMs);
+            HoldConfirmMs: row.HoldConfirmMs,
+            ClosePts: row.ClosePts,
+            CloseConfirmGapPts: row.CloseConfirmGapPts,
+            CloseHoldConfirmMs: row.CloseHoldConfirmMs);
     }
 
     public async Task<bool> UpdateSansAndHostNameByHostNameAsync(string hostName, string sansJson, CancellationToken cancellationToken = default)
@@ -111,8 +114,11 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
         first.TryGetProperty("sans", out var sansElement);
         first.TryGetProperty("point", out var pointElement);
         first.TryGetProperty("open_pts", out var openPtsElement);
-        first.TryGetProperty("confirm_gap_pts", out var confirmGapPtsElement);
-        first.TryGetProperty("hold_confirm_ms", out var holdConfirmMsElement);
+        first.TryGetProperty("open_confirm_gap_pts", out var confirmGapPtsElement);
+        first.TryGetProperty("open_hold_confirm_ms", out var holdConfirmMsElement);
+        first.TryGetProperty("close_pts", out var closePtsElement);
+        first.TryGetProperty("close_confirm_gap_pts", out var closeConfirmGapPtsElement);
+        first.TryGetProperty("close_hold_confirm_ms", out var closeHoldConfirmMsElement);
 
         // DB column name is lowercase: hostname
         var hasHostName = first.TryGetProperty("hostname", out var hostNameElement);
@@ -132,7 +138,10 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
             Point = pointElement.ValueKind == JsonValueKind.Number && pointElement.TryGetInt32(out var p) ? p : 1,
             OpenPts = openPtsElement.ValueKind == JsonValueKind.Number && openPtsElement.TryGetInt32(out var openPts) ? openPts : 0,
             ConfirmGapPts = confirmGapPtsElement.ValueKind == JsonValueKind.Number && confirmGapPtsElement.TryGetInt32(out var confirmGapPts) ? confirmGapPts : 0,
-            HoldConfirmMs = holdConfirmMsElement.ValueKind == JsonValueKind.Number && holdConfirmMsElement.TryGetInt32(out var holdConfirmMs) ? holdConfirmMs : 0
+            HoldConfirmMs = holdConfirmMsElement.ValueKind == JsonValueKind.Number && holdConfirmMsElement.TryGetInt32(out var holdConfirmMs) ? holdConfirmMs : 0,
+            ClosePts = closePtsElement.ValueKind == JsonValueKind.Number && closePtsElement.TryGetInt32(out var closePts) ? closePts : 0,
+            CloseConfirmGapPts = closeConfirmGapPtsElement.ValueKind == JsonValueKind.Number && closeConfirmGapPtsElement.TryGetInt32(out var closeConfirmGapPts) ? closeConfirmGapPts : 0,
+            CloseHoldConfirmMs = closeHoldConfirmMsElement.ValueKind == JsonValueKind.Number && closeHoldConfirmMsElement.TryGetInt32(out var closeHoldConfirmMs) ? closeHoldConfirmMs : 0
         };
     }
 
@@ -169,8 +178,11 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
         first.TryGetProperty("sans", out var sansElement);
         first.TryGetProperty("point", out var pointElement);
         first.TryGetProperty("open_pts", out var openPtsElement);
-        first.TryGetProperty("confirm_gap_pts", out var confirmGapPtsElement);
-        first.TryGetProperty("hold_confirm_ms", out var holdConfirmMsElement);
+        first.TryGetProperty("open_confirm_gap_pts", out var confirmGapPtsElement);
+        first.TryGetProperty("open_hold_confirm_ms", out var holdConfirmMsElement);
+        first.TryGetProperty("close_pts", out var closePtsElement);
+        first.TryGetProperty("close_confirm_gap_pts", out var closeConfirmGapPtsElement);
+        first.TryGetProperty("close_hold_confirm_ms", out var closeHoldConfirmMsElement);
 
         var hasHostName = first.TryGetProperty("hostname", out var hostNameElement);
         if (!hasHostName)
@@ -188,7 +200,10 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
             Point = pointElement.ValueKind == JsonValueKind.Number && pointElement.TryGetInt32(out var p) ? p : 1,
             OpenPts = openPtsElement.ValueKind == JsonValueKind.Number && openPtsElement.TryGetInt32(out var openPts) ? openPts : 0,
             ConfirmGapPts = confirmGapPtsElement.ValueKind == JsonValueKind.Number && confirmGapPtsElement.TryGetInt32(out var confirmGapPts) ? confirmGapPts : 0,
-            HoldConfirmMs = holdConfirmMsElement.ValueKind == JsonValueKind.Number && holdConfirmMsElement.TryGetInt32(out var holdConfirmMs) ? holdConfirmMs : 0
+            HoldConfirmMs = holdConfirmMsElement.ValueKind == JsonValueKind.Number && holdConfirmMsElement.TryGetInt32(out var holdConfirmMs) ? holdConfirmMs : 0,
+            ClosePts = closePtsElement.ValueKind == JsonValueKind.Number && closePtsElement.TryGetInt32(out var closePts) ? closePts : 0,
+            CloseConfirmGapPts = closeConfirmGapPtsElement.ValueKind == JsonValueKind.Number && closeConfirmGapPtsElement.TryGetInt32(out var closeConfirmGapPts) ? closeConfirmGapPts : 0,
+            CloseHoldConfirmMs = closeHoldConfirmMsElement.ValueKind == JsonValueKind.Number && closeHoldConfirmMsElement.TryGetInt32(out var closeHoldConfirmMs) ? closeHoldConfirmMs : 0
         };
     }
 
@@ -252,10 +267,19 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
         [JsonPropertyName("open_pts")]
         public int OpenPts { get; set; }
 
-        [JsonPropertyName("confirm_gap_pts")]
+        [JsonPropertyName("open_confirm_gap_pts")]
         public int ConfirmGapPts { get; set; }
 
-        [JsonPropertyName("hold_confirm_ms")]
+        [JsonPropertyName("open_hold_confirm_ms")]
         public int HoldConfirmMs { get; set; }
+
+        [JsonPropertyName("close_pts")]
+        public int ClosePts { get; set; }
+
+        [JsonPropertyName("close_confirm_gap_pts")]
+        public int CloseConfirmGapPts { get; set; }
+
+        [JsonPropertyName("close_hold_confirm_ms")]
+        public int CloseHoldConfirmMs { get; set; }
     }
 }

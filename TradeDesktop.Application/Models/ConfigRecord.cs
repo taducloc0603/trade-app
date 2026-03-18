@@ -7,4 +7,7 @@ public sealed record ConfigRecord(
     int Point,
     int OpenPts,
     int ConfirmGapPts,
-    int HoldConfirmMs);
+    int HoldConfirmMs,
+    int ClosePts,
+    int CloseConfirmGapPts,
+    int CloseHoldConfirmMs);

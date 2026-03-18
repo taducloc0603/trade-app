@@ -1,0 +1,95 @@
+using TradeDesktop.Application.Models;
+using TradeDesktop.Application.Services;
+
+namespace TradeDesktop.Tests;
+
+public sealed class CloseSignalEngineTests
+{
+    [Fact]
+    public void ProcessSnapshot_TriggersCloseBuy_WhenGapSellMatchesReverseThresholds()
+    {
+        var sut = new CloseSignalEngine();
+        var config = new GapSignalConfirmationConfig(
+            ConfirmGapPts: 5,
+            OpenPts: 8,
+            HoldConfirmMs: 500,
+            CloseConfirmGapPts: 5,
+            ClosePts: 8,
+            CloseHoldConfirmMs: 400);
+        var start = new DateTime(2026, 3, 18, 15, 0, 0, DateTimeKind.Utc);
+
+        Assert.Null(Process(sut, start.AddMilliseconds(0), gapBuy: null, gapSell: -5, config, TradingPositionSide.Buy));
+        Assert.Null(Process(sut, start.AddMilliseconds(180), gapBuy: null, gapSell: -6, config, TradingPositionSide.Buy));
+
+        var trigger = Process(sut, start.AddMilliseconds(420), gapBuy: null, gapSell: -8, config, TradingPositionSide.Buy);
+
+        Assert.NotNull(trigger);
+        Assert.Equal(GapSignalAction.Close, trigger!.Action);
+        Assert.Equal(GapSignalSide.Buy, trigger.Side);
+        Assert.Equal(new[] { -5, -6, -8 }, trigger.Gaps);
+    }
+
+    [Fact]
+    public void ProcessSnapshot_TriggersCloseSell_WhenGapBuyMatchesReverseThresholds()
+    {
+        var sut = new CloseSignalEngine();
+        var config = new GapSignalConfirmationConfig(
+            ConfirmGapPts: 5,
+            OpenPts: 8,
+            HoldConfirmMs: 500,
+            CloseConfirmGapPts: 5,
+            ClosePts: 8,
+            CloseHoldConfirmMs: 400);
+        var start = new DateTime(2026, 3, 18, 15, 5, 0, DateTimeKind.Utc);
+
+        Assert.Null(Process(sut, start.AddMilliseconds(0), gapBuy: 5, gapSell: null, config, TradingPositionSide.Sell));
+        Assert.Null(Process(sut, start.AddMilliseconds(220), gapBuy: 6, gapSell: null, config, TradingPositionSide.Sell));
+
+        var trigger = Process(sut, start.AddMilliseconds(450), gapBuy: 8, gapSell: null, config, TradingPositionSide.Sell);
+
+        Assert.NotNull(trigger);
+        Assert.Equal(GapSignalAction.Close, trigger!.Action);
+        Assert.Equal(GapSignalSide.Sell, trigger.Side);
+        Assert.Equal(new[] { 5, 6, 8 }, trigger.Gaps);
+    }
+
+    [Fact]
+    public void ProcessSnapshot_ResetsWindow_WhenAnyTickFailsCloseConfirm()
+    {
+        var sut = new CloseSignalEngine();
+        var config = new GapSignalConfirmationConfig(
+            ConfirmGapPts: 5,
+            OpenPts: 8,
+            HoldConfirmMs: 500,
+            CloseConfirmGapPts: 5,
+            ClosePts: 8,
+            CloseHoldConfirmMs: 300);
+        var start = new DateTime(2026, 3, 18, 15, 10, 0, DateTimeKind.Utc);
+
+        Assert.Null(Process(sut, start.AddMilliseconds(0), gapBuy: null, gapSell: -5, config, TradingPositionSide.Buy));
+        Assert.Null(Process(sut, start.AddMilliseconds(100), gapBuy: null, gapSell: -6, config, TradingPositionSide.Buy));
+
+        // Fails confirm -> reset close hold window.
+        Assert.Null(Process(sut, start.AddMilliseconds(200), gapBuy: null, gapSell: -4, config, TradingPositionSide.Buy));
+
+        Assert.Null(Process(sut, start.AddMilliseconds(250), gapBuy: null, gapSell: -5, config, TradingPositionSide.Buy));
+        Assert.Null(Process(sut, start.AddMilliseconds(400), gapBuy: null, gapSell: -8, config, TradingPositionSide.Buy));
+
+        var trigger = Process(sut, start.AddMilliseconds(600), gapBuy: null, gapSell: -8, config, TradingPositionSide.Buy);
+
+        Assert.NotNull(trigger);
+        Assert.Equal(new[] { -5, -8, -8 }, trigger!.Gaps);
+    }
+
+    private static GapSignalTriggerResult? Process(
+        CloseSignalEngine sut,
+        DateTime timestampUtc,
+        int? gapBuy,
+        int? gapSell,
+        GapSignalConfirmationConfig config,
+        TradingPositionSide positionSide)
+        => sut.ProcessSnapshot(
+            new GapSignalSnapshot(timestampUtc, gapBuy, gapSell),
+            config,
+            positionSide);
+}

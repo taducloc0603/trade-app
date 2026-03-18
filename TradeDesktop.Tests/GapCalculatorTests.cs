@@ -65,6 +65,9 @@ public sealed class GapCalculatorTests
         public int CurrentOpenPts => 0;
         public int CurrentConfirmGapPts => 0;
         public int CurrentHoldConfirmMs => 0;
+        public int CurrentClosePts => 0;
+        public int CurrentCloseConfirmGapPts => 0;
+        public int CurrentCloseHoldConfirmMs => 0;
         public string CurrentMapName1 => "A";
         public string CurrentMapName2 => "B";
         public DashboardMetrics? CurrentDashboardMetrics => null;

@@ -14,6 +14,9 @@ public static class DependencyInjection
         services.AddSingleton<IGapCalculator, GapCalculator>();
         services.AddSingleton<IDashboardMetricsMapper, DashboardMetricsMapper>();
         services.AddSingleton<IGapSignalConfirmationEngine, GapSignalConfirmationEngine>();
+        services.AddSingleton<IOpenSignalEngine>(sp => (GapSignalConfirmationEngine)sp.GetRequiredService<IGapSignalConfirmationEngine>());
+        services.AddSingleton<ICloseSignalEngine, CloseSignalEngine>();
+        services.AddSingleton<ITradingFlowEngine, TradingFlowEngine>();
         return services;
     }
 }

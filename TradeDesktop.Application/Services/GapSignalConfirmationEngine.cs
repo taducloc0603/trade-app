@@ -3,7 +3,7 @@ using TradeDesktop.Application.Models;
 
 namespace TradeDesktop.Application.Services;
 
-public sealed class GapSignalConfirmationEngine : IGapSignalConfirmationEngine
+public sealed class GapSignalConfirmationEngine : IGapSignalConfirmationEngine, IOpenSignalEngine
 {
     private readonly SideWindowState _buyState = new();
     private readonly SideWindowState _sellState = new();
@@ -20,6 +20,7 @@ public sealed class GapSignalConfirmationEngine : IGapSignalConfirmationEngine
 
         var buyResult = ProcessSide(
             side: GapSignalSide.Buy,
+            action: GapSignalAction.Open,
             gap: snapshot.GapBuy,
             timestampUtc: snapshot.TimestampUtc,
             state: _buyState,
@@ -33,12 +34,13 @@ public sealed class GapSignalConfirmationEngine : IGapSignalConfirmationEngine
 
         var sellResult = ProcessSide(
             side: GapSignalSide.Sell,
+            action: GapSignalAction.Open,
             gap: snapshot.GapSell,
             timestampUtc: snapshot.TimestampUtc,
             state: _sellState,
             holdConfirmMs: normalizedHoldMs,
-            isConfirmSatisfied: value => value >= normalizedConfirm,
-            isOpenSatisfied: value => value >= normalizedOpen);
+            isConfirmSatisfied: value => value <= -normalizedConfirm,
+            isOpenSatisfied: value => value <= -normalizedOpen);
         if (sellResult is not null)
         {
             results.Add(sellResult);
@@ -53,8 +55,9 @@ public sealed class GapSignalConfirmationEngine : IGapSignalConfirmationEngine
         _sellState.Reset();
     }
 
-    private static GapSignalTriggerResult? ProcessSide(
+    internal static GapSignalTriggerResult? ProcessSide(
         GapSignalSide side,
+        GapSignalAction action,
         int? gap,
         DateTime timestampUtc,
         SideWindowState state,
@@ -98,7 +101,7 @@ public sealed class GapSignalConfirmationEngine : IGapSignalConfirmationEngine
 
         var result = new GapSignalTriggerResult(
             Triggered: true,
-            Action: GapSignalAction.Open,
+            Action: action,
             Side: side,
             Gaps: state.Gaps.ToArray(),
             TriggeredAtUtc: timestampUtc);
@@ -107,7 +110,7 @@ public sealed class GapSignalConfirmationEngine : IGapSignalConfirmationEngine
         return result;
     }
 
-    private sealed class SideWindowState
+    internal sealed class SideWindowState
     {
         public DateTime? WindowStartUtc { get; set; }
         public DateTime? LastTickUtc { get; set; }

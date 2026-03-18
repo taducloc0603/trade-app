@@ -216,7 +216,10 @@ public sealed class ConfigViewModel : ObservableObject
                 loadResult.Point,
                 loadResult.OpenPts,
                 loadResult.ConfirmGapPts,
-                loadResult.HoldConfirmMs);
+                loadResult.HoldConfirmMs,
+                loadResult.ClosePts,
+                loadResult.CloseConfirmGapPts,
+                loadResult.CloseHoldConfirmMs);
             IsExistingRecordLoaded = true;
             AreMapNamesEnabled = true;
 
