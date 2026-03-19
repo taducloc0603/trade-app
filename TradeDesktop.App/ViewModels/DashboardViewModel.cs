@@ -467,20 +467,20 @@ public sealed class DashboardViewModel : ObservableObject
             var joinedGaps = string.Join("|", trigger.Gaps);
             var lastGap = trigger.Gaps.Count > 0 ? trigger.Gaps[^1] : 0;
             var triggeredAtLocal = trigger.TriggeredAtUtc.ToLocalTime();
-            var signalText = $"[{triggeredAtLocal:HH:mm:ss}] {actionText} {sideText} by GAP: {lastGap} ({joinedGaps})";
+            var signalText = $"[{triggeredAtLocal:HH:mm:ss.fff}] {actionText} {sideText} by GAP: {lastGap} ({joinedGaps})";
             LastSignalText = signalText;
             SignalLogItems.Insert(0, signalText);
 
             if (trigger.Action == GapSignalAction.Open)
             {
                 var holdingSeconds = _tradingFlowEngine.CurrentHoldingSeconds;
-                var holdText = $"[{triggeredAtLocal:HH:mm:ss}] Random holding time {holdingSeconds}s";
+                var holdText = $"[{triggeredAtLocal:HH:mm:ss.fff}] Random holding time {holdingSeconds}s";
                 SignalLogItems.Insert(0, holdText);
             }
             else
             {
                 var waitSeconds = _tradingFlowEngine.CurrentWaitSeconds;
-                var waitText = $"[{triggeredAtLocal:HH:mm:ss}] Random waiting time {waitSeconds}s";
+                var waitText = $"[{triggeredAtLocal:HH:mm:ss.fff}] Random waiting time {waitSeconds}s";
                 SignalLogItems.Insert(0, waitText);
             }
         });
@@ -527,7 +527,7 @@ public sealed class DashboardViewModel : ObservableObject
         ExchangeAAsk = FormatTrimmedNumberOrDash(metrics.ExchangeA.Ask);
         ExchangeASpread = FormatTrimmedNumberOrDash(metrics.ExchangeA.Spread);
         ExchangeALatencyMs = FormatNumberOrDash(metrics.ExchangeA.LatencyMs, 0);
-        ExchangeATps = FormatTrimmedNumberOrDash(metrics.ExchangeA.Tps, 5);
+        ExchangeATps = FormatOneDecimalOrDash(metrics.ExchangeA.Tps);
         ExchangeATime = FormatTextOrDash(metrics.ExchangeA.Time);
         ExchangeAMaxLatMs = FormatNumberOrDash(metrics.ExchangeA.MaxLatMs, 0);
         ExchangeAAvgLatMs = FormatNumberOrDash(metrics.ExchangeA.AvgLatMs, 0);
@@ -537,7 +537,7 @@ public sealed class DashboardViewModel : ObservableObject
         ExchangeBAsk = FormatTrimmedNumberOrDash(metrics.ExchangeB.Ask);
         ExchangeBSpread = FormatTrimmedNumberOrDash(metrics.ExchangeB.Spread);
         ExchangeBLatencyMs = FormatNumberOrDash(metrics.ExchangeB.LatencyMs, 0);
-        ExchangeBTps = FormatTrimmedNumberOrDash(metrics.ExchangeB.Tps, 5);
+        ExchangeBTps = FormatOneDecimalOrDash(metrics.ExchangeB.Tps);
         ExchangeBTime = FormatTextOrDash(metrics.ExchangeB.Time);
         ExchangeBMaxLatMs = FormatNumberOrDash(metrics.ExchangeB.MaxLatMs, 0);
         ExchangeBAvgLatMs = FormatNumberOrDash(metrics.ExchangeB.AvgLatMs, 0);
@@ -559,6 +559,11 @@ public sealed class DashboardViewModel : ObservableObject
     private static string FormatTrimmedNumberOrDash(float? value, int maxDecimalPlaces = 5)
         => value.HasValue
             ? value.Value.ToString($"0.{new string('#', maxDecimalPlaces)}", CultureInfo.InvariantCulture)
+            : "-";
+
+    private static string FormatOneDecimalOrDash(float? value)
+        => value.HasValue
+            ? value.Value.ToString("F1", CultureInfo.InvariantCulture)
             : "-";
 
     private static string FormatIntegerOrDash(int? value)

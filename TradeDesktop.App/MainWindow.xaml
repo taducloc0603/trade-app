@@ -51,18 +51,6 @@
                 </StackPanel>
 
                 <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
-                    <Border Background="#F2F4F7"
-                            BorderBrush="#D0D5DD"
-                            BorderThickness="1"
-                            CornerRadius="8"
-                            Padding="10,0"
-                            Height="36"
-                            Margin="0,0,8,0">
-                        <TextBlock VerticalAlignment="Center"
-                                   Foreground="{Binding TradingLogicStatusBrush, Mode=OneWay}"
-                                   FontWeight="SemiBold"
-                                   Text="{Binding TradingLogicStatusText, Mode=OneWay, StringFormat=Trading Logic Status: {0}}" />
-                    </Border>
                     <Button Content="Start"
                             Width="68"
                             Height="36"
