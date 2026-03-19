@@ -27,6 +27,8 @@ public enum TradingPositionSide
 
 public sealed record GapSignalSnapshot(
     DateTime TimestampUtc,
+    decimal? Bid,
+    decimal? Ask,
     int? GapBuy,
     int? GapSell);
 
@@ -47,4 +49,5 @@ public sealed record GapSignalTriggerResult(
     GapSignalAction Action,
     GapSignalSide Side,
     IReadOnlyList<int> Gaps,
-    DateTime TriggeredAtUtc);
+    DateTime TriggeredAtUtc,
+    decimal? TriggerPrice);

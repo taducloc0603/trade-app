@@ -21,6 +21,8 @@ public sealed class GapSignalConfirmationEngine : IGapSignalConfirmationEngine, 
         var buyResult = ProcessSide(
             side: GapSignalSide.Buy,
             action: GapSignalAction.Open,
+            bid: snapshot.Bid,
+            ask: snapshot.Ask,
             gap: snapshot.GapBuy,
             timestampUtc: snapshot.TimestampUtc,
             state: _buyState,
@@ -35,6 +37,8 @@ public sealed class GapSignalConfirmationEngine : IGapSignalConfirmationEngine, 
         var sellResult = ProcessSide(
             side: GapSignalSide.Sell,
             action: GapSignalAction.Open,
+            bid: snapshot.Bid,
+            ask: snapshot.Ask,
             gap: snapshot.GapSell,
             timestampUtc: snapshot.TimestampUtc,
             state: _sellState,
@@ -58,6 +62,8 @@ public sealed class GapSignalConfirmationEngine : IGapSignalConfirmationEngine, 
     internal static GapSignalTriggerResult? ProcessSide(
         GapSignalSide side,
         GapSignalAction action,
+        decimal? bid,
+        decimal? ask,
         int? gap,
         DateTime timestampUtc,
         SideWindowState state,
@@ -104,7 +110,8 @@ public sealed class GapSignalConfirmationEngine : IGapSignalConfirmationEngine, 
             Action: action,
             Side: side,
             Gaps: state.Gaps.ToArray(),
-            TriggeredAtUtc: timestampUtc);
+            TriggeredAtUtc: timestampUtc,
+            TriggerPrice: side == GapSignalSide.Buy ? bid : ask);
 
         state.Reset();
         return result;

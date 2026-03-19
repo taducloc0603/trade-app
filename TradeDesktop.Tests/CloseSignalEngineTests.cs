@@ -27,6 +27,7 @@ public sealed class CloseSignalEngineTests
         Assert.Equal(GapSignalAction.Close, trigger!.Action);
         Assert.Equal(GapSignalSide.Buy, trigger.Side);
         Assert.Equal(new[] { -5, -6, -8 }, trigger.Gaps);
+        Assert.Equal(2945.12m, trigger.TriggerPrice);
     }
 
     [Fact]
@@ -51,6 +52,7 @@ public sealed class CloseSignalEngineTests
         Assert.Equal(GapSignalAction.Close, trigger!.Action);
         Assert.Equal(GapSignalSide.Sell, trigger.Side);
         Assert.Equal(new[] { 5, 6, 8 }, trigger.Gaps);
+        Assert.Equal(2945.34m, trigger.TriggerPrice);
     }
 
     [Fact]
@@ -89,7 +91,7 @@ public sealed class CloseSignalEngineTests
         GapSignalConfirmationConfig config,
         TradingPositionSide positionSide)
         => sut.ProcessSnapshot(
-            new GapSignalSnapshot(timestampUtc, gapBuy, gapSell),
+            new GapSignalSnapshot(timestampUtc, 2945.12m, 2945.34m, gapBuy, gapSell),
             config,
             positionSide);
 }

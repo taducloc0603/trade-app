@@ -22,6 +22,8 @@ public sealed class CloseSignalEngine : ICloseSignalEngine
             TradingPositionSide.Buy => GapSignalConfirmationEngine.ProcessSide(
                 side: GapSignalSide.Buy,
                 action: GapSignalAction.Close,
+                bid: snapshot.Bid,
+                ask: snapshot.Ask,
                 gap: snapshot.GapSell,
                 timestampUtc: snapshot.TimestampUtc,
                 state: _buyState,
@@ -31,6 +33,8 @@ public sealed class CloseSignalEngine : ICloseSignalEngine
             TradingPositionSide.Sell => GapSignalConfirmationEngine.ProcessSide(
                 side: GapSignalSide.Sell,
                 action: GapSignalAction.Close,
+                bid: snapshot.Bid,
+                ask: snapshot.Ask,
                 gap: snapshot.GapBuy,
                 timestampUtc: snapshot.TimestampUtc,
                 state: _sellState,

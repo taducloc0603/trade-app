@@ -441,7 +441,12 @@ public sealed class DashboardViewModel : ObservableObject
             }
 
             var trigger = _tradingFlowEngine.ProcessSnapshot(
-                new GapSignalSnapshot(metrics.TimestampUtc, metrics.GapBuy, metrics.GapSell),
+                new GapSignalSnapshot(
+                    metrics.TimestampUtc,
+                    metrics.ExchangeA.Bid,
+                    metrics.ExchangeA.Ask,
+                    metrics.GapBuy,
+                    metrics.GapSell),
                 new GapSignalConfirmationConfig(
                     ConfirmGapPts: _runtimeConfigState.CurrentConfirmGapPts,
                     OpenPts: _runtimeConfigState.CurrentOpenPts,
@@ -466,8 +471,11 @@ public sealed class DashboardViewModel : ObservableObject
             var sideText = ResolveDisplaySideText(trigger.Action, trigger.Side);
             var joinedGaps = string.Join("|", trigger.Gaps);
             var lastGap = trigger.Gaps.Count > 0 ? trigger.Gaps[^1] : 0;
+            var triggerPriceText = trigger.TriggerPrice.HasValue
+                ? trigger.TriggerPrice.Value.ToString("0.#####", CultureInfo.InvariantCulture)
+                : "-";
             var triggeredAtLocal = trigger.TriggeredAtUtc.ToLocalTime();
-            var signalText = $"[{triggeredAtLocal:HH:mm:ss.fff}] {actionText} {sideText} by GAP: {lastGap} ({joinedGaps})";
+            var signalText = $"[{triggeredAtLocal:HH:mm:ss.fff}] {actionText} {sideText} by GAP: {lastGap} at Price: {triggerPriceText} ({joinedGaps})";
             LastSignalText = signalText;
             SignalLogItems.Insert(0, signalText);
 
