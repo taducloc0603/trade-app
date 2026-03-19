@@ -6,6 +6,10 @@ public interface ITradingFlowEngine
 {
     TradingFlowPhase CurrentPhase { get; }
     TradingPositionSide CurrentPositionSide { get; }
+    DateTime? OpenedAtUtc { get; }
+    DateTime? ClosedAtUtc { get; }
+    int CurrentHoldingSeconds { get; }
+    int CurrentWaitSeconds { get; }
 
     GapSignalTriggerResult? ProcessSnapshot(
         GapSignalSnapshot snapshot,

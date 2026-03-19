@@ -39,6 +39,10 @@ public sealed class ConfigService(
             record.ClosePts,
             record.CloseConfirmGapPts,
             record.CloseHoldConfirmMs,
+            record.StartTimeHold,
+            record.EndTimeHold,
+            record.StartWaitTime,
+            record.EndWaitTime,
             record.Id,
             record.SansJson);
     }
@@ -87,6 +91,10 @@ public sealed record ConfigLoadResult(
     int ClosePts,
     int CloseConfirmGapPts,
     int CloseHoldConfirmMs,
+    int StartTimeHold,
+    int EndTimeHold,
+    int StartWaitTime,
+    int EndWaitTime,
     string MapName1,
     string MapName2,
     string ConfigId,
@@ -104,6 +112,10 @@ public sealed record ConfigLoadResult(
         int closePts,
         int closeConfirmGapPts,
         int closeHoldConfirmMs,
+        int startTimeHold,
+        int endTimeHold,
+        int startWaitTime,
+        int endWaitTime,
         string configId,
         string sansJson) =>
         new(
@@ -117,6 +129,10 @@ public sealed record ConfigLoadResult(
             Math.Abs(closePts),
             Math.Abs(closeConfirmGapPts),
             Math.Max(0, closeHoldConfirmMs),
+            Math.Max(0, startTimeHold),
+            Math.Max(0, endTimeHold),
+            Math.Max(0, startWaitTime),
+            Math.Max(0, endWaitTime),
             mapName1,
             mapName2,
             configId,
@@ -124,10 +140,10 @@ public sealed record ConfigLoadResult(
             null);
 
     public static ConfigLoadResult NotFound(string machineHostName) =>
-        new(false, false, machineHostName, 1, 0, 0, 0, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", null);
+        new(false, false, machineHostName, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", null);
 
     public static ConfigLoadResult Failed(string machineHostName, string error) =>
-        new(false, true, machineHostName, 1, 0, 0, 0, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", error);
+        new(false, true, machineHostName, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", error);
 }
 
 public sealed record ConfigSaveResult(bool IsSuccess, string? MachineHostName, string? Error)

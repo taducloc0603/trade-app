@@ -10,4 +10,8 @@ public sealed record ConfigRecord(
     int HoldConfirmMs,
     int ClosePts,
     int CloseConfirmGapPts,
-    int CloseHoldConfirmMs);
+    int CloseHoldConfirmMs,
+    int StartTimeHold,
+    int EndTimeHold,
+    int StartWaitTime,
+    int EndWaitTime);

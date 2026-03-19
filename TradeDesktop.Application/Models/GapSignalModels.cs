@@ -36,7 +36,11 @@ public sealed record GapSignalConfirmationConfig(
     int HoldConfirmMs,
     int CloseConfirmGapPts = 0,
     int ClosePts = 0,
-    int CloseHoldConfirmMs = 0);
+    int CloseHoldConfirmMs = 0,
+    int StartTimeHold = 0,
+    int EndTimeHold = 0,
+    int StartWaitTime = 0,
+    int EndWaitTime = 0);
 
 public sealed record GapSignalTriggerResult(
     bool Triggered,

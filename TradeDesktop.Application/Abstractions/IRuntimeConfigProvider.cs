@@ -12,6 +12,10 @@ public interface IRuntimeConfigProvider
     int CurrentClosePts { get; }
     int CurrentCloseConfirmGapPts { get; }
     int CurrentCloseHoldConfirmMs { get; }
+    int CurrentStartTimeHold { get; }
+    int CurrentEndTimeHold { get; }
+    int CurrentStartWaitTime { get; }
+    int CurrentEndWaitTime { get; }
     string CurrentMapName1 { get; }
     string CurrentMapName2 { get; }
     DashboardMetrics? CurrentDashboardMetrics { get; }

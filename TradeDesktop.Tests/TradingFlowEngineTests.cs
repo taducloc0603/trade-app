@@ -13,6 +13,18 @@ public sealed class TradingFlowEngineTests
         ClosePts: 8,
         CloseHoldConfirmMs: 400);
 
+    private static readonly GapSignalConfirmationConfig ConfigWithTimeGuards = new(
+        ConfirmGapPts: 5,
+        OpenPts: 8,
+        HoldConfirmMs: 500,
+        CloseConfirmGapPts: 5,
+        ClosePts: 8,
+        CloseHoldConfirmMs: 400,
+        StartTimeHold: 2,
+        EndTimeHold: 2,
+        StartWaitTime: 3,
+        EndWaitTime: 3);
+
     [Fact]
     public void ProcessSnapshot_RunsSequentialFlow_OpenBuyThenCloseBuy()
     {
@@ -93,12 +105,98 @@ public sealed class TradingFlowEngineTests
         Assert.Equal(TradingPositionSide.None, sut.CurrentPositionSide);
     }
 
+    [Fact]
+    public void ProcessSnapshot_WhenHoldingTimeNotReached_DoesNotCheckCloseUntilElapsed()
+    {
+        var sut = new TradingFlowEngine(new GapSignalConfirmationEngine(), new CloseSignalEngine());
+        var start = new DateTime(2026, 3, 18, 16, 0, 0, DateTimeKind.Utc);
+
+        _ = Process(sut, start.AddMilliseconds(0), gapBuy: 5, gapSell: null, ConfigWithTimeGuards);
+        _ = Process(sut, start.AddMilliseconds(200), gapBuy: 6, gapSell: null, ConfigWithTimeGuards);
+        var open = Process(sut, start.AddMilliseconds(550), gapBuy: 8, gapSell: null, ConfigWithTimeGuards);
+
+        Assert.NotNull(open);
+        Assert.Equal(2, sut.CurrentHoldingSeconds);
+        Assert.Equal(open!.TriggeredAtUtc, sut.OpenedAtUtc);
+
+        // Before 2s elapsed, close is blocked.
+        Assert.Null(Process(sut, start.AddMilliseconds(1200), gapBuy: null, gapSell: -20, ConfigWithTimeGuards));
+        Assert.Equal(TradingFlowPhase.WaitingClose, sut.CurrentPhase);
+
+        // After 2s elapsed, close checks can run and trigger with valid close window.
+        Assert.Null(Process(sut, start.AddMilliseconds(2600), gapBuy: null, gapSell: -5, ConfigWithTimeGuards));
+        Assert.Null(Process(sut, start.AddMilliseconds(2800), gapBuy: null, gapSell: -6, ConfigWithTimeGuards));
+        var close = Process(sut, start.AddMilliseconds(3200), gapBuy: null, gapSell: -8, ConfigWithTimeGuards);
+
+        Assert.NotNull(close);
+        Assert.Equal(TradingFlowPhase.WaitingOpen, sut.CurrentPhase);
+    }
+
+    [Fact]
+    public void ProcessSnapshot_WhenWaitingTimeNotReached_DoesNotCheckOpenUntilElapsed()
+    {
+        var sut = new TradingFlowEngine(new GapSignalConfirmationEngine(), new CloseSignalEngine());
+        var start = new DateTime(2026, 3, 18, 16, 10, 0, DateTimeKind.Utc);
+
+        _ = Process(sut, start.AddMilliseconds(0), gapBuy: 5, gapSell: null, ConfigWithTimeGuards);
+        _ = Process(sut, start.AddMilliseconds(200), gapBuy: 6, gapSell: null, ConfigWithTimeGuards);
+        var open = Process(sut, start.AddMilliseconds(550), gapBuy: 8, gapSell: null, ConfigWithTimeGuards);
+        Assert.NotNull(open);
+
+        // reach close
+        _ = Process(sut, start.AddMilliseconds(2600), gapBuy: null, gapSell: -5, ConfigWithTimeGuards);
+        _ = Process(sut, start.AddMilliseconds(2800), gapBuy: null, gapSell: -6, ConfigWithTimeGuards);
+        var close = Process(sut, start.AddMilliseconds(3200), gapBuy: null, gapSell: -8, ConfigWithTimeGuards);
+        Assert.NotNull(close);
+        Assert.Equal(3, sut.CurrentWaitSeconds);
+        Assert.Equal(close!.TriggeredAtUtc, sut.ClosedAtUtc);
+
+        // Before 3s elapsed, open is blocked.
+        Assert.Null(Process(sut, start.AddMilliseconds(4200), gapBuy: 10, gapSell: null, ConfigWithTimeGuards));
+        Assert.Equal(TradingFlowPhase.WaitingOpen, sut.CurrentPhase);
+        Assert.Equal(TradingPositionSide.None, sut.CurrentPositionSide);
+
+        // After waiting time elapsed, open can run.
+        Assert.Null(Process(sut, start.AddMilliseconds(6400), gapBuy: 5, gapSell: null, ConfigWithTimeGuards));
+        Assert.Null(Process(sut, start.AddMilliseconds(6600), gapBuy: 6, gapSell: null, ConfigWithTimeGuards));
+        var nextOpen = Process(sut, start.AddMilliseconds(7100), gapBuy: 8, gapSell: null, ConfigWithTimeGuards);
+        Assert.NotNull(nextOpen);
+        Assert.Equal(GapSignalAction.Open, nextOpen!.Action);
+    }
+
+    [Fact]
+    public void ProcessSnapshot_WhenRangeMinGreaterThanMax_SwapsWithoutCrash()
+    {
+        var sut = new TradingFlowEngine(new GapSignalConfirmationEngine(), new CloseSignalEngine());
+        var config = new GapSignalConfirmationConfig(
+            ConfirmGapPts: 5,
+            OpenPts: 8,
+            HoldConfirmMs: 500,
+            CloseConfirmGapPts: 5,
+            ClosePts: 8,
+            CloseHoldConfirmMs: 400,
+            StartTimeHold: 9,
+            EndTimeHold: 4,
+            StartWaitTime: 7,
+            EndWaitTime: 2);
+
+        var start = new DateTime(2026, 3, 18, 16, 20, 0, DateTimeKind.Utc);
+
+        _ = Process(sut, start.AddMilliseconds(0), gapBuy: 5, gapSell: null, config);
+        _ = Process(sut, start.AddMilliseconds(200), gapBuy: 6, gapSell: null, config);
+        var open = Process(sut, start.AddMilliseconds(550), gapBuy: 8, gapSell: null, config);
+
+        Assert.NotNull(open);
+        Assert.InRange(sut.CurrentHoldingSeconds, 4, 9);
+    }
+
     private static GapSignalTriggerResult? Process(
         TradingFlowEngine sut,
         DateTime timestampUtc,
         int? gapBuy,
-        int? gapSell)
+        int? gapSell,
+        GapSignalConfirmationConfig? config = null)
         => sut.ProcessSnapshot(
             new GapSignalSnapshot(timestampUtc, gapBuy, gapSell),
-            Config);
+            config ?? Config);
 }

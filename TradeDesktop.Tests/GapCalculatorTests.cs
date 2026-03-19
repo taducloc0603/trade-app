@@ -68,6 +68,10 @@ public sealed class GapCalculatorTests
         public int CurrentClosePts => 0;
         public int CurrentCloseConfirmGapPts => 0;
         public int CurrentCloseHoldConfirmMs => 0;
+        public int CurrentStartTimeHold => 0;
+        public int CurrentEndTimeHold => 0;
+        public int CurrentStartWaitTime => 0;
+        public int CurrentEndWaitTime => 0;
         public string CurrentMapName1 => "A";
         public string CurrentMapName2 => "B";
         public DashboardMetrics? CurrentDashboardMetrics => null;

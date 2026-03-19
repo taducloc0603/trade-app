@@ -13,6 +13,10 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
     public int CurrentClosePts { get; private set; }
     public int CurrentCloseConfirmGapPts { get; private set; }
     public int CurrentCloseHoldConfirmMs { get; private set; }
+    public int CurrentStartTimeHold { get; private set; }
+    public int CurrentEndTimeHold { get; private set; }
+    public int CurrentStartWaitTime { get; private set; }
+    public int CurrentEndWaitTime { get; private set; }
     public string CurrentMapName1 { get; private set; } = string.Empty;
     public string CurrentMapName2 { get; private set; } = string.Empty;
     public DashboardMetrics? CurrentDashboardMetrics { get; private set; }
@@ -27,6 +31,10 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
     public int ClosePts => CurrentClosePts;
     public int CloseConfirmGapPts => CurrentCloseConfirmGapPts;
     public int CloseHoldConfirmMs => CurrentCloseHoldConfirmMs;
+    public int StartTimeHold => CurrentStartTimeHold;
+    public int EndTimeHold => CurrentEndTimeHold;
+    public int StartWaitTime => CurrentStartWaitTime;
+    public int EndWaitTime => CurrentEndWaitTime;
 
     public event EventHandler? StateChanged;
 
@@ -40,7 +48,11 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
         int holdConfirmMs,
         int closePts,
         int closeConfirmGapPts,
-        int closeHoldConfirmMs)
+        int closeHoldConfirmMs,
+        int startTimeHold,
+        int endTimeHold,
+        int startWaitTime,
+        int endWaitTime)
     {
         CurrentMachineHostName = (machineHostName ?? string.Empty).Trim().ToLower();
         CurrentPoint = point > 0 ? point : 1;
@@ -50,6 +62,10 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
         CurrentClosePts = Math.Abs(closePts);
         CurrentCloseConfirmGapPts = Math.Abs(closeConfirmGapPts);
         CurrentCloseHoldConfirmMs = Math.Max(0, closeHoldConfirmMs);
+        CurrentStartTimeHold = Math.Max(0, startTimeHold);
+        CurrentEndTimeHold = Math.Max(0, endTimeHold);
+        CurrentStartWaitTime = Math.Max(0, startWaitTime);
+        CurrentEndWaitTime = Math.Max(0, endWaitTime);
         CurrentMapName1 = (mapName1 ?? string.Empty).Trim();
         CurrentMapName2 = (mapName2 ?? string.Empty).Trim();
         StateChanged?.Invoke(this, EventArgs.Empty);
@@ -66,7 +82,11 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
             CurrentHoldConfirmMs,
             CurrentClosePts,
             CurrentCloseConfirmGapPts,
-            CurrentCloseHoldConfirmMs);
+            CurrentCloseHoldConfirmMs,
+            CurrentStartTimeHold,
+            CurrentEndTimeHold,
+            CurrentStartWaitTime,
+            CurrentEndWaitTime);
 
     public void Update(string machineHostName, string mapName1, string mapName2)
         => Update(
@@ -79,7 +99,11 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
             CurrentHoldConfirmMs,
             CurrentClosePts,
             CurrentCloseConfirmGapPts,
-            CurrentCloseHoldConfirmMs);
+            CurrentCloseHoldConfirmMs,
+            CurrentStartTimeHold,
+            CurrentEndTimeHold,
+            CurrentStartWaitTime,
+            CurrentEndWaitTime);
 
     public void UpdateDashboardMetrics(DashboardMetrics snapshot)
     {

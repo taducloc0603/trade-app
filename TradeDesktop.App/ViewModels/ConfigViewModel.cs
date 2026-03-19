@@ -219,7 +219,11 @@ public sealed class ConfigViewModel : ObservableObject
                 loadResult.HoldConfirmMs,
                 loadResult.ClosePts,
                 loadResult.CloseConfirmGapPts,
-                loadResult.CloseHoldConfirmMs);
+                loadResult.CloseHoldConfirmMs,
+                loadResult.StartTimeHold,
+                loadResult.EndTimeHold,
+                loadResult.StartWaitTime,
+                loadResult.EndWaitTime);
             IsExistingRecordLoaded = true;
             AreMapNamesEnabled = true;
 

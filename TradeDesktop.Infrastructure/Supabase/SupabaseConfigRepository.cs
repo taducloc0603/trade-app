@@ -49,7 +49,11 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
             HoldConfirmMs: row.HoldConfirmMs,
             ClosePts: row.ClosePts,
             CloseConfirmGapPts: row.CloseConfirmGapPts,
-            CloseHoldConfirmMs: row.CloseHoldConfirmMs);
+            CloseHoldConfirmMs: row.CloseHoldConfirmMs,
+            StartTimeHold: row.StartTimeHold,
+            EndTimeHold: row.EndTimeHold,
+            StartWaitTime: row.StartWaitTime,
+            EndWaitTime: row.EndWaitTime);
     }
 
     public async Task<bool> UpdateSansAndHostNameByHostNameAsync(string hostName, string sansJson, CancellationToken cancellationToken = default)
@@ -119,6 +123,10 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
         first.TryGetProperty("close_pts", out var closePtsElement);
         first.TryGetProperty("close_confirm_gap_pts", out var closeConfirmGapPtsElement);
         first.TryGetProperty("close_hold_confirm_ms", out var closeHoldConfirmMsElement);
+        first.TryGetProperty("start_time_hold", out var startTimeHoldElement);
+        first.TryGetProperty("end_time_hold", out var endTimeHoldElement);
+        first.TryGetProperty("start_wait_time", out var startWaitTimeElement);
+        first.TryGetProperty("end_wait_time", out var endWaitTimeElement);
 
         // DB column name is lowercase: hostname
         var hasHostName = first.TryGetProperty("hostname", out var hostNameElement);
@@ -141,7 +149,11 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
             HoldConfirmMs = holdConfirmMsElement.ValueKind == JsonValueKind.Number && holdConfirmMsElement.TryGetInt32(out var holdConfirmMs) ? holdConfirmMs : 0,
             ClosePts = closePtsElement.ValueKind == JsonValueKind.Number && closePtsElement.TryGetInt32(out var closePts) ? closePts : 0,
             CloseConfirmGapPts = closeConfirmGapPtsElement.ValueKind == JsonValueKind.Number && closeConfirmGapPtsElement.TryGetInt32(out var closeConfirmGapPts) ? closeConfirmGapPts : 0,
-            CloseHoldConfirmMs = closeHoldConfirmMsElement.ValueKind == JsonValueKind.Number && closeHoldConfirmMsElement.TryGetInt32(out var closeHoldConfirmMs) ? closeHoldConfirmMs : 0
+            CloseHoldConfirmMs = closeHoldConfirmMsElement.ValueKind == JsonValueKind.Number && closeHoldConfirmMsElement.TryGetInt32(out var closeHoldConfirmMs) ? closeHoldConfirmMs : 0,
+            StartTimeHold = startTimeHoldElement.ValueKind == JsonValueKind.Number && startTimeHoldElement.TryGetInt32(out var startTimeHold) ? startTimeHold : 0,
+            EndTimeHold = endTimeHoldElement.ValueKind == JsonValueKind.Number && endTimeHoldElement.TryGetInt32(out var endTimeHold) ? endTimeHold : 0,
+            StartWaitTime = startWaitTimeElement.ValueKind == JsonValueKind.Number && startWaitTimeElement.TryGetInt32(out var startWaitTime) ? startWaitTime : 0,
+            EndWaitTime = endWaitTimeElement.ValueKind == JsonValueKind.Number && endWaitTimeElement.TryGetInt32(out var endWaitTime) ? endWaitTime : 0
         };
     }
 
@@ -183,6 +195,10 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
         first.TryGetProperty("close_pts", out var closePtsElement);
         first.TryGetProperty("close_confirm_gap_pts", out var closeConfirmGapPtsElement);
         first.TryGetProperty("close_hold_confirm_ms", out var closeHoldConfirmMsElement);
+        first.TryGetProperty("start_time_hold", out var startTimeHoldElement);
+        first.TryGetProperty("end_time_hold", out var endTimeHoldElement);
+        first.TryGetProperty("start_wait_time", out var startWaitTimeElement);
+        first.TryGetProperty("end_wait_time", out var endWaitTimeElement);
 
         var hasHostName = first.TryGetProperty("hostname", out var hostNameElement);
         if (!hasHostName)
@@ -203,7 +219,11 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
             HoldConfirmMs = holdConfirmMsElement.ValueKind == JsonValueKind.Number && holdConfirmMsElement.TryGetInt32(out var holdConfirmMs) ? holdConfirmMs : 0,
             ClosePts = closePtsElement.ValueKind == JsonValueKind.Number && closePtsElement.TryGetInt32(out var closePts) ? closePts : 0,
             CloseConfirmGapPts = closeConfirmGapPtsElement.ValueKind == JsonValueKind.Number && closeConfirmGapPtsElement.TryGetInt32(out var closeConfirmGapPts) ? closeConfirmGapPts : 0,
-            CloseHoldConfirmMs = closeHoldConfirmMsElement.ValueKind == JsonValueKind.Number && closeHoldConfirmMsElement.TryGetInt32(out var closeHoldConfirmMs) ? closeHoldConfirmMs : 0
+            CloseHoldConfirmMs = closeHoldConfirmMsElement.ValueKind == JsonValueKind.Number && closeHoldConfirmMsElement.TryGetInt32(out var closeHoldConfirmMs) ? closeHoldConfirmMs : 0,
+            StartTimeHold = startTimeHoldElement.ValueKind == JsonValueKind.Number && startTimeHoldElement.TryGetInt32(out var startTimeHold) ? startTimeHold : 0,
+            EndTimeHold = endTimeHoldElement.ValueKind == JsonValueKind.Number && endTimeHoldElement.TryGetInt32(out var endTimeHold) ? endTimeHold : 0,
+            StartWaitTime = startWaitTimeElement.ValueKind == JsonValueKind.Number && startWaitTimeElement.TryGetInt32(out var startWaitTime) ? startWaitTime : 0,
+            EndWaitTime = endWaitTimeElement.ValueKind == JsonValueKind.Number && endWaitTimeElement.TryGetInt32(out var endWaitTime) ? endWaitTime : 0
         };
     }
 
@@ -281,5 +301,17 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
 
         [JsonPropertyName("close_hold_confirm_ms")]
         public int CloseHoldConfirmMs { get; set; }
+
+        [JsonPropertyName("start_time_hold")]
+        public int StartTimeHold { get; set; }
+
+        [JsonPropertyName("end_time_hold")]
+        public int EndTimeHold { get; set; }
+
+        [JsonPropertyName("start_wait_time")]
+        public int StartWaitTime { get; set; }
+
+        [JsonPropertyName("end_wait_time")]
+        public int EndWaitTime { get; set; }
     }
 }

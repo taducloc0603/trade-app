@@ -322,7 +322,7 @@ public sealed class DashboardViewModel : ObservableObject
             : $"Sàn B ({_runtimeConfigState.MapName2})";
 
         RuntimeSummary =
-            $"Host Name: {_runtimeConfigState.CurrentMachineHostName}  |  Point: {_runtimeConfigState.CurrentPoint}  |  OpenPts: {_runtimeConfigState.CurrentOpenPts}  |  ConfirmGapPts: {_runtimeConfigState.CurrentConfirmGapPts}  |  HoldConfirmMs: {_runtimeConfigState.CurrentHoldConfirmMs}  |  ClosePts: {_runtimeConfigState.CurrentClosePts}  |  CloseConfirmGapPts: {_runtimeConfigState.CurrentCloseConfirmGapPts}  |  CloseHoldConfirmMs: {_runtimeConfigState.CurrentCloseHoldConfirmMs}  |  Map 1: {_runtimeConfigState.CurrentMapName1}  |  Map 2: {_runtimeConfigState.CurrentMapName2}";
+            $"Host Name: {_runtimeConfigState.CurrentMachineHostName}  |  Point: {_runtimeConfigState.CurrentPoint}  |  OpenPts: {_runtimeConfigState.CurrentOpenPts}  |  ConfirmGapPts: {_runtimeConfigState.CurrentConfirmGapPts}  |  HoldConfirmMs: {_runtimeConfigState.CurrentHoldConfirmMs}  |  ClosePts: {_runtimeConfigState.CurrentClosePts}  |  CloseConfirmGapPts: {_runtimeConfigState.CurrentCloseConfirmGapPts}  |  CloseHoldConfirmMs: {_runtimeConfigState.CurrentCloseHoldConfirmMs}  |  StartTimeHold: {_runtimeConfigState.CurrentStartTimeHold}  |  EndTimeHold: {_runtimeConfigState.CurrentEndTimeHold}  |  StartWaitTime: {_runtimeConfigState.CurrentStartWaitTime}  |  EndWaitTime: {_runtimeConfigState.CurrentEndWaitTime}  |  Map 1: {_runtimeConfigState.CurrentMapName1}  |  Map 2: {_runtimeConfigState.CurrentMapName2}";
     }
 
     private async Task InitializeRuntimeConfigAsync()
@@ -346,13 +346,17 @@ public sealed class DashboardViewModel : ObservableObject
                     result.HoldConfirmMs,
                     result.ClosePts,
                     result.CloseConfirmGapPts,
-                    result.CloseHoldConfirmMs);
+                    result.CloseHoldConfirmMs,
+                    result.StartTimeHold,
+                    result.EndTimeHold,
+                    result.StartWaitTime,
+                    result.EndWaitTime);
                 ResetTradingLogicState();
 
                 if (string.Equals(result.MachineHostName, InlineDbHostName, StringComparison.OrdinalIgnoreCase))
                 {
                     DbInlineData =
-                        $"[DB] id={result.ConfigId} | hostname={result.MachineHostName} | point={result.Point} | open_pts={result.OpenPts} | open_confirm_gap_pts={result.ConfirmGapPts} | open_hold_confirm_ms={result.HoldConfirmMs} | close_pts={result.ClosePts} | close_confirm_gap_pts={result.CloseConfirmGapPts} | close_hold_confirm_ms={result.CloseHoldConfirmMs} | sans={result.SansJson}";
+                        $"[DB] id={result.ConfigId} | hostname={result.MachineHostName} | point={result.Point} | open_pts={result.OpenPts} | open_confirm_gap_pts={result.ConfirmGapPts} | open_hold_confirm_ms={result.HoldConfirmMs} | close_pts={result.ClosePts} | close_confirm_gap_pts={result.CloseConfirmGapPts} | close_hold_confirm_ms={result.CloseHoldConfirmMs} | start_time_hold={result.StartTimeHold} | end_time_hold={result.EndTimeHold} | start_wait_time={result.StartWaitTime} | end_wait_time={result.EndWaitTime} | sans={result.SansJson}";
                     IsDbInlineDataVisible = true;
                 }
                 else
@@ -444,7 +448,11 @@ public sealed class DashboardViewModel : ObservableObject
                     HoldConfirmMs: _runtimeConfigState.CurrentHoldConfirmMs,
                     CloseConfirmGapPts: _runtimeConfigState.CurrentCloseConfirmGapPts,
                     ClosePts: _runtimeConfigState.CurrentClosePts,
-                    CloseHoldConfirmMs: _runtimeConfigState.CurrentCloseHoldConfirmMs));
+                    CloseHoldConfirmMs: _runtimeConfigState.CurrentCloseHoldConfirmMs,
+                    StartTimeHold: _runtimeConfigState.CurrentStartTimeHold,
+                    EndTimeHold: _runtimeConfigState.CurrentEndTimeHold,
+                    StartWaitTime: _runtimeConfigState.CurrentStartWaitTime,
+                    EndWaitTime: _runtimeConfigState.CurrentEndWaitTime));
 
             OnPropertyChanged(nameof(CurrentPositionText));
             OnPropertyChanged(nameof(CurrentPhaseText));
@@ -462,6 +470,19 @@ public sealed class DashboardViewModel : ObservableObject
             var signalText = $"[{triggeredAtLocal:HH:mm:ss}] {actionText} {sideText} by GAP: {lastGap} ({joinedGaps})";
             LastSignalText = signalText;
             SignalLogItems.Insert(0, signalText);
+
+            if (trigger.Action == GapSignalAction.Open)
+            {
+                var holdingSeconds = _tradingFlowEngine.CurrentHoldingSeconds;
+                var holdText = $"[{triggeredAtLocal:HH:mm:ss}] Random holding time {holdingSeconds}s";
+                SignalLogItems.Insert(0, holdText);
+            }
+            else
+            {
+                var waitSeconds = _tradingFlowEngine.CurrentWaitSeconds;
+                var waitText = $"[{triggeredAtLocal:HH:mm:ss}] Random waiting time {waitSeconds}s";
+                SignalLogItems.Insert(0, waitText);
+            }
         });
     }
 
