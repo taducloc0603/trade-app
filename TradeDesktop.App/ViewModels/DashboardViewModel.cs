@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Collections.ObjectModel;
 using System.Windows.Media;
 using Microsoft.Extensions.DependencyInjection;
 using TradeDesktop.App.Commands;
@@ -173,8 +172,6 @@ public sealed class DashboardViewModel : ObservableObject
         private set => SetProperty(ref _lastSignalText, value);
     }
 
-    public ObservableCollection<string> SignalLogItems { get; } = [];
-
     public bool IsTradingLogicEnabled
     {
         get => _isTradingLogicEnabled;
@@ -187,7 +184,6 @@ public sealed class DashboardViewModel : ObservableObject
 
             OnPropertyChanged(nameof(TradingLogicStatusText));
             OnPropertyChanged(nameof(TradingLogicStatusBrush));
-            OnPropertyChanged(nameof(CurrentCheckStageText));
             StartTradingLogicCommand.RaiseCanExecuteChanged();
             StopTradingLogicCommand.RaiseCanExecuteChanged();
         }
@@ -195,7 +191,6 @@ public sealed class DashboardViewModel : ObservableObject
 
     public string TradingLogicStatusText => IsTradingLogicEnabled ? "Running" : "Stopped";
     public Brush TradingLogicStatusBrush => IsTradingLogicEnabled ? Brushes.ForestGreen : Brushes.Gray;
-    public string CurrentCheckStageText => ResolveCurrentCheckStageText();
 
     public AsyncRelayCommand OpenConfigCommand { get; }
     public AsyncRelayCommand ReconnectConfigCommand { get; }
@@ -216,7 +211,6 @@ public sealed class DashboardViewModel : ObservableObject
         ResetTradingLogicState();
         IsTradingLogicEnabled = true;
         LastSignalText = "-";
-        SignalLogItems.Clear();
         return Task.CompletedTask;
     }
 
@@ -236,7 +230,6 @@ public sealed class DashboardViewModel : ObservableObject
     private void ResetTradingLogicState()
     {
         _tradingFlowEngine.Reset();
-        OnPropertyChanged(nameof(CurrentCheckStageText));
     }
 
     private Task CopyHostNameAsync()
@@ -445,46 +438,32 @@ public sealed class DashboardViewModel : ObservableObject
                     ClosePts: _runtimeConfigState.CurrentClosePts,
                     CloseHoldConfirmMs: _runtimeConfigState.CurrentCloseHoldConfirmMs));
 
-            OnPropertyChanged(nameof(CurrentCheckStageText));
-
             if (trigger is null || !trigger.Triggered)
             {
                 return;
             }
 
-            var sideText = trigger.Side == GapSignalSide.Buy ? "BUY" : "SELL";
             var actionText = trigger.Action == GapSignalAction.Open ? "OPEN" : "CLOSE";
+            var sideText = ResolveDisplaySideText(trigger.Action, trigger.Side);
             var joinedGaps = string.Join("|", trigger.Gaps);
+            var lastGap = trigger.Gaps.Count > 0 ? trigger.Gaps[^1] : 0;
             var triggeredAtLocal = trigger.TriggeredAtUtc.ToLocalTime();
-            var signalText = $"[{triggeredAtLocal:HH:mm:ss}] {actionText} {sideText} ({joinedGaps})";
+            var signalText = $"[{triggeredAtLocal:HH:mm:ss}] {actionText} {sideText} by GAP: {lastGap} ({joinedGaps})";
             LastSignalText = signalText;
-            SignalLogItems.Insert(0, signalText);
         });
     }
 
-    private string ResolveCurrentCheckStageText()
+    private static string ResolveDisplaySideText(GapSignalAction action, GapSignalSide side)
     {
-        if (!IsTradingLogicEnabled)
+        if (action == GapSignalAction.Open)
         {
-            return "NONE";
+            return side == GapSignalSide.Buy ? "BUY" : "SELL";
         }
 
-        if (_tradingFlowEngine.CurrentPhase == TradingFlowPhase.WaitingOpen)
-        {
-            return "OPEN";
-        }
-
-        if (_tradingFlowEngine.CurrentPhase == TradingFlowPhase.WaitingClose)
-        {
-            return _tradingFlowEngine.CurrentPositionSide switch
-            {
-                TradingPositionSide.Buy => "CLOSE BUY",
-                TradingPositionSide.Sell => "CLOSE SELL",
-                _ => "NONE"
-            };
-        }
-
-        return "NONE";
+        // Trading label requirement:
+        // - close Buy position => CLOSE SELL
+        // - close Sell position => CLOSE BUY
+        return side == GapSignalSide.Buy ? "SELL" : "BUY";
     }
 
     private void BindDashboardMetrics(DashboardMetrics metrics)
