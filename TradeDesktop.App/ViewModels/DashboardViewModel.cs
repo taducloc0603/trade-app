@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Collections.ObjectModel;
 using System.Windows.Media;
 using Microsoft.Extensions.DependencyInjection;
 using TradeDesktop.App.Commands;
@@ -172,6 +173,8 @@ public sealed class DashboardViewModel : ObservableObject
         private set => SetProperty(ref _lastSignalText, value);
     }
 
+    public ObservableCollection<string> SignalLogItems { get; } = [];
+
     public bool IsTradingLogicEnabled
     {
         get => _isTradingLogicEnabled;
@@ -184,6 +187,7 @@ public sealed class DashboardViewModel : ObservableObject
 
             OnPropertyChanged(nameof(TradingLogicStatusText));
             OnPropertyChanged(nameof(TradingLogicStatusBrush));
+            OnPropertyChanged(nameof(CurrentCheckStageText));
             StartTradingLogicCommand.RaiseCanExecuteChanged();
             StopTradingLogicCommand.RaiseCanExecuteChanged();
         }
@@ -191,6 +195,7 @@ public sealed class DashboardViewModel : ObservableObject
 
     public string TradingLogicStatusText => IsTradingLogicEnabled ? "Running" : "Stopped";
     public Brush TradingLogicStatusBrush => IsTradingLogicEnabled ? Brushes.ForestGreen : Brushes.Gray;
+    public string CurrentCheckStageText => ResolveCurrentCheckStageText();
 
     public AsyncRelayCommand OpenConfigCommand { get; }
     public AsyncRelayCommand ReconnectConfigCommand { get; }
@@ -211,6 +216,7 @@ public sealed class DashboardViewModel : ObservableObject
         ResetTradingLogicState();
         IsTradingLogicEnabled = true;
         LastSignalText = "-";
+        SignalLogItems.Clear();
         return Task.CompletedTask;
     }
 
@@ -230,6 +236,7 @@ public sealed class DashboardViewModel : ObservableObject
     private void ResetTradingLogicState()
     {
         _tradingFlowEngine.Reset();
+        OnPropertyChanged(nameof(CurrentCheckStageText));
     }
 
     private Task CopyHostNameAsync()
@@ -438,6 +445,8 @@ public sealed class DashboardViewModel : ObservableObject
                     ClosePts: _runtimeConfigState.CurrentClosePts,
                     CloseHoldConfirmMs: _runtimeConfigState.CurrentCloseHoldConfirmMs));
 
+            OnPropertyChanged(nameof(CurrentCheckStageText));
+
             if (trigger is null || !trigger.Triggered)
             {
                 return;
@@ -447,8 +456,35 @@ public sealed class DashboardViewModel : ObservableObject
             var actionText = trigger.Action == GapSignalAction.Open ? "OPEN" : "CLOSE";
             var joinedGaps = string.Join("|", trigger.Gaps);
             var triggeredAtLocal = trigger.TriggeredAtUtc.ToLocalTime();
-            LastSignalText = $"[{triggeredAtLocal:HH:mm:ss}] {actionText} {sideText} ({joinedGaps})";
+            var signalText = $"[{triggeredAtLocal:HH:mm:ss}] {actionText} {sideText} ({joinedGaps})";
+            LastSignalText = signalText;
+            SignalLogItems.Insert(0, signalText);
         });
+    }
+
+    private string ResolveCurrentCheckStageText()
+    {
+        if (!IsTradingLogicEnabled)
+        {
+            return "NONE";
+        }
+
+        if (_tradingFlowEngine.CurrentPhase == TradingFlowPhase.WaitingOpen)
+        {
+            return "OPEN";
+        }
+
+        if (_tradingFlowEngine.CurrentPhase == TradingFlowPhase.WaitingClose)
+        {
+            return _tradingFlowEngine.CurrentPositionSide switch
+            {
+                TradingPositionSide.Buy => "CLOSE BUY",
+                TradingPositionSide.Sell => "CLOSE SELL",
+                _ => "NONE"
+            };
+        }
+
+        return "NONE";
     }
 
     private void BindDashboardMetrics(DashboardMetrics metrics)
