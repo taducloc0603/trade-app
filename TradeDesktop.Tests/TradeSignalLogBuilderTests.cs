@@ -18,8 +18,8 @@ public sealed class TradeSignalLogBuilderTests
         Assert.Equal(4, lines.Count);
         Assert.Equal("[OPEN BY GAP_BUY] GAP 11 (29|2|2|20|29|11)", lines[0]);
         Assert.Equal("    = (B.Bid 4555.28 - A.Ask 4555.67) * Point(100)", lines[1]);
-        Assert.Equal("    - [13:00:43.573] OPEN BUY A at Price: 4555.42", lines[2]);
-        Assert.Equal("    - [13:00:43.573] OPEN SELL B at Price: 4555.56", lines[3]);
+        Assert.Equal("    - [13:00:43.573] OPEN BUY A at Price: 4555.67", lines[2]);
+        Assert.Equal("    - [13:00:43.573] OPEN SELL B at Price: 4555.28", lines[3]);
     }
 
     [Fact]
@@ -32,8 +32,8 @@ public sealed class TradeSignalLogBuilderTests
         Assert.Equal(4, lines.Count);
         Assert.Equal("[OPEN BY GAP_SELL] GAP -22 (-26|-15|-19|-22|-22|-22)", lines[0]);
         Assert.Equal("    = (B.Ask 4555.56 - A.Bid 4555.42) * Point(100)", lines[1]);
-        Assert.Equal("    - [12:55:16.097] OPEN SELL A at Price: 4555.67", lines[2]);
-        Assert.Equal("    - [12:55:16.097] OPEN BUY B at Price: 4555.28", lines[3]);
+        Assert.Equal("    - [12:55:16.097] OPEN SELL A at Price: 4555.42", lines[2]);
+        Assert.Equal("    - [12:55:16.097] OPEN BUY B at Price: 4555.56", lines[3]);
     }
 
     [Fact]
