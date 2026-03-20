@@ -451,8 +451,11 @@ public sealed class DashboardViewModel : ObservableObject
                     metrics.TimestampUtc,
                     metrics.ExchangeA.Bid,
                     metrics.ExchangeA.Ask,
+                    metrics.ExchangeB.Bid,
+                    metrics.ExchangeB.Ask,
                     metrics.GapBuy,
-                    metrics.GapSell),
+                    metrics.GapSell,
+                    _runtimeConfigState.CurrentPoint),
                 new GapSignalConfirmationConfig(
                     ConfirmGapPts: _runtimeConfigState.CurrentConfirmGapPts,
                     OpenPts: _runtimeConfigState.CurrentOpenPts,

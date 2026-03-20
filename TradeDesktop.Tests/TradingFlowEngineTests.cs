@@ -43,8 +43,8 @@ public sealed class TradingFlowEngineTests
         Assert.Equal(GapSignalAction.Open, open!.Action);
         Assert.Equal(GapSignalTriggerType.OpenByGapBuy, open.TriggerType);
         Assert.Equal(GapSignalSide.Buy, open.PrimarySide);
-        Assert.Equal(2945.12m, open.LastBid);
-        Assert.Equal(2945.34m, open.LastAsk);
+        Assert.Equal(2945.12m, open.LastABid);
+        Assert.Equal(2945.34m, open.LastAAsk);
         Assert.Equal(TradingFlowPhase.WaitingCloseFromGapBuy, sut.CurrentPhase);
         Assert.Equal(TradingOpenMode.GapBuy, sut.CurrentOpenMode);
         Assert.Equal(TradingPositionSide.Buy, sut.CurrentPositionSide);
@@ -60,8 +60,8 @@ public sealed class TradingFlowEngineTests
         Assert.Equal(GapSignalAction.Close, close!.Action);
         Assert.Equal(GapSignalTriggerType.CloseByGapSell, close.TriggerType);
         Assert.Equal(GapSignalSide.Buy, close.PrimarySide);
-        Assert.Equal(2945.12m, close.LastBid);
-        Assert.Equal(2945.34m, close.LastAsk);
+        Assert.Equal(2945.12m, close.LastABid);
+        Assert.Equal(2945.34m, close.LastAAsk);
         Assert.Equal(TradingFlowPhase.WaitingOpen, sut.CurrentPhase);
         Assert.Equal(TradingOpenMode.None, sut.CurrentOpenMode);
         Assert.Equal(TradingPositionSide.None, sut.CurrentPositionSide);
@@ -81,8 +81,8 @@ public sealed class TradingFlowEngineTests
         Assert.Equal(GapSignalAction.Open, open!.Action);
         Assert.Equal(GapSignalTriggerType.OpenByGapSell, open.TriggerType);
         Assert.Equal(GapSignalSide.Sell, open.PrimarySide);
-        Assert.Equal(2945.12m, open.LastBid);
-        Assert.Equal(2945.34m, open.LastAsk);
+        Assert.Equal(2945.12m, open.LastABid);
+        Assert.Equal(2945.34m, open.LastAAsk);
         Assert.Equal(TradingFlowPhase.WaitingCloseFromGapSell, sut.CurrentPhase);
         Assert.Equal(TradingOpenMode.GapSell, sut.CurrentOpenMode);
         Assert.Equal(TradingPositionSide.Sell, sut.CurrentPositionSide);
@@ -95,8 +95,8 @@ public sealed class TradingFlowEngineTests
         Assert.Equal(GapSignalAction.Close, close!.Action);
         Assert.Equal(GapSignalTriggerType.CloseByGapBuy, close.TriggerType);
         Assert.Equal(GapSignalSide.Sell, close.PrimarySide);
-        Assert.Equal(2945.12m, close.LastBid);
-        Assert.Equal(2945.34m, close.LastAsk);
+        Assert.Equal(2945.12m, close.LastABid);
+        Assert.Equal(2945.34m, close.LastAAsk);
         Assert.Equal(TradingFlowPhase.WaitingOpen, sut.CurrentPhase);
         Assert.Equal(TradingOpenMode.None, sut.CurrentOpenMode);
         Assert.Equal(TradingPositionSide.None, sut.CurrentPositionSide);
@@ -216,6 +216,6 @@ public sealed class TradingFlowEngineTests
         int? gapSell,
         GapSignalConfirmationConfig? config = null)
         => sut.ProcessSnapshot(
-            new GapSignalSnapshot(timestampUtc, 2945.12m, 2945.34m, gapBuy, gapSell),
+            new GapSignalSnapshot(timestampUtc, 2945.12m, 2945.34m, 2945.56m, 2945.78m, gapBuy, gapSell, 1),
             config ?? Config);
 }

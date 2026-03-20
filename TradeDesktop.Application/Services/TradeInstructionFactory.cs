@@ -9,6 +9,7 @@ public sealed class TradeInstructionFactory : ITradeInstructionFactory
     {
         var triggerGaps = ResolveTriggerGaps(triggerResult);
         var lastTriggerGap = ResolveLastTriggerGap(triggerResult);
+        var (triggerLeftPrice, triggerRightPrice, triggerLeftLabel, triggerRightLabel) = ResolveTriggerExpression(triggerResult);
         var exchangeASide = triggerResult.PrimarySide;
         var exchangeBSide = OppositeSide(exchangeASide);
 
@@ -22,9 +23,20 @@ public sealed class TradeInstructionFactory : ITradeInstructionFactory
             PrimarySide: triggerResult.PrimarySide,
             TriggerGaps: triggerGaps,
             LastTriggerGap: lastTriggerGap,
+            TriggerLeftPrice: triggerLeftPrice,
+            TriggerRightPrice: triggerRightPrice,
+            TriggerLeftLabel: triggerLeftLabel,
+            TriggerRightLabel: triggerRightLabel,
+            PointMultiplier: triggerResult.PointMultiplier,
             ExchangeA: exchangeA,
             ExchangeB: exchangeB);
     }
+
+    private static (decimal? LeftPrice, decimal? RightPrice, string LeftLabel, string RightLabel) ResolveTriggerExpression(
+        GapSignalTriggerResult triggerResult)
+        => triggerResult.TriggerType is GapSignalTriggerType.OpenByGapBuy or GapSignalTriggerType.CloseByGapBuy
+            ? (triggerResult.GapBuySourceBBid, triggerResult.GapBuySourceAAsk, "B.Bid", "A.Ask")
+            : (triggerResult.GapSellSourceBAsk, triggerResult.GapSellSourceABid, "B.Ask", "A.Bid");
 
     private static IReadOnlyList<int> ResolveTriggerGaps(GapSignalTriggerResult triggerResult)
         => triggerResult.TriggerType is GapSignalTriggerType.OpenByGapBuy or GapSignalTriggerType.CloseByGapBuy
@@ -44,7 +56,7 @@ public sealed class TradeInstructionFactory : ITradeInstructionFactory
     {
         var gaps = side == GapSignalSide.Buy ? triggerResult.BuyGaps : triggerResult.SellGaps;
         var lastGap = side == GapSignalSide.Buy ? triggerResult.LastBuyGap : triggerResult.LastSellGap;
-        var price = side == GapSignalSide.Buy ? triggerResult.LastBid : triggerResult.LastAsk;
+        var price = ResolveExecutionPrice(exchange, side, triggerResult);
 
         return new TradeInstructionLeg(
             Exchange: exchange,
@@ -53,6 +65,21 @@ public sealed class TradeInstructionFactory : ITradeInstructionFactory
             Gaps: gaps,
             LastGap: lastGap,
             Price: price);
+    }
+
+    private static decimal? ResolveExecutionPrice(string exchange, GapSignalSide side, GapSignalTriggerResult triggerResult)
+    {
+        var isExchangeA = string.Equals(exchange, "A", StringComparison.OrdinalIgnoreCase);
+        if (isExchangeA)
+        {
+            return side == GapSignalSide.Buy
+                ? triggerResult.LastABid
+                : triggerResult.LastAAsk;
+        }
+
+        return side == GapSignalSide.Buy
+            ? triggerResult.LastBBid
+            : triggerResult.LastBAsk;
     }
 
     private static GapSignalSide OppositeSide(GapSignalSide side)

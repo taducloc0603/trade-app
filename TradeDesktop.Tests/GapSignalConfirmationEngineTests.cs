@@ -31,8 +31,10 @@ public sealed class GapSignalConfirmationEngineTests
         Assert.Equal(new[] { 0, 0, 0, 0, 0 }, trigger.SellGaps);
         Assert.Equal(8, trigger.LastBuyGap);
         Assert.Equal(0, trigger.LastSellGap);
-        Assert.Equal(2945.12m, trigger.LastBid);
-        Assert.Equal(2945.34m, trigger.LastAsk);
+        Assert.Equal(2945.12m, trigger.LastABid);
+        Assert.Equal(2945.34m, trigger.LastAAsk);
+        Assert.Equal(2945.56m, trigger.LastBBid);
+        Assert.Equal(2945.78m, trigger.LastBAsk);
     }
 
     [Fact]
@@ -55,8 +57,10 @@ public sealed class GapSignalConfirmationEngineTests
         Assert.Equal(new[] { 0, 0, 0, 0 }, trigger.BuyGaps);
         Assert.Equal(-8, trigger.LastSellGap);
         Assert.Equal(0, trigger.LastBuyGap);
-        Assert.Equal(2945.12m, trigger.LastBid);
-        Assert.Equal(2945.34m, trigger.LastAsk);
+        Assert.Equal(2945.12m, trigger.LastABid);
+        Assert.Equal(2945.34m, trigger.LastAAsk);
+        Assert.Equal(2945.56m, trigger.LastBBid);
+        Assert.Equal(2945.78m, trigger.LastBAsk);
     }
 
     [Fact]
@@ -122,6 +126,6 @@ public sealed class GapSignalConfirmationEngineTests
         int? gapBuy,
         int? gapSell)
         => sut.ProcessSnapshot(
-            new GapSignalSnapshot(timestampUtc, 2945.12m, 2945.34m, gapBuy ?? 0, gapSell ?? 0),
+            new GapSignalSnapshot(timestampUtc, 2945.12m, 2945.34m, 2945.56m, 2945.78m, gapBuy ?? 0, gapSell ?? 0, 1),
             DefaultConfig);
 }

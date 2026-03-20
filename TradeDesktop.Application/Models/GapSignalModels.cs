@@ -35,10 +35,13 @@ public enum TradingPositionSide
 
 public sealed record GapSignalSnapshot(
     DateTime TimestampUtc,
-    decimal? Bid,
-    decimal? Ask,
+    decimal? ExchangeABid,
+    decimal? ExchangeAAsk,
+    decimal? ExchangeBBid,
+    decimal? ExchangeBAsk,
     int? GapBuy,
-    int? GapSell);
+    int? GapSell,
+    int PointMultiplier);
 
 public sealed record GapSignalConfirmationConfig(
     int ConfirmGapPts,
@@ -62,8 +65,15 @@ public sealed record GapSignalTriggerResult(
     int? LastBuyGap,
     int? LastSellGap,
     DateTime TriggeredAtUtc,
-    decimal? LastBid,
-    decimal? LastAsk);
+    decimal? LastABid,
+    decimal? LastAAsk,
+    decimal? LastBBid,
+    decimal? LastBAsk,
+    decimal? GapBuySourceBBid,
+    decimal? GapBuySourceAAsk,
+    decimal? GapSellSourceBAsk,
+    decimal? GapSellSourceABid,
+    int PointMultiplier);
 
 public enum GapSignalTriggerType
 {
@@ -88,5 +98,10 @@ public sealed record TradeSignalInstruction(
     GapSignalSide PrimarySide,
     IReadOnlyList<int> TriggerGaps,
     int? LastTriggerGap,
+    decimal? TriggerLeftPrice,
+    decimal? TriggerRightPrice,
+    string TriggerLeftLabel,
+    string TriggerRightLabel,
+    int PointMultiplier,
     TradeInstructionLeg ExchangeA,
     TradeInstructionLeg ExchangeB);

@@ -10,9 +10,11 @@ public sealed class TradeSignalLogBuilder : ITradeSignalLogBuilder
     {
         var triggeredAtLocal = instruction.TriggeredAtUtc.ToLocalTime();
         var header = BuildHeaderLine(instruction);
+        var explain = BuildExplainLine(instruction);
         return
         [
             header,
+            explain,
             BuildLegLine(triggeredAtLocal, instruction.ExchangeA),
             BuildLegLine(triggeredAtLocal, instruction.ExchangeB)
         ];
@@ -32,6 +34,18 @@ public sealed class TradeSignalLogBuilder : ITradeSignalLogBuilder
         var lastGapText = instruction.LastTriggerGap?.ToString(CultureInfo.InvariantCulture) ?? "0";
         var allGaps = string.Join("|", instruction.TriggerGaps);
         return $"[{triggerText}] GAP {lastGapText} ({allGaps})";
+    }
+
+    private static string BuildExplainLine(TradeSignalInstruction instruction)
+    {
+        var left = instruction.TriggerLeftPrice.HasValue
+            ? instruction.TriggerLeftPrice.Value.ToString("0.#####", CultureInfo.InvariantCulture)
+            : "-";
+        var right = instruction.TriggerRightPrice.HasValue
+            ? instruction.TriggerRightPrice.Value.ToString("0.#####", CultureInfo.InvariantCulture)
+            : "-";
+
+        return $"    = ({instruction.TriggerLeftLabel} {left} - {instruction.TriggerRightLabel} {right}) * Point({instruction.PointMultiplier})";
     }
 
     private static string BuildLegLine(DateTime triggeredAtLocal, TradeInstructionLeg leg)
