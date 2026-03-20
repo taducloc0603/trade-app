@@ -41,8 +41,9 @@ public sealed class TradingFlowEngineTests
         var open = Process(sut, start.AddMilliseconds(520), gapBuy: 8, gapSell: null);
         Assert.NotNull(open);
         Assert.Equal(GapSignalAction.Open, open!.Action);
-        Assert.Equal(GapSignalSide.Buy, open.Side);
-        Assert.Equal(2945.12m, open.TriggerPrice);
+        Assert.Equal(GapSignalSide.Buy, open.PrimarySide);
+        Assert.Equal(2945.12m, open.LastBid);
+        Assert.Equal(2945.34m, open.LastAsk);
         Assert.Equal(TradingFlowPhase.WaitingClose, sut.CurrentPhase);
         Assert.Equal(TradingPositionSide.Buy, sut.CurrentPositionSide);
 
@@ -55,8 +56,9 @@ public sealed class TradingFlowEngineTests
         var close = Process(sut, start.AddMilliseconds(1110), gapBuy: 20, gapSell: -8);
         Assert.NotNull(close);
         Assert.Equal(GapSignalAction.Close, close!.Action);
-        Assert.Equal(GapSignalSide.Buy, close.Side);
-        Assert.Equal(2945.12m, close.TriggerPrice);
+        Assert.Equal(GapSignalSide.Buy, close.PrimarySide);
+        Assert.Equal(2945.12m, close.LastBid);
+        Assert.Equal(2945.34m, close.LastAsk);
         Assert.Equal(TradingFlowPhase.WaitingOpen, sut.CurrentPhase);
         Assert.Equal(TradingPositionSide.None, sut.CurrentPositionSide);
     }
@@ -73,8 +75,9 @@ public sealed class TradingFlowEngineTests
 
         Assert.NotNull(open);
         Assert.Equal(GapSignalAction.Open, open!.Action);
-        Assert.Equal(GapSignalSide.Sell, open.Side);
-        Assert.Equal(2945.34m, open.TriggerPrice);
+        Assert.Equal(GapSignalSide.Sell, open.PrimarySide);
+        Assert.Equal(2945.12m, open.LastBid);
+        Assert.Equal(2945.34m, open.LastAsk);
         Assert.Equal(TradingFlowPhase.WaitingClose, sut.CurrentPhase);
         Assert.Equal(TradingPositionSide.Sell, sut.CurrentPositionSide);
 
@@ -84,8 +87,9 @@ public sealed class TradingFlowEngineTests
 
         Assert.NotNull(close);
         Assert.Equal(GapSignalAction.Close, close!.Action);
-        Assert.Equal(GapSignalSide.Sell, close.Side);
-        Assert.Equal(2945.34m, close.TriggerPrice);
+        Assert.Equal(GapSignalSide.Sell, close.PrimarySide);
+        Assert.Equal(2945.12m, close.LastBid);
+        Assert.Equal(2945.34m, close.LastAsk);
         Assert.Equal(TradingFlowPhase.WaitingOpen, sut.CurrentPhase);
         Assert.Equal(TradingPositionSide.None, sut.CurrentPositionSide);
     }

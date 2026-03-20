@@ -25,9 +25,13 @@ public sealed class CloseSignalEngineTests
 
         Assert.NotNull(trigger);
         Assert.Equal(GapSignalAction.Close, trigger!.Action);
-        Assert.Equal(GapSignalSide.Buy, trigger.Side);
-        Assert.Equal(new[] { -5, -6, -8 }, trigger.Gaps);
-        Assert.Equal(2945.12m, trigger.TriggerPrice);
+        Assert.Equal(GapSignalSide.Buy, trigger.PrimarySide);
+        Assert.Equal(new[] { 0, 0, 0 }, trigger.BuyGaps);
+        Assert.Equal(new[] { -5, -6, -8 }, trigger.SellGaps);
+        Assert.Equal(0, trigger.LastBuyGap);
+        Assert.Equal(-8, trigger.LastSellGap);
+        Assert.Equal(2945.12m, trigger.LastBid);
+        Assert.Equal(2945.34m, trigger.LastAsk);
     }
 
     [Fact]
@@ -50,9 +54,13 @@ public sealed class CloseSignalEngineTests
 
         Assert.NotNull(trigger);
         Assert.Equal(GapSignalAction.Close, trigger!.Action);
-        Assert.Equal(GapSignalSide.Sell, trigger.Side);
-        Assert.Equal(new[] { 5, 6, 8 }, trigger.Gaps);
-        Assert.Equal(2945.34m, trigger.TriggerPrice);
+        Assert.Equal(GapSignalSide.Sell, trigger.PrimarySide);
+        Assert.Equal(new[] { 5, 6, 8 }, trigger.BuyGaps);
+        Assert.Equal(new[] { 0, 0, 0 }, trigger.SellGaps);
+        Assert.Equal(8, trigger.LastBuyGap);
+        Assert.Equal(0, trigger.LastSellGap);
+        Assert.Equal(2945.12m, trigger.LastBid);
+        Assert.Equal(2945.34m, trigger.LastAsk);
     }
 
     [Fact]
@@ -80,7 +88,7 @@ public sealed class CloseSignalEngineTests
         var trigger = Process(sut, start.AddMilliseconds(600), gapBuy: null, gapSell: -8, config, TradingPositionSide.Buy);
 
         Assert.NotNull(trigger);
-        Assert.Equal(new[] { -5, -8, -8 }, trigger!.Gaps);
+        Assert.Equal(new[] { -5, -8, -8 }, trigger!.SellGaps);
     }
 
     private static GapSignalTriggerResult? Process(
@@ -91,7 +99,7 @@ public sealed class CloseSignalEngineTests
         GapSignalConfirmationConfig config,
         TradingPositionSide positionSide)
         => sut.ProcessSnapshot(
-            new GapSignalSnapshot(timestampUtc, 2945.12m, 2945.34m, gapBuy, gapSell),
+            new GapSignalSnapshot(timestampUtc, 2945.12m, 2945.34m, gapBuy ?? 0, gapSell ?? 0),
             config,
             positionSide);
 }

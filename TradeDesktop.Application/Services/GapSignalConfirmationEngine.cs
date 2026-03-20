@@ -23,7 +23,9 @@ public sealed class GapSignalConfirmationEngine : IGapSignalConfirmationEngine, 
             action: GapSignalAction.Open,
             bid: snapshot.Bid,
             ask: snapshot.Ask,
-            gap: snapshot.GapBuy,
+            gapBuy: snapshot.GapBuy,
+            gapSell: snapshot.GapSell,
+            primaryGap: snapshot.GapBuy,
             timestampUtc: snapshot.TimestampUtc,
             state: _buyState,
             holdConfirmMs: normalizedHoldMs,
@@ -39,7 +41,9 @@ public sealed class GapSignalConfirmationEngine : IGapSignalConfirmationEngine, 
             action: GapSignalAction.Open,
             bid: snapshot.Bid,
             ask: snapshot.Ask,
-            gap: snapshot.GapSell,
+            gapBuy: snapshot.GapBuy,
+            gapSell: snapshot.GapSell,
+            primaryGap: snapshot.GapSell,
             timestampUtc: snapshot.TimestampUtc,
             state: _sellState,
             holdConfirmMs: normalizedHoldMs,
@@ -64,27 +68,34 @@ public sealed class GapSignalConfirmationEngine : IGapSignalConfirmationEngine, 
         GapSignalAction action,
         decimal? bid,
         decimal? ask,
-        int? gap,
+        int? gapBuy,
+        int? gapSell,
+        int? primaryGap,
         DateTime timestampUtc,
         SideWindowState state,
         int holdConfirmMs,
         Func<int, bool> isConfirmSatisfied,
         Func<int, bool> isOpenSatisfied)
     {
-        if (!gap.HasValue || !isConfirmSatisfied(gap.Value))
+        if (!primaryGap.HasValue || !isConfirmSatisfied(primaryGap.Value))
         {
             state.Reset();
             return null;
         }
 
+        var normalizedBuyGap = gapBuy ?? 0;
+        var normalizedSellGap = gapSell ?? 0;
+
         if (!state.WindowStartUtc.HasValue)
         {
             state.WindowStartUtc = timestampUtc;
-            state.Gaps.Clear();
+            state.BuyGaps.Clear();
+            state.SellGaps.Clear();
         }
 
         state.LastTickUtc = timestampUtc;
-        state.Gaps.Add(gap.Value);
+        state.BuyGaps.Add(normalizedBuyGap);
+        state.SellGaps.Add(normalizedSellGap);
 
         var elapsedMs = (timestampUtc - state.WindowStartUtc.Value).TotalMilliseconds;
         if (elapsedMs < holdConfirmMs)
@@ -92,13 +103,14 @@ public sealed class GapSignalConfirmationEngine : IGapSignalConfirmationEngine, 
             return null;
         }
 
-        if (state.Gaps.Count == 0 || state.Gaps.Any(v => !isConfirmSatisfied(v)))
+        var primaryGaps = side == GapSignalSide.Buy ? state.BuyGaps : state.SellGaps;
+        if (primaryGaps.Count == 0 || primaryGaps.Any(v => !isConfirmSatisfied(v)))
         {
             state.Reset();
             return null;
         }
 
-        var lastGap = state.Gaps[^1];
+        var lastGap = primaryGaps[^1];
         if (!isOpenSatisfied(lastGap))
         {
             state.Reset();
@@ -108,10 +120,14 @@ public sealed class GapSignalConfirmationEngine : IGapSignalConfirmationEngine, 
         var result = new GapSignalTriggerResult(
             Triggered: true,
             Action: action,
-            Side: side,
-            Gaps: state.Gaps.ToArray(),
+            PrimarySide: side,
+            BuyGaps: state.BuyGaps.ToArray(),
+            SellGaps: state.SellGaps.ToArray(),
+            LastBuyGap: state.BuyGaps.Count > 0 ? state.BuyGaps[^1] : null,
+            LastSellGap: state.SellGaps.Count > 0 ? state.SellGaps[^1] : null,
             TriggeredAtUtc: timestampUtc,
-            TriggerPrice: side == GapSignalSide.Buy ? bid : ask);
+            LastBid: bid,
+            LastAsk: ask);
 
         state.Reset();
         return result;
@@ -121,13 +137,15 @@ public sealed class GapSignalConfirmationEngine : IGapSignalConfirmationEngine, 
     {
         public DateTime? WindowStartUtc { get; set; }
         public DateTime? LastTickUtc { get; set; }
-        public List<int> Gaps { get; } = [];
+        public List<int> BuyGaps { get; } = [];
+        public List<int> SellGaps { get; } = [];
 
         public void Reset()
         {
             WindowStartUtc = null;
             LastTickUtc = null;
-            Gaps.Clear();
+            BuyGaps.Clear();
+            SellGaps.Clear();
         }
     }
 }

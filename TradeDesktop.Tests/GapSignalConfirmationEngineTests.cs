@@ -25,9 +25,13 @@ public sealed class GapSignalConfirmationEngineTests
 
         var trigger = Assert.Single(results);
         Assert.Equal(GapSignalAction.Open, trigger.Action);
-        Assert.Equal(GapSignalSide.Buy, trigger.Side);
-        Assert.Equal(new[] { 5, 6, 5, 7, 8 }, trigger.Gaps);
-        Assert.Equal(2945.12m, trigger.TriggerPrice);
+        Assert.Equal(GapSignalSide.Buy, trigger.PrimarySide);
+        Assert.Equal(new[] { 5, 6, 5, 7, 8 }, trigger.BuyGaps);
+        Assert.Equal(new[] { 0, 0, 0, 0, 0 }, trigger.SellGaps);
+        Assert.Equal(8, trigger.LastBuyGap);
+        Assert.Equal(0, trigger.LastSellGap);
+        Assert.Equal(2945.12m, trigger.LastBid);
+        Assert.Equal(2945.34m, trigger.LastAsk);
     }
 
     [Fact]
@@ -44,9 +48,13 @@ public sealed class GapSignalConfirmationEngineTests
 
         var trigger = Assert.Single(results);
         Assert.Equal(GapSignalAction.Open, trigger.Action);
-        Assert.Equal(GapSignalSide.Sell, trigger.Side);
-        Assert.Equal(new[] { -5, -6, -7, -8 }, trigger.Gaps);
-        Assert.Equal(2945.34m, trigger.TriggerPrice);
+        Assert.Equal(GapSignalSide.Sell, trigger.PrimarySide);
+        Assert.Equal(new[] { -5, -6, -7, -8 }, trigger.SellGaps);
+        Assert.Equal(new[] { 0, 0, 0, 0 }, trigger.BuyGaps);
+        Assert.Equal(-8, trigger.LastSellGap);
+        Assert.Equal(0, trigger.LastBuyGap);
+        Assert.Equal(2945.12m, trigger.LastBid);
+        Assert.Equal(2945.34m, trigger.LastAsk);
     }
 
     [Fact]
@@ -102,7 +110,8 @@ public sealed class GapSignalConfirmationEngineTests
 
         var secondTrigger = Process(sut, start.AddMilliseconds(1200), gapBuy: 9, gapSell: null);
         var trigger = Assert.Single(secondTrigger);
-        Assert.Equal(new[] { 9, 9 }, trigger.Gaps);
+        Assert.Equal(new[] { 9, 9 }, trigger.BuyGaps);
+        Assert.Equal(new[] { 0, 0 }, trigger.SellGaps);
     }
 
     private static IReadOnlyList<GapSignalTriggerResult> Process(
@@ -111,6 +120,6 @@ public sealed class GapSignalConfirmationEngineTests
         int? gapBuy,
         int? gapSell)
         => sut.ProcessSnapshot(
-            new GapSignalSnapshot(timestampUtc, 2945.12m, 2945.34m, gapBuy, gapSell),
+            new GapSignalSnapshot(timestampUtc, 2945.12m, 2945.34m, gapBuy ?? 0, gapSell ?? 0),
             DefaultConfig);
 }

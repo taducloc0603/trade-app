@@ -18,6 +18,8 @@ public sealed class DashboardViewModel : ObservableObject
     private readonly IConfigService _configService;
     private readonly IDashboardMetricsMapper _dashboardMetricsMapper;
     private readonly ITradingFlowEngine _tradingFlowEngine;
+    private readonly ITradeInstructionFactory _tradeInstructionFactory;
+    private readonly ITradeSignalLogBuilder _tradeSignalLogBuilder;
     private readonly IMachineIdentityService _machineIdentityService;
     private readonly string _normalizedHostName;
 
@@ -63,6 +65,8 @@ public sealed class DashboardViewModel : ObservableObject
         IExchangePairReader exchangePairReader,
         IDashboardMetricsMapper dashboardMetricsMapper,
         ITradingFlowEngine tradingFlowEngine,
+        ITradeInstructionFactory tradeInstructionFactory,
+        ITradeSignalLogBuilder tradeSignalLogBuilder,
         IMachineIdentityService machineIdentityService)
     {
         _serviceProvider = serviceProvider;
@@ -70,6 +74,8 @@ public sealed class DashboardViewModel : ObservableObject
         _configService = configService;
         _dashboardMetricsMapper = dashboardMetricsMapper;
         _tradingFlowEngine = tradingFlowEngine;
+        _tradeInstructionFactory = tradeInstructionFactory;
+        _tradeSignalLogBuilder = tradeSignalLogBuilder;
         _machineIdentityService = machineIdentityService;
 
         var normalizedHostName = _machineIdentityService.GetHostName();
@@ -467,17 +473,15 @@ public sealed class DashboardViewModel : ObservableObject
                 return;
             }
 
-            var actionText = trigger.Action == GapSignalAction.Open ? "OPEN" : "CLOSE";
-            var sideText = ResolveDisplaySideText(trigger.Action, trigger.Side);
-            var joinedGaps = string.Join("|", trigger.Gaps);
-            var lastGap = trigger.Gaps.Count > 0 ? trigger.Gaps[^1] : 0;
-            var triggerPriceText = trigger.TriggerPrice.HasValue
-                ? trigger.TriggerPrice.Value.ToString("0.#####", CultureInfo.InvariantCulture)
-                : "-";
+            var instruction = _tradeInstructionFactory.Create(trigger);
+            var signalLines = _tradeSignalLogBuilder.BuildLogLines(instruction);
+            LastSignalText = signalLines.Count > 0 ? signalLines[0] : "-";
+            for (var i = signalLines.Count - 1; i >= 0; i--)
+            {
+                SignalLogItems.Insert(0, signalLines[i]);
+            }
+
             var triggeredAtLocal = trigger.TriggeredAtUtc.ToLocalTime();
-            var signalText = $"[{triggeredAtLocal:HH:mm:ss.fff}] {actionText} {sideText} by GAP: {lastGap} at Price: {triggerPriceText} ({joinedGaps})";
-            LastSignalText = signalText;
-            SignalLogItems.Insert(0, signalText);
 
             if (trigger.Action == GapSignalAction.Open)
             {
@@ -513,19 +517,6 @@ public sealed class DashboardViewModel : ObservableObject
     {
         var phase = _tradingFlowEngine.CurrentPhase;
         return phase == TradingFlowPhase.WaitingClose ? "WAITING CLOSE" : "WAITING OPEN";
-    }
-
-    private static string ResolveDisplaySideText(GapSignalAction action, GapSignalSide side)
-    {
-        if (action == GapSignalAction.Open)
-        {
-            return side == GapSignalSide.Buy ? "BUY" : "SELL";
-        }
-
-        // Trading label requirement:
-        // - close Buy position => CLOSE SELL
-        // - close Sell position => CLOSE BUY
-        return side == GapSignalSide.Buy ? "SELL" : "BUY";
     }
 
     private void BindDashboardMetrics(DashboardMetrics metrics)

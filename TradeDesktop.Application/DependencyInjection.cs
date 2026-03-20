@@ -16,6 +16,8 @@ public static class DependencyInjection
         services.AddSingleton<IGapSignalConfirmationEngine, GapSignalConfirmationEngine>();
         services.AddSingleton<IOpenSignalEngine>(sp => (GapSignalConfirmationEngine)sp.GetRequiredService<IGapSignalConfirmationEngine>());
         services.AddSingleton<ICloseSignalEngine, CloseSignalEngine>();
+        services.AddSingleton<ITradeInstructionFactory, TradeInstructionFactory>();
+        services.AddSingleton<ITradeSignalLogBuilder, TradeSignalLogBuilder>();
         services.AddSingleton<ITradingFlowEngine, TradingFlowEngine>();
         return services;
     }

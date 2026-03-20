@@ -36,7 +36,7 @@ public sealed class TradingFlowEngine(
                 return null;
             }
 
-            CurrentPositionSide = openTrigger.Side == GapSignalSide.Buy
+            CurrentPositionSide = openTrigger.PrimarySide == GapSignalSide.Buy
                 ? TradingPositionSide.Buy
                 : TradingPositionSide.Sell;
 

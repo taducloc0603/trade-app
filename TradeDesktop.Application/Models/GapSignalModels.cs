@@ -47,7 +47,26 @@ public sealed record GapSignalConfirmationConfig(
 public sealed record GapSignalTriggerResult(
     bool Triggered,
     GapSignalAction Action,
+    GapSignalSide PrimarySide,
+    IReadOnlyList<int> BuyGaps,
+    IReadOnlyList<int> SellGaps,
+    int? LastBuyGap,
+    int? LastSellGap,
+    DateTime TriggeredAtUtc,
+    decimal? LastBid,
+    decimal? LastAsk);
+
+public sealed record TradeInstructionLeg(
+    string Exchange,
+    GapSignalAction Action,
     GapSignalSide Side,
     IReadOnlyList<int> Gaps,
+    int? LastGap,
+    decimal? Price);
+
+public sealed record TradeSignalInstruction(
     DateTime TriggeredAtUtc,
-    decimal? TriggerPrice);
+    GapSignalAction Action,
+    GapSignalSide PrimarySide,
+    TradeInstructionLeg ExchangeA,
+    TradeInstructionLeg ExchangeB);
