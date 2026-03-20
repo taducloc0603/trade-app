@@ -516,7 +516,12 @@ public sealed class DashboardViewModel : ObservableObject
     private string ResolveCurrentPhaseText()
     {
         var phase = _tradingFlowEngine.CurrentPhase;
-        return phase == TradingFlowPhase.WaitingClose ? "WAITING CLOSE" : "WAITING OPEN";
+        return phase switch
+        {
+            TradingFlowPhase.WaitingCloseFromGapBuy => "WAITING CLOSE (GAP_SELL)",
+            TradingFlowPhase.WaitingCloseFromGapSell => "WAITING CLOSE (GAP_BUY)",
+            _ => "WAITING OPEN"
+        };
     }
 
     private void BindDashboardMetrics(DashboardMetrics metrics)

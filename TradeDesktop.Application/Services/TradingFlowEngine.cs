@@ -10,6 +10,7 @@ public sealed class TradingFlowEngine(
     private readonly Random _random = new();
 
     public TradingFlowPhase CurrentPhase { get; private set; } = TradingFlowPhase.WaitingOpen;
+    public TradingOpenMode CurrentOpenMode { get; private set; } = TradingOpenMode.None;
     public TradingPositionSide CurrentPositionSide { get; private set; } = TradingPositionSide.None;
     public DateTime? OpenedAtUtc { get; private set; }
     public DateTime? ClosedAtUtc { get; private set; }
@@ -36,19 +37,27 @@ public sealed class TradingFlowEngine(
                 return null;
             }
 
+            CurrentOpenMode = openTrigger.TriggerType == GapSignalTriggerType.OpenByGapBuy
+                ? TradingOpenMode.GapBuy
+                : TradingOpenMode.GapSell;
+
             CurrentPositionSide = openTrigger.PrimarySide == GapSignalSide.Buy
                 ? TradingPositionSide.Buy
                 : TradingPositionSide.Sell;
 
             OpenedAtUtc = openTrigger.TriggeredAtUtc;
             CurrentHoldingSeconds = NextSecondsInRange(config.StartTimeHold, config.EndTimeHold);
-            CurrentPhase = TradingFlowPhase.WaitingClose;
+            CurrentPhase = CurrentOpenMode == TradingOpenMode.GapBuy
+                ? TradingFlowPhase.WaitingCloseFromGapBuy
+                : TradingFlowPhase.WaitingCloseFromGapSell;
             closeSignalEngine.Reset();
             openSignalEngine.Reset();
             return openTrigger;
         }
 
-        if (CurrentPhase != TradingFlowPhase.WaitingClose || CurrentPositionSide == TradingPositionSide.None)
+        if ((CurrentPhase != TradingFlowPhase.WaitingCloseFromGapBuy && CurrentPhase != TradingFlowPhase.WaitingCloseFromGapSell)
+            || CurrentOpenMode == TradingOpenMode.None
+            || CurrentPositionSide == TradingPositionSide.None)
         {
             return null;
         }
@@ -58,13 +67,14 @@ public sealed class TradingFlowEngine(
             return null;
         }
 
-        var closeTrigger = closeSignalEngine.ProcessSnapshot(snapshot, config, CurrentPositionSide);
+        var closeTrigger = closeSignalEngine.ProcessSnapshot(snapshot, config, CurrentOpenMode);
         if (closeTrigger is null || !closeTrigger.Triggered || closeTrigger.Action != GapSignalAction.Close)
         {
             return null;
         }
 
         CurrentPhase = TradingFlowPhase.WaitingOpen;
+        CurrentOpenMode = TradingOpenMode.None;
         CurrentPositionSide = TradingPositionSide.None;
         ClosedAtUtc = closeTrigger.TriggeredAtUtc;
         CurrentWaitSeconds = NextSecondsInRange(config.StartWaitTime, config.EndWaitTime);
@@ -76,6 +86,7 @@ public sealed class TradingFlowEngine(
     public void Reset()
     {
         CurrentPhase = TradingFlowPhase.WaitingOpen;
+        CurrentOpenMode = TradingOpenMode.None;
         CurrentPositionSide = TradingPositionSide.None;
         OpenedAtUtc = null;
         ClosedAtUtc = null;

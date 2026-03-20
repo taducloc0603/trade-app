@@ -15,9 +15,10 @@ public sealed class TradeSignalLogBuilderTests
 
         var lines = _logBuilder.BuildLogLines(_instructionFactory.Create(trigger));
 
-        Assert.Equal(2, lines.Count);
-        Assert.Equal("[13:00:43.573] OPEN BUY A by GAP: 11 at Price: 4555.42 (29|2|2|20|29|11)", lines[0]);
-        Assert.Equal("[13:00:43.573] OPEN SELL B by GAP: -22 at Price: 4555.67 (-26|-15|-19|-22|-22|-22)", lines[1]);
+        Assert.Equal(3, lines.Count);
+        Assert.Equal("[OPEN BY GAP_BUY] GAP 11 (29|2|2|20|29|11)", lines[0]);
+        Assert.Equal("    - [13:00:43.573] OPEN BUY A at Price: 4555.42", lines[1]);
+        Assert.Equal("    - [13:00:43.573] OPEN SELL B at Price: 4555.67", lines[2]);
     }
 
     [Fact]
@@ -27,9 +28,10 @@ public sealed class TradeSignalLogBuilderTests
 
         var lines = _logBuilder.BuildLogLines(_instructionFactory.Create(trigger));
 
-        Assert.Equal(2, lines.Count);
-        Assert.Equal("[12:55:16.097] OPEN SELL A by GAP: -22 at Price: 4555.67 (-26|-15|-19|-22|-22|-22)", lines[0]);
-        Assert.Equal("[12:55:16.097] OPEN BUY B by GAP: 11 at Price: 4555.42 (29|2|2|20|29|11)", lines[1]);
+        Assert.Equal(3, lines.Count);
+        Assert.Equal("[OPEN BY GAP_SELL] GAP -22 (-26|-15|-19|-22|-22|-22)", lines[0]);
+        Assert.Equal("    - [12:55:16.097] OPEN SELL A at Price: 4555.67", lines[1]);
+        Assert.Equal("    - [12:55:16.097] OPEN BUY B at Price: 4555.42", lines[2]);
     }
 
     [Fact]
@@ -39,9 +41,10 @@ public sealed class TradeSignalLogBuilderTests
 
         var lines = _logBuilder.BuildLogLines(_instructionFactory.Create(trigger));
 
-        Assert.Equal(2, lines.Count);
-        Assert.Equal("[12:57:43.347] CLOSE BUY A by GAP: 11 at Price: 4555.42 (29|2|2|20|29|11)", lines[0]);
-        Assert.Equal("[12:57:43.347] CLOSE SELL B by GAP: -22 at Price: 4555.67 (-26|-15|-19|-22|-22|-22)", lines[1]);
+        Assert.Equal(3, lines.Count);
+        Assert.Equal("[CLOSE BY GAP_SELL] GAP -22 (-26|-15|-19|-22|-22|-22)", lines[0]);
+        Assert.Equal("    - [12:57:43.347] CLOSE BUY A at Price: 4555.42", lines[1]);
+        Assert.Equal("    - [12:57:43.347] CLOSE SELL B at Price: 4555.67", lines[2]);
     }
 
     [Fact]
@@ -51,9 +54,10 @@ public sealed class TradeSignalLogBuilderTests
 
         var lines = _logBuilder.BuildLogLines(_instructionFactory.Create(trigger));
 
-        Assert.Equal(2, lines.Count);
-        Assert.Equal("[12:53:15.737] CLOSE SELL A by GAP: -22 at Price: 4555.67 (-26|-15|-19|-22|-22|-22)", lines[0]);
-        Assert.Equal("[12:53:15.737] CLOSE BUY B by GAP: 11 at Price: 4555.42 (29|2|2|20|29|11)", lines[1]);
+        Assert.Equal(3, lines.Count);
+        Assert.Equal("[CLOSE BY GAP_BUY] GAP 11 (29|2|2|20|29|11)", lines[0]);
+        Assert.Equal("    - [12:53:15.737] CLOSE SELL A at Price: 4555.67", lines[1]);
+        Assert.Equal("    - [12:53:15.737] CLOSE BUY B at Price: 4555.42", lines[2]);
     }
 
     private static GapSignalTriggerResult BuildTrigger(GapSignalAction action, GapSignalSide primarySide)
@@ -72,9 +76,18 @@ public sealed class TradeSignalLogBuilderTests
             triggeredAtUtc = new DateTime(2026, 3, 20, 5, 53, 15, 737, DateTimeKind.Utc);
         }
 
+        var triggerType = action switch
+        {
+            GapSignalAction.Open when primarySide == GapSignalSide.Buy => GapSignalTriggerType.OpenByGapBuy,
+            GapSignalAction.Open => GapSignalTriggerType.OpenByGapSell,
+            GapSignalAction.Close when primarySide == GapSignalSide.Buy => GapSignalTriggerType.CloseByGapSell,
+            _ => GapSignalTriggerType.CloseByGapBuy
+        };
+
         return new GapSignalTriggerResult(
             Triggered: true,
             Action: action,
+            TriggerType: triggerType,
             PrimarySide: primarySide,
             BuyGaps: new[] { 29, 2, 2, 20, 29, 11 },
             SellGaps: new[] { -26, -15, -19, -22, -22, -22 },

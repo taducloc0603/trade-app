@@ -15,7 +15,15 @@ public enum GapSignalSide
 public enum TradingFlowPhase
 {
     WaitingOpen = 0,
-    WaitingClose = 1
+    WaitingCloseFromGapBuy = 1,
+    WaitingCloseFromGapSell = 2
+}
+
+public enum TradingOpenMode
+{
+    None = 0,
+    GapBuy = 1,
+    GapSell = 2
 }
 
 public enum TradingPositionSide
@@ -47,6 +55,7 @@ public sealed record GapSignalConfirmationConfig(
 public sealed record GapSignalTriggerResult(
     bool Triggered,
     GapSignalAction Action,
+    GapSignalTriggerType TriggerType,
     GapSignalSide PrimarySide,
     IReadOnlyList<int> BuyGaps,
     IReadOnlyList<int> SellGaps,
@@ -55,6 +64,14 @@ public sealed record GapSignalTriggerResult(
     DateTime TriggeredAtUtc,
     decimal? LastBid,
     decimal? LastAsk);
+
+public enum GapSignalTriggerType
+{
+    OpenByGapBuy = 0,
+    OpenByGapSell = 1,
+    CloseByGapBuy = 2,
+    CloseByGapSell = 3
+}
 
 public sealed record TradeInstructionLeg(
     string Exchange,
@@ -66,7 +83,10 @@ public sealed record TradeInstructionLeg(
 
 public sealed record TradeSignalInstruction(
     DateTime TriggeredAtUtc,
+    GapSignalTriggerType TriggerType,
     GapSignalAction Action,
     GapSignalSide PrimarySide,
+    IReadOnlyList<int> TriggerGaps,
+    int? LastTriggerGap,
     TradeInstructionLeg ExchangeA,
     TradeInstructionLeg ExchangeB);

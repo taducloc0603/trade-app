@@ -7,6 +7,8 @@ public sealed class TradeInstructionFactory : ITradeInstructionFactory
 {
     public TradeSignalInstruction Create(GapSignalTriggerResult triggerResult)
     {
+        var triggerGaps = ResolveTriggerGaps(triggerResult);
+        var lastTriggerGap = ResolveLastTriggerGap(triggerResult);
         var exchangeASide = triggerResult.PrimarySide;
         var exchangeBSide = OppositeSide(exchangeASide);
 
@@ -15,11 +17,24 @@ public sealed class TradeInstructionFactory : ITradeInstructionFactory
 
         return new TradeSignalInstruction(
             TriggeredAtUtc: triggerResult.TriggeredAtUtc,
+            TriggerType: triggerResult.TriggerType,
             Action: triggerResult.Action,
             PrimarySide: triggerResult.PrimarySide,
+            TriggerGaps: triggerGaps,
+            LastTriggerGap: lastTriggerGap,
             ExchangeA: exchangeA,
             ExchangeB: exchangeB);
     }
+
+    private static IReadOnlyList<int> ResolveTriggerGaps(GapSignalTriggerResult triggerResult)
+        => triggerResult.TriggerType is GapSignalTriggerType.OpenByGapBuy or GapSignalTriggerType.CloseByGapBuy
+            ? triggerResult.BuyGaps
+            : triggerResult.SellGaps;
+
+    private static int? ResolveLastTriggerGap(GapSignalTriggerResult triggerResult)
+        => triggerResult.TriggerType is GapSignalTriggerType.OpenByGapBuy or GapSignalTriggerType.CloseByGapBuy
+            ? triggerResult.LastBuyGap
+            : triggerResult.LastSellGap;
 
     private static TradeInstructionLeg BuildLeg(
         string exchange,

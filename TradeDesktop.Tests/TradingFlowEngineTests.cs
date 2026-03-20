@@ -41,10 +41,12 @@ public sealed class TradingFlowEngineTests
         var open = Process(sut, start.AddMilliseconds(520), gapBuy: 8, gapSell: null);
         Assert.NotNull(open);
         Assert.Equal(GapSignalAction.Open, open!.Action);
+        Assert.Equal(GapSignalTriggerType.OpenByGapBuy, open.TriggerType);
         Assert.Equal(GapSignalSide.Buy, open.PrimarySide);
         Assert.Equal(2945.12m, open.LastBid);
         Assert.Equal(2945.34m, open.LastAsk);
-        Assert.Equal(TradingFlowPhase.WaitingClose, sut.CurrentPhase);
+        Assert.Equal(TradingFlowPhase.WaitingCloseFromGapBuy, sut.CurrentPhase);
+        Assert.Equal(TradingOpenMode.GapBuy, sut.CurrentOpenMode);
         Assert.Equal(TradingPositionSide.Buy, sut.CurrentPositionSide);
 
         // WaitingClose: should ignore open checks even when GAP_BUY is strong.
@@ -56,10 +58,12 @@ public sealed class TradingFlowEngineTests
         var close = Process(sut, start.AddMilliseconds(1110), gapBuy: 20, gapSell: -8);
         Assert.NotNull(close);
         Assert.Equal(GapSignalAction.Close, close!.Action);
+        Assert.Equal(GapSignalTriggerType.CloseByGapSell, close.TriggerType);
         Assert.Equal(GapSignalSide.Buy, close.PrimarySide);
         Assert.Equal(2945.12m, close.LastBid);
         Assert.Equal(2945.34m, close.LastAsk);
         Assert.Equal(TradingFlowPhase.WaitingOpen, sut.CurrentPhase);
+        Assert.Equal(TradingOpenMode.None, sut.CurrentOpenMode);
         Assert.Equal(TradingPositionSide.None, sut.CurrentPositionSide);
     }
 
@@ -75,10 +79,12 @@ public sealed class TradingFlowEngineTests
 
         Assert.NotNull(open);
         Assert.Equal(GapSignalAction.Open, open!.Action);
+        Assert.Equal(GapSignalTriggerType.OpenByGapSell, open.TriggerType);
         Assert.Equal(GapSignalSide.Sell, open.PrimarySide);
         Assert.Equal(2945.12m, open.LastBid);
         Assert.Equal(2945.34m, open.LastAsk);
-        Assert.Equal(TradingFlowPhase.WaitingClose, sut.CurrentPhase);
+        Assert.Equal(TradingFlowPhase.WaitingCloseFromGapSell, sut.CurrentPhase);
+        Assert.Equal(TradingOpenMode.GapSell, sut.CurrentOpenMode);
         Assert.Equal(TradingPositionSide.Sell, sut.CurrentPositionSide);
 
         Assert.Null(Process(sut, start.AddMilliseconds(640), gapBuy: 5, gapSell: -20));
@@ -87,10 +93,12 @@ public sealed class TradingFlowEngineTests
 
         Assert.NotNull(close);
         Assert.Equal(GapSignalAction.Close, close!.Action);
+        Assert.Equal(GapSignalTriggerType.CloseByGapBuy, close.TriggerType);
         Assert.Equal(GapSignalSide.Sell, close.PrimarySide);
         Assert.Equal(2945.12m, close.LastBid);
         Assert.Equal(2945.34m, close.LastAsk);
         Assert.Equal(TradingFlowPhase.WaitingOpen, sut.CurrentPhase);
+        Assert.Equal(TradingOpenMode.None, sut.CurrentOpenMode);
         Assert.Equal(TradingPositionSide.None, sut.CurrentPositionSide);
     }
 
@@ -104,12 +112,14 @@ public sealed class TradingFlowEngineTests
         _ = Process(sut, start.AddMilliseconds(200), gapBuy: 6, gapSell: null);
         _ = Process(sut, start.AddMilliseconds(550), gapBuy: 8, gapSell: null);
 
-        Assert.Equal(TradingFlowPhase.WaitingClose, sut.CurrentPhase);
+        Assert.Equal(TradingFlowPhase.WaitingCloseFromGapBuy, sut.CurrentPhase);
+        Assert.Equal(TradingOpenMode.GapBuy, sut.CurrentOpenMode);
         Assert.Equal(TradingPositionSide.Buy, sut.CurrentPositionSide);
 
         sut.Reset();
 
         Assert.Equal(TradingFlowPhase.WaitingOpen, sut.CurrentPhase);
+        Assert.Equal(TradingOpenMode.None, sut.CurrentOpenMode);
         Assert.Equal(TradingPositionSide.None, sut.CurrentPositionSide);
     }
 
@@ -129,7 +139,7 @@ public sealed class TradingFlowEngineTests
 
         // Before 2s elapsed, close is blocked.
         Assert.Null(Process(sut, start.AddMilliseconds(1200), gapBuy: null, gapSell: -20, ConfigWithTimeGuards));
-        Assert.Equal(TradingFlowPhase.WaitingClose, sut.CurrentPhase);
+        Assert.Equal(TradingFlowPhase.WaitingCloseFromGapBuy, sut.CurrentPhase);
 
         // After 2s elapsed, close checks can run and trigger with valid close window.
         Assert.Null(Process(sut, start.AddMilliseconds(2600), gapBuy: null, gapSell: -5, ConfigWithTimeGuards));
@@ -162,6 +172,7 @@ public sealed class TradingFlowEngineTests
         // Before 3s elapsed, open is blocked.
         Assert.Null(Process(sut, start.AddMilliseconds(4200), gapBuy: 10, gapSell: null, ConfigWithTimeGuards));
         Assert.Equal(TradingFlowPhase.WaitingOpen, sut.CurrentPhase);
+        Assert.Equal(TradingOpenMode.None, sut.CurrentOpenMode);
         Assert.Equal(TradingPositionSide.None, sut.CurrentPositionSide);
 
         // After waiting time elapsed, open can run.

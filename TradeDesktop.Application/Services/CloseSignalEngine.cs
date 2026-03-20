@@ -11,15 +11,16 @@ public sealed class CloseSignalEngine : ICloseSignalEngine
     public GapSignalTriggerResult? ProcessSnapshot(
         GapSignalSnapshot snapshot,
         GapSignalConfirmationConfig config,
-        TradingPositionSide positionSide)
+        TradingOpenMode openMode)
     {
         var normalizedCloseConfirm = Math.Abs(config.CloseConfirmGapPts);
         var normalizedClose = Math.Abs(config.ClosePts);
         var normalizedHoldMs = Math.Max(0, config.CloseHoldConfirmMs);
 
-        return positionSide switch
+        return openMode switch
         {
-            TradingPositionSide.Buy => GapSignalConfirmationEngine.ProcessSide(
+            TradingOpenMode.GapBuy => GapSignalConfirmationEngine.ProcessSide(
+                triggerType: GapSignalTriggerType.CloseByGapSell,
                 side: GapSignalSide.Buy,
                 action: GapSignalAction.Close,
                 bid: snapshot.Bid,
@@ -32,7 +33,9 @@ public sealed class CloseSignalEngine : ICloseSignalEngine
                 holdConfirmMs: normalizedHoldMs,
                 isConfirmSatisfied: value => value <= -normalizedCloseConfirm,
                 isOpenSatisfied: value => value <= -normalizedClose),
-            TradingPositionSide.Sell => GapSignalConfirmationEngine.ProcessSide(
+
+            TradingOpenMode.GapSell => GapSignalConfirmationEngine.ProcessSide(
+                triggerType: GapSignalTriggerType.CloseByGapBuy,
                 side: GapSignalSide.Sell,
                 action: GapSignalAction.Close,
                 bid: snapshot.Bid,
@@ -45,6 +48,7 @@ public sealed class CloseSignalEngine : ICloseSignalEngine
                 holdConfirmMs: normalizedHoldMs,
                 isConfirmSatisfied: value => value >= normalizedCloseConfirm,
                 isOpenSatisfied: value => value >= normalizedClose),
+
             _ => null
         };
     }

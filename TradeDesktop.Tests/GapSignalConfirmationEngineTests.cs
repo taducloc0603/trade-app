@@ -25,6 +25,7 @@ public sealed class GapSignalConfirmationEngineTests
 
         var trigger = Assert.Single(results);
         Assert.Equal(GapSignalAction.Open, trigger.Action);
+        Assert.Equal(GapSignalTriggerType.OpenByGapBuy, trigger.TriggerType);
         Assert.Equal(GapSignalSide.Buy, trigger.PrimarySide);
         Assert.Equal(new[] { 5, 6, 5, 7, 8 }, trigger.BuyGaps);
         Assert.Equal(new[] { 0, 0, 0, 0, 0 }, trigger.SellGaps);
@@ -48,6 +49,7 @@ public sealed class GapSignalConfirmationEngineTests
 
         var trigger = Assert.Single(results);
         Assert.Equal(GapSignalAction.Open, trigger.Action);
+        Assert.Equal(GapSignalTriggerType.OpenByGapSell, trigger.TriggerType);
         Assert.Equal(GapSignalSide.Sell, trigger.PrimarySide);
         Assert.Equal(new[] { -5, -6, -7, -8 }, trigger.SellGaps);
         Assert.Equal(new[] { 0, 0, 0, 0 }, trigger.BuyGaps);

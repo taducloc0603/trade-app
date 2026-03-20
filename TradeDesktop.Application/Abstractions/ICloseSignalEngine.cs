@@ -7,7 +7,7 @@ public interface ICloseSignalEngine
     GapSignalTriggerResult? ProcessSnapshot(
         GapSignalSnapshot snapshot,
         GapSignalConfirmationConfig config,
-        TradingPositionSide positionSide);
+        TradingOpenMode openMode);
 
     void Reset();
 }

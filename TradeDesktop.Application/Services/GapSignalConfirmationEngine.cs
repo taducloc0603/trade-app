@@ -19,6 +19,7 @@ public sealed class GapSignalConfirmationEngine : IGapSignalConfirmationEngine, 
         var results = new List<GapSignalTriggerResult>(capacity: 2);
 
         var buyResult = ProcessSide(
+            triggerType: GapSignalTriggerType.OpenByGapBuy,
             side: GapSignalSide.Buy,
             action: GapSignalAction.Open,
             bid: snapshot.Bid,
@@ -37,6 +38,7 @@ public sealed class GapSignalConfirmationEngine : IGapSignalConfirmationEngine, 
         }
 
         var sellResult = ProcessSide(
+            triggerType: GapSignalTriggerType.OpenByGapSell,
             side: GapSignalSide.Sell,
             action: GapSignalAction.Open,
             bid: snapshot.Bid,
@@ -64,6 +66,7 @@ public sealed class GapSignalConfirmationEngine : IGapSignalConfirmationEngine, 
     }
 
     internal static GapSignalTriggerResult? ProcessSide(
+        GapSignalTriggerType triggerType,
         GapSignalSide side,
         GapSignalAction action,
         decimal? bid,
@@ -120,6 +123,7 @@ public sealed class GapSignalConfirmationEngine : IGapSignalConfirmationEngine, 
         var result = new GapSignalTriggerResult(
             Triggered: true,
             Action: action,
+            TriggerType: triggerType,
             PrimarySide: side,
             BuyGaps: state.BuyGaps.ToArray(),
             SellGaps: state.SellGaps.ToArray(),
