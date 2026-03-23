@@ -2,6 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:views="clr-namespace:TradeDesktop.App.Views"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
         Title="Trade Desktop Dashboard"
@@ -245,27 +246,37 @@
                     <RowDefinition Height="12" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="16" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
 
-                <TextBlock Grid.ColumnSpan="3" Text="Thông tin lệnh" FontSize="18" FontWeight="SemiBold" />
+                <TextBlock Text="Thông tin lệnh" FontSize="18" FontWeight="SemiBold" />
 
-                <Border Grid.Row="2" Grid.Column="0" BorderBrush="#EEF1F5" BorderThickness="1" CornerRadius="10" Background="#FAFBFC" Padding="14">
-                    <StackPanel>
-                        <TextBlock Text="Khung lệnh trái" FontWeight="SemiBold" Foreground="#344054" />
-                        <TextBlock Margin="0,8,0,0" Foreground="#667085" Text="Placeholder layout theo mockup." />
-                    </StackPanel>
-                </Border>
+                <TabControl Grid.Row="2"
+                            SelectedIndex="{Binding SelectedOrderTabIndex, Mode=TwoWay}">
+                    <TabItem Header="{Binding TradeTab.TabHeader}">
+                        <Grid Margin="0,10,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="16" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
 
-                <Border Grid.Row="2" Grid.Column="2" BorderBrush="#EEF1F5" BorderThickness="1" CornerRadius="10" Background="#FAFBFC" Padding="14">
-                    <StackPanel>
-                        <TextBlock Text="Khung lệnh phải" FontWeight="SemiBold" Foreground="#344054" />
-                        <TextBlock Margin="0,8,0,0" Foreground="#667085" Text="Placeholder layout theo mockup." />
-                    </StackPanel>
-                </Border>
+                            <views:OrderInfoPanel Grid.Column="0" DataContext="{Binding TradeTab.LeftPanel}" />
+                            <views:OrderInfoPanel Grid.Column="2" DataContext="{Binding TradeTab.RightPanel}" />
+                        </Grid>
+                    </TabItem>
+
+                    <TabItem Header="{Binding HistoryTab.TabHeader}">
+                        <Grid Margin="0,10,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="16" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <views:OrderInfoPanel Grid.Column="0" DataContext="{Binding HistoryTab.LeftPanel}" />
+                            <views:OrderInfoPanel Grid.Column="2" DataContext="{Binding HistoryTab.RightPanel}" />
+                        </Grid>
+                    </TabItem>
+                </TabControl>
             </Grid>
         </Border>
 

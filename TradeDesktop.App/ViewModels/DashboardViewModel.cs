@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.Windows.Media;
 using Microsoft.Extensions.DependencyInjection;
 using TradeDesktop.App.Commands;
+using TradeDesktop.App.Helpers;
 using TradeDesktop.App.State;
 using TradeDesktop.Application.Abstractions;
 using TradeDesktop.Application.Models;
@@ -57,6 +58,8 @@ public sealed class DashboardViewModel : ObservableObject
     private bool _isLoading = true;
     private string _loadingMessage = "Đang chờ dữ liệu shared memory...";
     private string _machineHostName = string.Empty;
+    private OrderTabType _selectedOrderTab = OrderTabType.Trade;
+    private int _selectedOrderTabIndex;
 
     public DashboardViewModel(
         IServiceProvider serviceProvider,
@@ -87,6 +90,20 @@ public sealed class DashboardViewModel : ObservableObject
         CopyHostNameCommand = new AsyncRelayCommand(CopyHostNameAsync);
         StartTradingLogicCommand = new AsyncRelayCommand(StartTradingLogicAsync, CanStartTradingLogic);
         StopTradingLogicCommand = new AsyncRelayCommand(StopTradingLogicAsync, CanStopTradingLogic);
+
+        TradeTab = new OrderInfoTabViewModel(
+            OrderTabType.Trade,
+            "Trade",
+            new OrderPanelStatusViewModel("Sàn A"),
+            new OrderPanelStatusViewModel("Sàn B"));
+
+        HistoryTab = new OrderInfoTabViewModel(
+            OrderTabType.History,
+            "History",
+            new OrderPanelStatusViewModel("Sàn A"),
+            new OrderPanelStatusViewModel("Sàn B"));
+
+        OrderTabs = [TradeTab, HistoryTab];
 
         _runtimeConfigState.StateChanged += (_, _) => ApplyRuntimeConfig();
         ApplyRuntimeConfig();
@@ -180,6 +197,42 @@ public sealed class DashboardViewModel : ObservableObject
     }
 
     public ObservableCollection<string> SignalLogItems { get; } = [];
+    public IReadOnlyList<OrderInfoTabViewModel> OrderTabs { get; }
+    public OrderInfoTabViewModel TradeTab { get; }
+    public OrderInfoTabViewModel HistoryTab { get; }
+
+    public OrderTabType SelectedOrderTab
+    {
+        get => _selectedOrderTab;
+        set
+        {
+            if (!SetProperty(ref _selectedOrderTab, value))
+            {
+                return;
+            }
+
+            var tabIndex = value == OrderTabType.History ? 1 : 0;
+            if (_selectedOrderTabIndex != tabIndex)
+            {
+                _selectedOrderTabIndex = tabIndex;
+                OnPropertyChanged(nameof(SelectedOrderTabIndex));
+            }
+        }
+    }
+
+    public int SelectedOrderTabIndex
+    {
+        get => _selectedOrderTabIndex;
+        set
+        {
+            if (!SetProperty(ref _selectedOrderTabIndex, value))
+            {
+                return;
+            }
+
+            SelectedOrderTab = value == 1 ? OrderTabType.History : OrderTabType.Trade;
+        }
+    }
 
     public bool IsTradingLogicEnabled
     {
@@ -329,6 +382,46 @@ public sealed class DashboardViewModel : ObservableObject
 
         RuntimeSummary =
             $"Host Name: {_runtimeConfigState.CurrentMachineHostName}  |  Point: {_runtimeConfigState.CurrentPoint}  |  OpenPts: {_runtimeConfigState.CurrentOpenPts}  |  ConfirmGapPts: {_runtimeConfigState.CurrentConfirmGapPts}  |  HoldConfirmMs: {_runtimeConfigState.CurrentHoldConfirmMs}  |  ClosePts: {_runtimeConfigState.CurrentClosePts}  |  CloseConfirmGapPts: {_runtimeConfigState.CurrentCloseConfirmGapPts}  |  CloseHoldConfirmMs: {_runtimeConfigState.CurrentCloseHoldConfirmMs}  |  StartTimeHold: {_runtimeConfigState.CurrentStartTimeHold}  |  EndTimeHold: {_runtimeConfigState.CurrentEndTimeHold}  |  StartWaitTime: {_runtimeConfigState.CurrentStartWaitTime}  |  EndWaitTime: {_runtimeConfigState.CurrentEndWaitTime}  |  Map 1: {_runtimeConfigState.CurrentMapName1}  |  Map 2: {_runtimeConfigState.CurrentMapName2}";
+
+        RefreshOrderInfoTabs();
+    }
+
+    private void RefreshOrderInfoTabs()
+    {
+        var tickMapA = _runtimeConfigState.MapName1;
+        var tickMapB = _runtimeConfigState.MapName2;
+
+        RefreshTab(
+            TradeTab,
+            tickMapA,
+            tickMapB,
+            OrderMapNameResolver.BuildTradeMapName);
+
+        RefreshTab(
+            HistoryTab,
+            tickMapA,
+            tickMapB,
+            OrderMapNameResolver.BuildHistoryMapName);
+    }
+
+    private static void RefreshTab(
+        OrderInfoTabViewModel tab,
+        string leftTickMap,
+        string rightTickMap,
+        Func<string, string> mapNameResolver)
+    {
+        RefreshPanel(tab.LeftPanel, leftTickMap, mapNameResolver);
+        RefreshPanel(tab.RightPanel, rightTickMap, mapNameResolver);
+    }
+
+    private static void RefreshPanel(
+        OrderPanelStatusViewModel panel,
+        string sourceTickMapName,
+        Func<string, string> mapNameResolver)
+    {
+        var targetMapName = mapNameResolver(sourceTickMapName);
+        panel.ApplyMapBinding(sourceTickMapName, targetMapName);
+        panel.IsMapAvailable = SharedMemoryChecker.MapExists(targetMapName);
     }
 
     private async Task InitializeRuntimeConfigAsync()
