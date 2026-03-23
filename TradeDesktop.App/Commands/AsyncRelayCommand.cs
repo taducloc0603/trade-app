@@ -2,7 +2,12 @@ using System.Windows.Input;
 
 namespace TradeDesktop.App.Commands;
 
-public sealed class AsyncRelayCommand(Func<Task> execute, Func<bool>? canExecute = null) : ICommand
+public interface IAsyncRelayCommand : ICommand
+{
+    void RaiseCanExecuteChanged();
+}
+
+public sealed class AsyncRelayCommand(Func<Task> execute, Func<bool>? canExecute = null) : IAsyncRelayCommand
 {
     private readonly Func<Task> _execute = execute;
     private readonly Func<bool>? _canExecute = canExecute;

@@ -63,6 +63,8 @@ public sealed class DashboardViewModel : ObservableObject
     private bool _isLoading = true;
     private string _loadingMessage = "Đang chờ dữ liệu shared memory...";
     private string _machineHostName = string.Empty;
+    private string _chartHwndInput = string.Empty;
+    private string _tradeHwndInput = string.Empty;
     private OrderTabType _selectedOrderTab = OrderTabType.Trade;
     private int _selectedOrderTabIndex;
 
@@ -99,6 +101,9 @@ public sealed class DashboardViewModel : ObservableObject
         CopyHostNameCommand = new AsyncRelayCommand(CopyHostNameAsync);
         StartTradingLogicCommand = new AsyncRelayCommand(StartTradingLogicAsync, CanStartTradingLogic);
         StopTradingLogicCommand = new AsyncRelayCommand(StopTradingLogicAsync, CanStopTradingLogic);
+        BuyCommand = new AsyncRelayCommand(BuyAsync);
+        SellCommand = new AsyncRelayCommand(SellAsync);
+        CloseOrderCommand = new AsyncRelayCommand(CloseOrderAsync);
 
         TradeTab = new OrderInfoTabViewModel(
             OrderTabType.Trade,
@@ -199,6 +204,8 @@ public sealed class DashboardViewModel : ObservableObject
     public bool IsLoading { get => _isLoading; private set => SetProperty(ref _isLoading, value); }
     public string LoadingMessage { get => _loadingMessage; private set => SetProperty(ref _loadingMessage, value); }
     public string MachineHostName { get => _machineHostName; private set => SetProperty(ref _machineHostName, value); }
+    public string ChartHwndInput { get => _chartHwndInput; set => SetProperty(ref _chartHwndInput, value); }
+    public string TradeHwndInput { get => _tradeHwndInput; set => SetProperty(ref _tradeHwndInput, value); }
 
     public string LastSignalText
     {
@@ -271,6 +278,9 @@ public sealed class DashboardViewModel : ObservableObject
     public AsyncRelayCommand CopyHostNameCommand { get; }
     public AsyncRelayCommand StartTradingLogicCommand { get; }
     public AsyncRelayCommand StopTradingLogicCommand { get; }
+    public IAsyncRelayCommand BuyCommand { get; }
+    public IAsyncRelayCommand SellCommand { get; }
+    public IAsyncRelayCommand CloseOrderCommand { get; }
 
     private bool CanStartTradingLogic() => !IsTradingLogicEnabled;
     private bool CanStopTradingLogic() => IsTradingLogicEnabled;
@@ -301,6 +311,12 @@ public sealed class DashboardViewModel : ObservableObject
         LastSignalText = "-";
         return Task.CompletedTask;
     }
+
+    private Task BuyAsync() => Task.CompletedTask;
+
+    private Task SellAsync() => Task.CompletedTask;
+
+    private Task CloseOrderAsync() => Task.CompletedTask;
 
     private void ResetTradingLogicState()
     {

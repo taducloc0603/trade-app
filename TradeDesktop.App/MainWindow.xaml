@@ -101,6 +101,8 @@
                         <RowDefinition Height="*" />
                         <RowDefinition Height="10" />
                         <RowDefinition Height="Auto" />
+                        <RowDefinition Height="10" />
+                        <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
 
                     <TextBlock Text="Thông số" FontSize="18" FontWeight="SemiBold" />
@@ -147,6 +149,71 @@
                     </Grid>
 
                     <Grid Grid.Row="4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="2*" />
+                            <ColumnDefinition Width="16" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <UniformGrid Grid.Column="0" Columns="3" Rows="1">
+                            <Button Content="BUY"
+                                    Height="40"
+                                    Margin="0,0,8,0"
+                                    Padding="10,8"
+                                    FontWeight="SemiBold"
+                                    Background="White"
+                                    BorderBrush="#D92D20"
+                                    BorderThickness="1"
+                                    Foreground="#D92D20"
+                                    Command="{Binding BuyCommand}" />
+                            <Button Content="SELL"
+                                    Height="40"
+                                    Margin="4,0,4,0"
+                                    Padding="10,8"
+                                    FontWeight="SemiBold"
+                                    Background="White"
+                                    BorderBrush="#12B76A"
+                                    BorderThickness="1"
+                                    Foreground="#12B76A"
+                                    Command="{Binding SellCommand}" />
+                            <Button Content="CLOSE"
+                                    Height="40"
+                                    Margin="8,0,0,0"
+                                    Padding="10,8"
+                                    FontWeight="SemiBold"
+                                    Background="White"
+                                    BorderBrush="#667085"
+                                    BorderThickness="1"
+                                    Foreground="#667085"
+                                    Command="{Binding CloseOrderCommand}" />
+                        </UniformGrid>
+
+                        <Grid Grid.Column="2">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="6" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="8" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="6" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Text="Chart HWND" FontWeight="SemiBold" Foreground="#344054" />
+                            <TextBox Grid.Row="2"
+                                     MinWidth="170"
+                                     Padding="8,6"
+                                     Text="{Binding ChartHwndInput, UpdateSourceTrigger=PropertyChanged}" />
+
+                            <TextBlock Grid.Row="4" Text="Trade HWND" FontWeight="SemiBold" Foreground="#344054" />
+                            <TextBox Grid.Row="6"
+                                     MinWidth="170"
+                                     Padding="8,6"
+                                     Text="{Binding TradeHwndInput, UpdateSourceTrigger=PropertyChanged}" />
+                        </Grid>
+                    </Grid>
+
+                    <Grid Grid.Row="6">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="12" />
