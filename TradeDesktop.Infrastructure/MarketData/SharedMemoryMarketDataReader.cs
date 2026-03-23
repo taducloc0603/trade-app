@@ -1,9 +1,7 @@
+using System.Diagnostics;
 using System.Globalization;
-using System.IO;
 using System.IO.MemoryMappedFiles;
 using System.Text;
-using System.Text.Json;
-using System.Collections.Concurrent;
 using TradeDesktop.Application.Abstractions;
 using TradeDesktop.Application.Models;
 
@@ -12,21 +10,19 @@ namespace TradeDesktop.Infrastructure.MarketData;
 public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(120);
-    private static readonly TimeSpan TpsRollingWindow = TimeSpan.FromSeconds(1);
-    private const double MaxReasonableLatencyMs = 60_000;
-    private const int HeaderSize = 16;
-    private const int QuoteRingOffset = 16;
-    private const int QuoteRingSize = 64;
-    private const int QuoteMessageSize = 48;
-    private const int QuoteTimestampOffset = 8;
-    private const int QuoteBidOffset = 16;
-    private const int QuoteAskOffset = 24;
-    private const int QuoteSymbolOffset = 32;
-    private const int QuoteSymbolLength = 16;
+
+    private const int ExpectedVersion = 1;
+
+    private const long VersionOffset = 0;
+    private const long TimestampMsOffset = 4;
+    private const long BidOffset = 16;
+    private const long AskOffset = 24;
+    private const long SpreadOffset = 32;
+    private const long SymbolOffset = 52;
+    private const int MaxSymbolBytesToRead = 64;
 
     private readonly object _syncRoot = new();
     private readonly IRuntimeConfigProvider _runtimeConfigProvider;
-    private readonly ConcurrentDictionary<string, Mt5RealtimeState> _mt5StatsByMap = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, MapReaderHandle> _mapReaders = new(StringComparer.OrdinalIgnoreCase);
     private CancellationTokenSource? _cts;
     private Task? _worker;
@@ -108,11 +104,8 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
 
             var sanA = ReadExchangeMetrics(mapName1, "SanA");
             var sanB = ReadExchangeMetrics(mapName2, "SanB");
-            var timestamp = DateTime.UtcNow;
 
-            var snapshot = new SharedMemorySnapshot(sanA, sanB, timestamp);
-            SnapshotReceived?.Invoke(this, snapshot);
-
+            SnapshotReceived?.Invoke(this, new SharedMemorySnapshot(sanA, sanB, DateTime.UtcNow));
         }
     }
 
@@ -128,46 +121,43 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
         try
         {
             var handle = GetOrCreateMapReader(normalizedMapName);
-            if (TryParseMt5QuoteRing(handle.Accessor, fallbackSymbol, out var fromMt5, out var quoteSeq, out var timeMsc))
+            if (!TryReadTickRecord(handle.Accessor, out var tickRecord, out var error))
             {
-                return ApplyMt5RealtimeMetrics(normalizedMapName, fromMt5, quoteSeq, timeMsc) with { Error = null, IsConnected = true };
+                return Disconnected(fallbackSymbol, error ?? "Tick data không hợp lệ");
             }
 
-            using var stream = handle.Mmf.CreateViewStream(0, 0, MemoryMappedFileAccess.Read);
+            var symbol = string.IsNullOrWhiteSpace(tickRecord.Symbol)
+                ? fallbackSymbol
+                : tickRecord.Symbol;
 
-            var raw = ReadAllBytes(stream);
-            if (raw.Length == 0)
-            {
-                _mt5StatsByMap.TryRemove(normalizedMapName, out _);
-                return Disconnected(fallbackSymbol, "Shared memory rỗng");
-            }
+            var bidDecimal = (decimal)tickRecord.Bid;
+            var askDecimal = (decimal)tickRecord.Ask;
+            var spreadDecimal = (decimal)tickRecord.Spread;
 
-            if (TryParseJsonPayload(raw, out var fromJson))
-            {
-                _mt5StatsByMap.TryRemove(normalizedMapName, out _);
-                return fromJson with { Error = null, IsConnected = true };
-            }
+            Debug.WriteLine(
+                $"[SHM:{normalizedMapName}] version={tickRecord.Version} symbol={symbol} tsMs={tickRecord.TimestampMs} bid={tickRecord.Bid} ask={tickRecord.Ask} spread={tickRecord.Spread}");
 
-            // TODO: Khi xác nhận chính xác struct MT5 từ shm-app/EA, thay parser heuristic này bằng struct mapping cố định.
-            if (TryParseBinaryPayload(raw, fallbackSymbol, out var fromBinary))
-            {
-                _mt5StatsByMap.TryRemove(normalizedMapName, out _);
-                return fromBinary with { Error = null, IsConnected = true };
-            }
-
-            _mt5StatsByMap.TryRemove(normalizedMapName, out _);
-            return Disconnected(fallbackSymbol, "Không parse được payload shared memory");
+            return new ExchangeMetrics(
+                Symbol: symbol,
+                Bid: bidDecimal,
+                Ask: askDecimal,
+                Spread: spreadDecimal,
+                LatencyMs: TryComputeLatencyMs(tickRecord.TimestampMs),
+                Tps: null,
+                Time: FormatTickTime(tickRecord.TimestampMs),
+                MaxLatMs: null,
+                AvgLatMs: null,
+                IsConnected: true,
+                Error: null);
         }
         catch (FileNotFoundException)
         {
             RemoveMapReader(normalizedMapName);
-            _mt5StatsByMap.TryRemove(normalizedMapName, out _);
             return Disconnected(fallbackSymbol, $"Map không tồn tại: {mapName}");
         }
         catch (Exception ex)
         {
             RemoveMapReader(normalizedMapName);
-            _mt5StatsByMap.TryRemove(normalizedMapName, out _);
             return Disconnected(fallbackSymbol, ex.Message);
         }
     }
@@ -192,6 +182,7 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
     private void RefreshMapReaders(string? mapName1, string? mapName2)
     {
         var keep = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         if (!string.IsNullOrWhiteSpace(mapName1))
         {
             keep.Add(mapName1.Trim());
@@ -209,7 +200,6 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
             {
                 _mapReaders[key].Dispose();
                 _mapReaders.Remove(key);
-                _mt5StatsByMap.TryRemove(key, out _);
             }
         }
     }
@@ -241,488 +231,113 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
         }
     }
 
-    private static bool TryParseMt5QuoteRing(
+    private static bool TryReadTickRecord(
         MemoryMappedViewAccessor accessor,
-        string fallbackSymbol,
-        out ExchangeMetrics metrics,
-        out uint quoteSeq,
-        out long timeMsc)
+        out SharedMemoryTickRecord tickRecord,
+        out string? error)
     {
-        metrics = Disconnected(fallbackSymbol, "MT5 quote ring parse failed");
-        quoteSeq = 0;
-        timeMsc = 0;
+        tickRecord = new SharedMemoryTickRecord(0, 0, 0, 0, 0, string.Empty);
+        error = null;
 
         var capacity = accessor.Capacity;
-        var required = QuoteRingOffset + (QuoteRingSize * QuoteMessageSize);
-        if (capacity < required || capacity < HeaderSize)
+        if (capacity <= SymbolOffset)
         {
+            error = $"Buffer quá ngắn: {capacity} bytes";
             return false;
         }
 
-        quoteSeq = accessor.ReadUInt32(0);
-        if (quoteSeq == 0)
+        var version = accessor.ReadInt32(VersionOffset);
+        if (version != ExpectedVersion)
         {
+            error = $"Version không đúng kỳ vọng: {version}";
             return false;
         }
 
-        // Theo cấu trúc hiện tại của MT5/PowerShell monitor: slot = quote_seq % QUOTE_RING_SIZE
-        var slot = (int)(quoteSeq % QuoteRingSize);
-        var baseOffset = QuoteRingOffset + (slot * QuoteMessageSize);
-        if (baseOffset + QuoteMessageSize > capacity)
+        var timestampMs = accessor.ReadInt64(TimestampMsOffset);
+        if (timestampMs <= 0)
         {
+            error = "TimestampMs không hợp lệ";
             return false;
         }
 
-        timeMsc = accessor.ReadInt64(baseOffset + QuoteTimestampOffset);
-        var bid = accessor.ReadDouble(baseOffset + QuoteBidOffset);
-        var ask = accessor.ReadDouble(baseOffset + QuoteAskOffset);
-        var symbol = ReadAsciiString(accessor, baseOffset + QuoteSymbolOffset, QuoteSymbolLength);
+        var bid = accessor.ReadDouble(BidOffset);
+        var ask = accessor.ReadDouble(AskOffset);
+        var spread = accessor.ReadDouble(SpreadOffset);
 
-        if (double.IsNaN(bid) || double.IsInfinity(bid) ||
-            double.IsNaN(ask) || double.IsInfinity(ask) ||
-            bid <= 0 || ask <= 0)
+        if (double.IsNaN(bid) || double.IsInfinity(bid) || bid <= 0 ||
+            double.IsNaN(ask) || double.IsInfinity(ask) || ask <= 0 ||
+            double.IsNaN(spread) || double.IsInfinity(spread))
         {
+            error = "Bid/Ask/Spread không hợp lệ";
             return false;
         }
 
-        var bidDecimal = (decimal)bid;
-        var askDecimal = (decimal)ask;
-        var symbolText = string.IsNullOrWhiteSpace(symbol) ? fallbackSymbol : symbol;
-
-        string timeText;
-        if (timeMsc > 946_684_800_000 && timeMsc < 4_102_444_800_000)
+        var symbol = ReadNullTerminatedAscii(accessor, SymbolOffset, capacity);
+        if (string.IsNullOrWhiteSpace(symbol))
         {
-            // time_msc từ MT5 thường là unix epoch millisecond
-            timeText = DateTimeOffset.FromUnixTimeMilliseconds(timeMsc)
-                .ToLocalTime()
-                .ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture);
-        }
-        else
-        {
-            timeText = DateTime.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
-        }
-
-        metrics = new ExchangeMetrics(
-            Symbol: symbolText,
-            Bid: bidDecimal,
-            Ask: askDecimal,
-            Spread: askDecimal - bidDecimal,
-            LatencyMs: null,
-            Tps: null,
-            Time: timeText,
-            MaxLatMs: null,
-            AvgLatMs: null,
-            IsConnected: true,
-            Error: null);
-
-        return true;
-    }
-
-    private ExchangeMetrics ApplyMt5RealtimeMetrics(string mapName, ExchangeMetrics source, uint quoteSeq, long timeMsc)
-    {
-        var state = _mt5StatsByMap.GetOrAdd(mapName, _ => new Mt5RealtimeState());
-        var now = DateTimeOffset.UtcNow;
-        var nowMs = now.ToUnixTimeMilliseconds();
-
-        lock (state.Sync)
-        {
-            float tps = 0;
-
-            if (state.PreviousQuoteSeq.HasValue)
-            {
-                var seqDelta = CalculateQuoteSeqDelta(quoteSeq, state.PreviousQuoteSeq.Value);
-                state.CumulativeTicks += seqDelta;
-            }
-
-            state.PreviousQuoteSeq = quoteSeq;
-            state.TickSamples.Add(new TickSample(now, state.CumulativeTicks));
-
-            var minSampleTime = now - TpsRollingWindow;
-            while (state.TickSamples.Count > 1 && state.TickSamples[0].TimestampUtc < minSampleTime)
-            {
-                state.TickSamples.RemoveAt(0);
-            }
-
-            if (state.TickSamples.Count >= 2)
-            {
-                var first = state.TickSamples[0];
-                var last = state.TickSamples[^1];
-                var dtMs = (last.TimestampUtc - first.TimestampUtc).TotalMilliseconds;
-                var tickDelta = last.CumulativeTicks - first.CumulativeTicks;
-                if (dtMs > 0 && tickDelta >= 0)
-                {
-                    tps = (float)(tickDelta * 1000d / dtMs);
-                }
-            }
-
-            var parsedLatency = TryParseLatencyFromTimeMsc(timeMsc, nowMs, PollInterval.TotalMilliseconds);
-            var effectiveLatency = parsedLatency.HasValue && parsedLatency.Value <= (decimal)MaxReasonableLatencyMs
-                ? parsedLatency.Value
-                : (decimal)PollInterval.TotalMilliseconds;
-
-            state.TotalLatencyMs += effectiveLatency;
-            state.LatencySamples += 1;
-            state.MaxLatencyMs = Math.Max(state.MaxLatencyMs, effectiveLatency);
-            var avgLatency = state.LatencySamples > 0 ? state.TotalLatencyMs / state.LatencySamples : 0m;
-
-            return source with
-            {
-                LatencyMs = effectiveLatency,
-                Tps = tps,
-                MaxLatMs = state.MaxLatencyMs,
-                AvgLatMs = avgLatency
-            };
-        }
-    }
-
-    private static long CalculateQuoteSeqDelta(uint current, uint previous)
-        => current >= previous
-            ? current - previous
-            : ((long)uint.MaxValue + 1 - previous) + current;
-
-    private static decimal? TryParseLatencyFromTimeMsc(long timeMsc, long nowMs, double expectedMs)
-    {
-        if (timeMsc <= 0)
-        {
-            return null;
-        }
-
-        double? normalizedTimestampMs = null;
-        if (timeMsc >= 1_000_000_000_000_000_000)
-        {
-            normalizedTimestampMs = timeMsc / 1_000_000d; // ns epoch
-        }
-        else if (timeMsc >= 1_000_000_000_000_000)
-        {
-            normalizedTimestampMs = timeMsc / 1_000d; // us epoch
-        }
-        else if (timeMsc >= 1_000_000_000_000)
-        {
-            normalizedTimestampMs = timeMsc; // ms epoch
-        }
-        else if (timeMsc >= 1_000_000_000 && timeMsc < 10_000_000_000)
-        {
-            normalizedTimestampMs = timeMsc * 1000d; // s epoch
-        }
-
-        if (normalizedTimestampMs.HasValue)
-        {
-            var diff = nowMs - normalizedTimestampMs.Value;
-            return diff >= 0 ? (decimal)diff : 0m;
-        }
-
-        var dayMs = 24 * 60 * 60 * 1000L;
-        double? intradayMs = null;
-        if (timeMsc < dayMs)
-        {
-            intradayMs = timeMsc;
-        }
-        else if (timeMsc < dayMs * 1000L)
-        {
-            intradayMs = timeMsc / 1000d;
-        }
-        else if (timeMsc < dayMs * 1_000_000L)
-        {
-            intradayMs = timeMsc / 1_000_000d;
-        }
-
-        if (!intradayMs.HasValue)
-        {
-            return null;
-        }
-
-        static double CalcDayLatency(double nowDayMs, double tsDayMs)
-        {
-            var diff = nowDayMs - tsDayMs;
-            if (diff < 0)
-            {
-                diff += 24 * 60 * 60 * 1000d;
-            }
-
-            return diff;
-        }
-
-        var now = DateTimeOffset.FromUnixTimeMilliseconds(nowMs);
-        var local = now.ToLocalTime();
-
-        var localDayMs =
-            (local.Hour * 60 * 60 * 1000d) +
-            (local.Minute * 60 * 1000d) +
-            (local.Second * 1000d) +
-            local.Millisecond;
-
-        var utcDayMs =
-            (now.Hour * 60 * 60 * 1000d) +
-            (now.Minute * 60 * 1000d) +
-            (now.Second * 1000d) +
-            now.Millisecond;
-
-        var candidateLocal = CalcDayLatency(localDayMs, intradayMs.Value);
-        var candidateUtc = CalcDayLatency(utcDayMs, intradayMs.Value);
-
-        var selected = Math.Abs(candidateLocal - expectedMs) < Math.Abs(candidateUtc - expectedMs)
-            ? candidateLocal
-            : candidateUtc;
-
-        return selected >= 0 ? (decimal)selected : 0m;
-    }
-
-    private sealed class Mt5RealtimeState
-    {
-        public object Sync { get; } = new();
-        public uint? PreviousQuoteSeq { get; set; }
-        public long CumulativeTicks { get; set; }
-        public List<TickSample> TickSamples { get; } = [];
-        public decimal MaxLatencyMs { get; set; }
-        public decimal TotalLatencyMs { get; set; }
-        public int LatencySamples { get; set; }
-    }
-
-    private sealed class MapReaderHandle(MemoryMappedFile mmf, MemoryMappedViewAccessor accessor) : IDisposable
-    {
-        public MemoryMappedFile Mmf { get; } = mmf;
-        public MemoryMappedViewAccessor Accessor { get; } = accessor;
-
-        public void Dispose()
-        {
-            Accessor.Dispose();
-            Mmf.Dispose();
-        }
-    }
-
-    private sealed record TickSample(DateTimeOffset TimestampUtc, long CumulativeTicks);
-
-    private static string ReadAsciiString(MemoryMappedViewAccessor accessor, long offset, int length)
-    {
-        var bytes = new byte[length];
-        accessor.ReadArray(offset, bytes, 0, length);
-        return Encoding.ASCII.GetString(bytes).TrimEnd('\0', ' ');
-    }
-
-    private static byte[] ReadAllBytes(Stream stream)
-    {
-        using var ms = new MemoryStream();
-        stream.CopyTo(ms);
-        return ms.ToArray();
-    }
-
-    private static bool TryParseJsonPayload(byte[] raw, out ExchangeMetrics metrics)
-    {
-        metrics = Disconnected("-", "JSON parse failed");
-
-        var payload = DecodeUtf8Payload(raw);
-        if (string.IsNullOrWhiteSpace(payload))
-        {
+            error = "Symbol rỗng";
             return false;
         }
 
-        try
-        {
-            using var doc = JsonDocument.Parse(payload);
-            if (doc.RootElement.ValueKind != JsonValueKind.Object)
-            {
-                return false;
-            }
-
-            var obj = doc.RootElement;
-
-            var symbol = GetString(obj, "symbol", "sym", "instrument") ?? "-";
-            var bid = GetDecimal(obj, "bid", "bid_price", "best_bid");
-            var ask = GetDecimal(obj, "ask", "ask_price", "best_ask");
-            var spread = GetDecimal(obj, "spread", "sp") ?? CalculateSpread(bid, ask);
-            var latencyMs = GetDecimal(obj, "latencyMs", "latency_ms", "latency");
-            var tps = GetFloat(obj, "tps", "ticks_per_second");
-            var time = GetString(obj, "time", "timestamp", "ts");
-            var maxLatMs = GetDecimal(obj, "maxLatMs", "max_latency_ms", "max_latency");
-            var avgLatMs = GetDecimal(obj, "avgLatMs", "avg_latency_ms", "avg_latency");
-
-            metrics = new ExchangeMetrics(
-                Symbol: symbol,
-                Bid: bid,
-                Ask: ask,
-                Spread: spread,
-                LatencyMs: latencyMs,
-                Tps: tps,
-                Time: time,
-                MaxLatMs: maxLatMs,
-                AvgLatMs: avgLatMs,
-                IsConnected: true,
-                Error: null);
-
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private static bool TryParseBinaryPayload(byte[] raw, string fallbackSymbol, out ExchangeMetrics metrics)
-    {
-        metrics = Disconnected(fallbackSymbol, "Binary parse failed");
-        if (raw.Length < 16)
-        {
-            return false;
-        }
-
-        decimal? bid = TryGetNumber(raw, 0);
-        decimal? ask = TryGetNumber(raw, 8);
-        decimal? spread = TryGetNumber(raw, 16) ?? CalculateSpread(bid, ask);
-        decimal? latency = TryGetNumber(raw, 24);
-        float? tps = TryGetFloat(raw, 32);
-
-        if (!bid.HasValue && !ask.HasValue)
-        {
-            return false;
-        }
-
-        metrics = new ExchangeMetrics(
-            Symbol: fallbackSymbol,
+        tickRecord = new SharedMemoryTickRecord(
+            Version: version,
+            TimestampMs: timestampMs,
             Bid: bid,
             Ask: ask,
             Spread: spread,
-            LatencyMs: latency,
-            Tps: tps,
-            Time: DateTime.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture),
-            MaxLatMs: null,
-            AvgLatMs: null,
-            IsConnected: true,
-            Error: null);
+            Symbol: symbol);
 
         return true;
     }
 
-    private static decimal? TryGetNumber(byte[] raw, int offset)
+    private static string ReadNullTerminatedAscii(MemoryMappedViewAccessor accessor, long offset, long capacity)
     {
-        if (offset + sizeof(double) <= raw.Length)
-        {
-            var d = BitConverter.ToDouble(raw, offset);
-            if (!double.IsNaN(d) && !double.IsInfinity(d) && Math.Abs(d) < 1_000_000_000)
-            {
-                return (decimal)d;
-            }
-        }
-
-        if (offset + sizeof(float) <= raw.Length)
-        {
-            var f = BitConverter.ToSingle(raw, offset);
-            if (!float.IsNaN(f) && !float.IsInfinity(f) && Math.Abs(f) < 1_000_000_000)
-            {
-                return (decimal)f;
-            }
-        }
-
-        return null;
-    }
-
-    private static float? TryGetFloat(byte[] raw, int offset)
-    {
-        if (offset + sizeof(double) <= raw.Length)
-        {
-            var d = BitConverter.ToDouble(raw, offset);
-            if (!double.IsNaN(d) && !double.IsInfinity(d) && Math.Abs(d) < 1_000_000_000)
-            {
-                return (float)d;
-            }
-        }
-
-        if (offset + sizeof(float) <= raw.Length)
-        {
-            var f = BitConverter.ToSingle(raw, offset);
-            if (!float.IsNaN(f) && !float.IsInfinity(f) && Math.Abs(f) < 1_000_000_000)
-            {
-                return f;
-            }
-        }
-
-        return null;
-    }
-
-    private static string DecodeUtf8Payload(byte[] raw)
-    {
-        var zeroIndex = Array.IndexOf(raw, (byte)0);
-        var length = zeroIndex >= 0 ? zeroIndex : raw.Length;
-        if (length <= 0)
+        var available = capacity - offset;
+        if (available <= 0)
         {
             return string.Empty;
         }
 
-        return Encoding.UTF8.GetString(raw, 0, length).Trim();
-    }
+        var lengthToRead = (int)Math.Min(available, MaxSymbolBytesToRead);
+        var bytes = new byte[lengthToRead];
+        accessor.ReadArray(offset, bytes, 0, lengthToRead);
 
-    private static string? GetString(JsonElement root, params string[] names)
-    {
-        foreach (var name in names)
+        var nullIndex = Array.IndexOf(bytes, (byte)0);
+        var symbolLength = nullIndex >= 0 ? nullIndex : bytes.Length;
+        if (symbolLength <= 0)
         {
-            if (!root.TryGetProperty(name, out var element))
-            {
-                continue;
-            }
-
-            if (element.ValueKind == JsonValueKind.String)
-            {
-                return element.GetString();
-            }
-
-            if (element.ValueKind is JsonValueKind.Number or JsonValueKind.True or JsonValueKind.False)
-            {
-                return element.ToString();
-            }
+            return string.Empty;
         }
 
-        return null;
+        return Encoding.ASCII.GetString(bytes, 0, symbolLength).Trim();
     }
 
-    private static decimal? GetDecimal(JsonElement root, params string[] names)
+    private static string FormatTickTime(long timestampMs)
     {
-        foreach (var name in names)
+        try
         {
-            if (!root.TryGetProperty(name, out var element))
-            {
-                continue;
-            }
-
-            if (element.ValueKind == JsonValueKind.Number && element.TryGetDecimal(out var d))
-            {
-                return d;
-            }
-
-            if (element.ValueKind == JsonValueKind.String &&
-                decimal.TryParse(element.GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var parsed))
-            {
-                return parsed;
-            }
+            return DateTimeOffset.FromUnixTimeMilliseconds(timestampMs)
+                .ToLocalTime()
+                .ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture);
         }
-
-        return null;
+        catch
+        {
+            return DateTime.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
+        }
     }
 
-    private static float? GetFloat(JsonElement root, params string[] names)
+    private static decimal? TryComputeLatencyMs(long timestampMs)
     {
-        foreach (var name in names)
+        try
         {
-            if (!root.TryGetProperty(name, out var element))
-            {
-                continue;
-            }
-
-            if (element.ValueKind == JsonValueKind.Number && element.TryGetSingle(out var f))
-            {
-                return f;
-            }
-
-            if (element.ValueKind == JsonValueKind.String &&
-                float.TryParse(element.GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var parsed))
-            {
-                return parsed;
-            }
+            var diff = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - timestampMs;
+            return diff < 0 ? 0 : diff;
         }
-
-        return null;
+        catch
+        {
+            return null;
+        }
     }
-
-    private static decimal? CalculateSpread(decimal? bid, decimal? ask)
-        => bid.HasValue && ask.HasValue ? ask.Value - bid.Value : null;
 
     private static ExchangeMetrics Disconnected(string symbol, string error)
         => new(
@@ -737,4 +352,16 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
             AvgLatMs: null,
             IsConnected: false,
             Error: error);
+
+    private sealed class MapReaderHandle(MemoryMappedFile mmf, MemoryMappedViewAccessor accessor) : IDisposable
+    {
+        public MemoryMappedFile Mmf { get; } = mmf;
+        public MemoryMappedViewAccessor Accessor { get; } = accessor;
+
+        public void Dispose()
+        {
+            Accessor.Dispose();
+            Mmf.Dispose();
+        }
+    }
 }
