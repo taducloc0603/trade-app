@@ -14,45 +14,130 @@
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
-                <RowDefinition Height="8" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="6" />
-                <RowDefinition Height="Auto" />
                 <RowDefinition Height="12" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
 
             <TextBlock Text="{Binding PanelTitle}" FontWeight="SemiBold" Foreground="#344054" FontSize="14" />
 
-            <TextBlock Grid.Row="2" Foreground="#475467" TextWrapping="Wrap">
+            <TextBlock Grid.Column="2" Foreground="#475467" TextWrapping="Wrap" VerticalAlignment="Center">
                 <Run Text="Map: " FontWeight="SemiBold" />
                 <Run Text="{Binding TargetMapName}" />
             </TextBlock>
 
-            <TextBlock Grid.Row="4" TextWrapping="Wrap">
+            <TextBlock Grid.Column="4" TextWrapping="Wrap" VerticalAlignment="Center">
                 <TextBlock.Style>
                     <Style TargetType="TextBlock">
                         <Setter Property="Foreground" Value="#B42318" />
+                        <Setter Property="FontWeight" Value="SemiBold" />
                         <Setter Property="Text" Value="{Binding StatusMessage}" />
                         <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsLoading}" Value="True">
+                                <Setter Property="Foreground" Value="#475467" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding IsEmpty}" Value="True">
+                                <Setter Property="Foreground" Value="#B54708" />
+                            </DataTrigger>
                             <DataTrigger Binding="{Binding IsMapAvailable}" Value="True">
                                 <Setter Property="Foreground" Value="#067647" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding HasError}" Value="True">
+                                <Setter Property="Foreground" Value="#B42318" />
                             </DataTrigger>
                         </Style.Triggers>
                     </Style>
                 </TextBlock.Style>
             </TextBlock>
 
-            <Border Grid.Row="6"
+            <Border Grid.Row="2"
+                    Grid.ColumnSpan="5"
                     BorderBrush="#E4E7EC"
                     BorderThickness="1"
                     CornerRadius="8"
                     Background="White"
                     Padding="10">
-                <TextBlock Text="Chưa triển khai parse data"
-                           Foreground="#667085"
-                           FontStyle="Italic"
-                           VerticalAlignment="Center" />
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="8" />
+                        <RowDefinition Height="95" />
+                        <RowDefinition Height="10" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Text="Records"
+                               FontWeight="SemiBold"
+                               Foreground="#344054" />
+
+                    <Border Grid.Row="2"
+                            BorderBrush="#EEF1F5"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Padding="6"
+                            Background="#FAFBFC">
+                        <ListBox ItemsSource="{Binding Records}"
+                                 BorderThickness="0"
+                                 Background="Transparent"
+                                 Foreground="#101828"
+                                 FontFamily="Consolas"
+                                 FontSize="11">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" />
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </Border>
+
+                    <Grid Grid.Row="4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="10" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <ItemsControl ItemsSource="{Binding LeftItems}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <DockPanel Margin="0,0,0,4">
+                                        <TextBlock DockPanel.Dock="Left"
+                                                   Width="90"
+                                                   Text="{Binding Label}"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="#475467" />
+                                        <TextBlock Text="{Binding Value}"
+                                                   Foreground="#101828"
+                                                   TextWrapping="Wrap" />
+                                    </DockPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <ItemsControl Grid.Column="2" ItemsSource="{Binding RightItems}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <DockPanel Margin="0,0,0,4">
+                                        <TextBlock DockPanel.Dock="Left"
+                                                   Width="90"
+                                                   Text="{Binding Label}"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="#475467" />
+                                        <TextBlock Text="{Binding Value}"
+                                                   Foreground="#101828"
+                                                   TextWrapping="Wrap" />
+                                    </DockPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Grid>
+                </Grid>
             </Border>
         </Grid>
     </Border>

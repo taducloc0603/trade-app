@@ -22,7 +22,12 @@ public sealed class DashboardViewModel : ObservableObject
     private readonly ITradeInstructionFactory _tradeInstructionFactory;
     private readonly ITradeSignalLogBuilder _tradeSignalLogBuilder;
     private readonly IMachineIdentityService _machineIdentityService;
+    private readonly ITradesSharedMemoryReader _tradesSharedMemoryReader;
+    private readonly IHistorySharedMemoryReader _historySharedMemoryReader;
     private readonly string _normalizedHostName;
+    private readonly CancellationTokenSource _orderInfoPollingCts = new();
+
+    private static readonly TimeSpan OrderInfoPollInterval = TimeSpan.FromSeconds(1);
 
     private string _runtimeSummary = string.Empty;
     private string _dbInlineData = string.Empty;
@@ -70,7 +75,9 @@ public sealed class DashboardViewModel : ObservableObject
         ITradingFlowEngine tradingFlowEngine,
         ITradeInstructionFactory tradeInstructionFactory,
         ITradeSignalLogBuilder tradeSignalLogBuilder,
-        IMachineIdentityService machineIdentityService)
+        IMachineIdentityService machineIdentityService,
+        ITradesSharedMemoryReader tradesSharedMemoryReader,
+        IHistorySharedMemoryReader historySharedMemoryReader)
     {
         _serviceProvider = serviceProvider;
         _runtimeConfigState = runtimeConfigState;
@@ -80,6 +87,8 @@ public sealed class DashboardViewModel : ObservableObject
         _tradeInstructionFactory = tradeInstructionFactory;
         _tradeSignalLogBuilder = tradeSignalLogBuilder;
         _machineIdentityService = machineIdentityService;
+        _tradesSharedMemoryReader = tradesSharedMemoryReader;
+        _historySharedMemoryReader = historySharedMemoryReader;
 
         var normalizedHostName = _machineIdentityService.GetHostName();
         _normalizedHostName = normalizedHostName;
@@ -111,6 +120,7 @@ public sealed class DashboardViewModel : ObservableObject
 
         exchangePairReader.SnapshotReceived += OnSnapshotReceived;
         _ = StartExchangeReaderSafeAsync(exchangePairReader);
+        _ = RunOrderInfoPollingAsync(_orderInfoPollingCts.Token);
     }
 
     public string RuntimeSummary
@@ -391,37 +401,154 @@ public sealed class DashboardViewModel : ObservableObject
         var tickMapA = _runtimeConfigState.MapName1;
         var tickMapB = _runtimeConfigState.MapName2;
 
-        RefreshTab(
+        BindTabMapNames(
             TradeTab,
             tickMapA,
             tickMapB,
             OrderMapNameResolver.BuildTradeMapName);
 
-        RefreshTab(
+        BindTabMapNames(
             HistoryTab,
             tickMapA,
             tickMapB,
             OrderMapNameResolver.BuildHistoryMapName);
     }
 
-    private static void RefreshTab(
+    private static void BindTabMapNames(
         OrderInfoTabViewModel tab,
         string leftTickMap,
         string rightTickMap,
         Func<string, string> mapNameResolver)
     {
-        RefreshPanel(tab.LeftPanel, leftTickMap, mapNameResolver);
-        RefreshPanel(tab.RightPanel, rightTickMap, mapNameResolver);
+        BindPanelMapName(tab.LeftPanel, leftTickMap, mapNameResolver);
+        BindPanelMapName(tab.RightPanel, rightTickMap, mapNameResolver);
     }
 
-    private static void RefreshPanel(
+    private static void BindPanelMapName(
         OrderPanelStatusViewModel panel,
         string sourceTickMapName,
         Func<string, string> mapNameResolver)
     {
         var targetMapName = mapNameResolver(sourceTickMapName);
+
+        if (string.Equals(panel.TargetMapName, targetMapName, StringComparison.Ordinal))
+        {
+            return;
+        }
+
         panel.ApplyMapBinding(sourceTickMapName, targetMapName);
-        panel.IsMapAvailable = SharedMemoryChecker.MapExists(targetMapName);
+        panel.SetLoading();
+    }
+
+    private async Task RunOrderInfoPollingAsync(CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(OrderInfoPollInterval);
+
+        while (await timer.WaitForNextTickAsync(cancellationToken))
+        {
+            var tradeLeftResult = _tradesSharedMemoryReader.ReadTrades(TradeTab.LeftPanel.TargetMapName);
+            var tradeRightResult = _tradesSharedMemoryReader.ReadTrades(TradeTab.RightPanel.TargetMapName);
+            var historyLeftResult = _historySharedMemoryReader.ReadHistory(HistoryTab.LeftPanel.TargetMapName);
+            var historyRightResult = _historySharedMemoryReader.ReadHistory(HistoryTab.RightPanel.TargetMapName);
+
+            System.Windows.Application.Current.Dispatcher.Invoke(() =>
+            {
+                ApplyTradeResult(TradeTab.LeftPanel, tradeLeftResult);
+                ApplyTradeResult(TradeTab.RightPanel, tradeRightResult);
+                ApplyHistoryResult(HistoryTab.LeftPanel, historyLeftResult);
+                ApplyHistoryResult(HistoryTab.RightPanel, historyRightResult);
+            });
+        }
+    }
+
+    private static void ApplyTradeResult(
+        OrderPanelStatusViewModel panel,
+        SharedMapReadResult<TradeSharedRecord> result)
+    {
+        if (!result.IsMapAvailable)
+        {
+            panel.SetMapNotFound(panel.TargetMapName);
+            return;
+        }
+
+        if (!result.IsParseSuccess)
+        {
+            panel.SetParseError(result.ErrorMessage ?? "Lỗi parse dữ liệu");
+            return;
+        }
+
+        if (result.Records.Count == 0)
+        {
+            panel.SetEmpty();
+            return;
+        }
+
+        var first = result.Records[0];
+        var summaries = result.Records
+            .Select(r => new OrderRecordItemViewModel(
+                $"#{r.Ticket} | {(r.TradeType == 0 ? "BUY" : "SELL")} | Lot {r.Lot:0.##} | Profit {r.Profit:0.##}"))
+            .ToArray();
+
+        var leftFields = new[]
+        {
+            new OrderInfoFieldViewModel("Ticket", first.Ticket.ToString(CultureInfo.InvariantCulture)),
+            new OrderInfoFieldViewModel("Type", first.TradeType == 0 ? "BUY" : "SELL"),
+            new OrderInfoFieldViewModel("Lot", first.Lot.ToString("0.#####", CultureInfo.InvariantCulture)),
+            new OrderInfoFieldViewModel("Open Time", first.OpenTime.ToString(CultureInfo.InvariantCulture))
+        };
+
+        var rightFields = new[]
+        {
+            new OrderInfoFieldViewModel("Price", first.Price.ToString("0.#####", CultureInfo.InvariantCulture)),
+            new OrderInfoFieldViewModel("SL", first.Sl.ToString("0.#####", CultureInfo.InvariantCulture)),
+            new OrderInfoFieldViewModel("TP", first.Tp.ToString("0.#####", CultureInfo.InvariantCulture)),
+            new OrderInfoFieldViewModel("Profit", first.Profit.ToString("0.#####", CultureInfo.InvariantCulture))
+        };
+
+        panel.SetData(summaries, leftFields, rightFields);
+    }
+
+    private static void ApplyHistoryResult(
+        OrderPanelStatusViewModel panel,
+        SharedMapReadResult<HistorySharedRecord> result)
+    {
+        if (!result.IsMapAvailable)
+        {
+            panel.SetMapNotFound(panel.TargetMapName);
+            return;
+        }
+
+        if (!result.IsParseSuccess)
+        {
+            panel.SetParseError(result.ErrorMessage ?? "Lỗi parse dữ liệu");
+            return;
+        }
+
+        if (result.Records.Count == 0)
+        {
+            panel.SetEmpty();
+            return;
+        }
+
+        var first = result.Records[0];
+        var summaries = result.Records
+            .Select(r => new OrderRecordItemViewModel(
+                $"#{r.Ticket} | Vol {r.Volume:0.##} | Profit {r.Profit:0.##}"))
+            .ToArray();
+
+        var leftFields = new[]
+        {
+            new OrderInfoFieldViewModel("Ticket", first.Ticket.ToString(CultureInfo.InvariantCulture)),
+            new OrderInfoFieldViewModel("Volume", first.Volume.ToString("0.#####", CultureInfo.InvariantCulture))
+        };
+
+        var rightFields = new[]
+        {
+            new OrderInfoFieldViewModel("Profit", first.Profit.ToString("0.#####", CultureInfo.InvariantCulture)),
+            new OrderInfoFieldViewModel("Deal Time", first.DealTime.ToString(CultureInfo.InvariantCulture))
+        };
+
+        panel.SetData(summaries, leftFields, rightFields);
     }
 
     private async Task InitializeRuntimeConfigAsync()
