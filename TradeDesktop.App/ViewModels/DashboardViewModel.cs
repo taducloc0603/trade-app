@@ -100,9 +100,9 @@ public sealed class DashboardViewModel : ObservableObject
         CopyHostNameCommand = new AsyncRelayCommand(CopyHostNameAsync);
         StartTradingLogicCommand = new AsyncRelayCommand(StartTradingLogicAsync, CanStartTradingLogic);
         StopTradingLogicCommand = new AsyncRelayCommand(StopTradingLogicAsync, CanStopTradingLogic);
-        BuyCommand = new AsyncRelayCommand(BuyAsync, CanExecuteManualTradeCommand);
-        SellCommand = new AsyncRelayCommand(SellAsync, CanExecuteManualTradeCommand);
-        CloseOrderCommand = new AsyncRelayCommand(CloseOrderAsync, CanExecuteManualTradeCommand);
+        BuyCommand = new AsyncRelayCommand(BuyAsync);
+        SellCommand = new AsyncRelayCommand(SellAsync);
+        CloseOrderCommand = new AsyncRelayCommand(CloseOrderAsync);
 
         TradeTab = new OrderInfoTabViewModel(
             OrderTabType.Trade,
@@ -215,9 +215,6 @@ public sealed class DashboardViewModel : ObservableObject
             }
 
             OnPropertyChanged(nameof(IsManualTradeWarningVisible));
-            BuyCommand.RaiseCanExecuteChanged();
-            SellCommand.RaiseCanExecuteChanged();
-            CloseOrderCommand.RaiseCanExecuteChanged();
         }
     }
 
@@ -303,7 +300,6 @@ public sealed class DashboardViewModel : ObservableObject
 
     private bool CanStartTradingLogic() => !IsTradingLogicEnabled;
     private bool CanStopTradingLogic() => IsTradingLogicEnabled;
-    private bool CanExecuteManualTradeCommand() => HasManualTradeHwndConfig;
 
     private Task StartTradingLogicAsync()
     {

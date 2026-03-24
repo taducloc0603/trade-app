@@ -180,6 +180,7 @@
                                     Background="#D92D20"
                                     BorderBrush="#D92D20"
                                     BorderThickness="1"
+                                    Visibility="{Binding HasManualTradeHwndConfig, Converter={StaticResource BoolToVisibilityConverter}}"
                                     Command="{Binding BuyCommand}" />
 
                             <Button Grid.Column="10"
@@ -191,6 +192,7 @@
                                     Background="#12B76A"
                                     BorderBrush="#12B76A"
                                     BorderThickness="1"
+                                    Visibility="{Binding HasManualTradeHwndConfig, Converter={StaticResource BoolToVisibilityConverter}}"
                                     Command="{Binding SellCommand}" />
 
                             <Button Grid.Column="12"
@@ -202,11 +204,12 @@
                                     Background="#667085"
                                     BorderBrush="#667085"
                                     BorderThickness="1"
+                                    Visibility="{Binding HasManualTradeHwndConfig, Converter={StaticResource BoolToVisibilityConverter}}"
                                     Command="{Binding CloseOrderCommand}" />
                         </Grid>
 
                         <TextBlock Grid.Row="6"
-                                   Foreground="#B42318"
+                                   Foreground="#667085"
                                    FontWeight="SemiBold"
                                    TextWrapping="Wrap"
                                    Visibility="{Binding IsManualTradeWarningVisible, Converter={StaticResource BoolToVisibilityConverter}}"
