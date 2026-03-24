@@ -63,8 +63,7 @@ public sealed class DashboardViewModel : ObservableObject
     private bool _isLoading = true;
     private string _loadingMessage = "Đang chờ dữ liệu shared memory...";
     private string _machineHostName = string.Empty;
-    private string _chartHwndInput = string.Empty;
-    private string _tradeHwndInput = string.Empty;
+    private bool _hasManualTradeHwndConfig;
     private OrderTabType _selectedOrderTab = OrderTabType.Trade;
     private int _selectedOrderTabIndex;
 
@@ -101,9 +100,9 @@ public sealed class DashboardViewModel : ObservableObject
         CopyHostNameCommand = new AsyncRelayCommand(CopyHostNameAsync);
         StartTradingLogicCommand = new AsyncRelayCommand(StartTradingLogicAsync, CanStartTradingLogic);
         StopTradingLogicCommand = new AsyncRelayCommand(StopTradingLogicAsync, CanStopTradingLogic);
-        BuyCommand = new AsyncRelayCommand(BuyAsync);
-        SellCommand = new AsyncRelayCommand(SellAsync);
-        CloseOrderCommand = new AsyncRelayCommand(CloseOrderAsync);
+        BuyCommand = new AsyncRelayCommand(BuyAsync, CanExecuteManualTradeCommand);
+        SellCommand = new AsyncRelayCommand(SellAsync, CanExecuteManualTradeCommand);
+        CloseOrderCommand = new AsyncRelayCommand(CloseOrderAsync, CanExecuteManualTradeCommand);
 
         TradeTab = new OrderInfoTabViewModel(
             OrderTabType.Trade,
@@ -204,8 +203,28 @@ public sealed class DashboardViewModel : ObservableObject
     public bool IsLoading { get => _isLoading; private set => SetProperty(ref _isLoading, value); }
     public string LoadingMessage { get => _loadingMessage; private set => SetProperty(ref _loadingMessage, value); }
     public string MachineHostName { get => _machineHostName; private set => SetProperty(ref _machineHostName, value); }
-    public string ChartHwndInput { get => _chartHwndInput; set => SetProperty(ref _chartHwndInput, value); }
-    public string TradeHwndInput { get => _tradeHwndInput; set => SetProperty(ref _tradeHwndInput, value); }
+
+    public bool HasManualTradeHwndConfig
+    {
+        get => _hasManualTradeHwndConfig;
+        private set
+        {
+            if (!SetProperty(ref _hasManualTradeHwndConfig, value))
+            {
+                return;
+            }
+
+            OnPropertyChanged(nameof(IsManualTradeWarningVisible));
+            BuyCommand.RaiseCanExecuteChanged();
+            SellCommand.RaiseCanExecuteChanged();
+            CloseOrderCommand.RaiseCanExecuteChanged();
+        }
+    }
+
+    public bool IsManualTradeWarningVisible => !HasManualTradeHwndConfig;
+
+    public string ManualTradeWarningMessage =>
+        "Vui lòng nhập đầy đủ CHART/TRADE HWND cho sàn A và sàn B trong Config";
 
     public string LastSignalText
     {
@@ -284,6 +303,7 @@ public sealed class DashboardViewModel : ObservableObject
 
     private bool CanStartTradingLogic() => !IsTradingLogicEnabled;
     private bool CanStopTradingLogic() => IsTradingLogicEnabled;
+    private bool CanExecuteManualTradeCommand() => HasManualTradeHwndConfig;
 
     private Task StartTradingLogicAsync()
     {
@@ -408,6 +428,12 @@ public sealed class DashboardViewModel : ObservableObject
 
         RuntimeSummary =
             $"Host Name: {_runtimeConfigState.CurrentMachineHostName}  |  Point: {_runtimeConfigState.CurrentPoint}  |  OpenPts: {_runtimeConfigState.CurrentOpenPts}  |  ConfirmGapPts: {_runtimeConfigState.CurrentConfirmGapPts}  |  HoldConfirmMs: {_runtimeConfigState.CurrentHoldConfirmMs}  |  ClosePts: {_runtimeConfigState.CurrentClosePts}  |  CloseConfirmGapPts: {_runtimeConfigState.CurrentCloseConfirmGapPts}  |  CloseHoldConfirmMs: {_runtimeConfigState.CurrentCloseHoldConfirmMs}  |  StartTimeHold: {_runtimeConfigState.CurrentStartTimeHold}  |  EndTimeHold: {_runtimeConfigState.CurrentEndTimeHold}  |  StartWaitTime: {_runtimeConfigState.CurrentStartWaitTime}  |  EndWaitTime: {_runtimeConfigState.CurrentEndWaitTime}  |  Map 1: {_runtimeConfigState.CurrentMapName1}  |  Map 2: {_runtimeConfigState.CurrentMapName2}";
+
+        HasManualTradeHwndConfig =
+            !string.IsNullOrWhiteSpace(_runtimeConfigState.CurrentChartHwndA) &&
+            !string.IsNullOrWhiteSpace(_runtimeConfigState.CurrentTradeHwndA) &&
+            !string.IsNullOrWhiteSpace(_runtimeConfigState.CurrentChartHwndB) &&
+            !string.IsNullOrWhiteSpace(_runtimeConfigState.CurrentTradeHwndB);
 
         RefreshOrderInfoTabs();
     }

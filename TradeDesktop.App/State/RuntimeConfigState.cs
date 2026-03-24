@@ -19,12 +19,20 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
     public int CurrentEndWaitTime { get; private set; }
     public string CurrentMapName1 { get; private set; } = string.Empty;
     public string CurrentMapName2 { get; private set; } = string.Empty;
+    public string CurrentChartHwndA { get; private set; } = string.Empty;
+    public string CurrentTradeHwndA { get; private set; } = string.Empty;
+    public string CurrentChartHwndB { get; private set; } = string.Empty;
+    public string CurrentTradeHwndB { get; private set; } = string.Empty;
     public DashboardMetrics? CurrentDashboardMetrics { get; private set; }
 
     // Backward-compatible aliases for existing bindings/usages.
     public string MachineHostName => CurrentMachineHostName;
     public string MapName1 => CurrentMapName1;
     public string MapName2 => CurrentMapName2;
+    public string ChartHwndA => CurrentChartHwndA;
+    public string TradeHwndA => CurrentTradeHwndA;
+    public string ChartHwndB => CurrentChartHwndB;
+    public string TradeHwndB => CurrentTradeHwndB;
     public int OpenPts => CurrentOpenPts;
     public int ConfirmGapPts => CurrentConfirmGapPts;
     public int HoldConfirmMs => CurrentHoldConfirmMs;
@@ -108,6 +116,15 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
     public void UpdateDashboardMetrics(DashboardMetrics snapshot)
     {
         CurrentDashboardMetrics = snapshot;
+        StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void UpdateManualTradeHwnd(string chartHwndA, string tradeHwndA, string chartHwndB, string tradeHwndB)
+    {
+        CurrentChartHwndA = (chartHwndA ?? string.Empty).Trim();
+        CurrentTradeHwndA = (tradeHwndA ?? string.Empty).Trim();
+        CurrentChartHwndB = (chartHwndB ?? string.Empty).Trim();
+        CurrentTradeHwndB = (tradeHwndB ?? string.Empty).Trim();
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
 }

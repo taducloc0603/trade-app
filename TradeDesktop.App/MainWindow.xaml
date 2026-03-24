@@ -93,20 +93,15 @@
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
-            <Grid Grid.Column="0">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="*" />
-                    <RowDefinition Height="12" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-
-                <Border Grid.Row="0" CornerRadius="12" Padding="16" Background="White" BorderBrush="#E4E7EC" BorderThickness="1">
+            <Border Grid.Column="0" CornerRadius="12" Padding="16" Background="White" BorderBrush="#E4E7EC" BorderThickness="1">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="12" />
                             <RowDefinition Height="*" />
                             <RowDefinition Height="10" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="8" />
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
 
@@ -162,33 +157,7 @@
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="12" />
                                 <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-
-                            <TextBlock Text="GAP BUY" FontWeight="SemiBold" Foreground="#344054" />
-                            <TextBlock Grid.Column="2" Text="{Binding GapBuy}" Foreground="#101828" />
-
-                            <TextBlock Grid.Column="4" Text="GAP SELL" FontWeight="SemiBold" Foreground="#344054" />
-                            <TextBlock Grid.Column="6" Text="{Binding GapSell}" Foreground="#101828" />
-                        </Grid>
-                    </Grid>
-                </Border>
-
-                <Border Grid.Row="2" CornerRadius="12" Padding="16" Background="White" BorderBrush="#E4E7EC" BorderThickness="1">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="12" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
-
-                        <TextBlock Text="Setting" FontSize="18" FontWeight="SemiBold" />
-
-                        <Grid Grid.Row="2">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="210" />
-                                <ColumnDefinition Width="12" />
-                                <ColumnDefinition Width="210" />
-                                <ColumnDefinition Width="12" />
+                                <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="8" />
                                 <ColumnDefinition Width="Auto" />
@@ -196,23 +165,16 @@
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
 
-                            <StackPanel Grid.Column="0">
-                                <TextBlock Text="CHART_HWND" FontWeight="SemiBold" Foreground="#344054" Margin="0,0,0,4" />
-                                <TextBox Padding="8,6"
-                                         Text="{Binding ChartHwndInput, UpdateSourceTrigger=PropertyChanged}" />
-                            </StackPanel>
+                            <TextBlock Text="GAP BUY" FontWeight="SemiBold" Foreground="#344054" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="2" Text="{Binding GapBuy}" Foreground="#101828" VerticalAlignment="Center" />
 
-                            <StackPanel Grid.Column="2">
-                                <TextBlock Text="TRADE_HWND" FontWeight="SemiBold" Foreground="#344054" Margin="0,0,0,4" />
-                                <TextBox Padding="8,6"
-                                         Text="{Binding TradeHwndInput, UpdateSourceTrigger=PropertyChanged}" />
-                            </StackPanel>
+                            <TextBlock Grid.Column="4" Text="GAP SELL" FontWeight="SemiBold" Foreground="#344054" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="6" Text="{Binding GapSell}" Foreground="#101828" VerticalAlignment="Center" />
 
-                            <Button Grid.Column="4"
+                            <Button Grid.Column="8"
                                     Content="BUY"
-                                    Width="72"
-                                    Height="34"
-                                    VerticalAlignment="Bottom"
+                                    Width="68"
+                                    Height="30"
                                     FontWeight="SemiBold"
                                     Foreground="White"
                                     Background="#D92D20"
@@ -220,11 +182,10 @@
                                     BorderThickness="1"
                                     Command="{Binding BuyCommand}" />
 
-                            <Button Grid.Column="6"
+                            <Button Grid.Column="10"
                                     Content="SELL"
-                                    Width="72"
-                                    Height="34"
-                                    VerticalAlignment="Bottom"
+                                    Width="68"
+                                    Height="30"
                                     FontWeight="SemiBold"
                                     Foreground="White"
                                     Background="#12B76A"
@@ -232,11 +193,10 @@
                                     BorderThickness="1"
                                     Command="{Binding SellCommand}" />
 
-                            <Button Grid.Column="8"
+                            <Button Grid.Column="12"
                                     Content="CLOSE"
-                                    Width="72"
-                                    Height="34"
-                                    VerticalAlignment="Bottom"
+                                    Width="68"
+                                    Height="30"
                                     FontWeight="SemiBold"
                                     Foreground="White"
                                     Background="#667085"
@@ -244,9 +204,15 @@
                                     BorderThickness="1"
                                     Command="{Binding CloseOrderCommand}" />
                         </Grid>
+
+                        <TextBlock Grid.Row="6"
+                                   Foreground="#B42318"
+                                   FontWeight="SemiBold"
+                                   TextWrapping="Wrap"
+                                   Visibility="{Binding IsManualTradeWarningVisible, Converter={StaticResource BoolToVisibilityConverter}}"
+                                   Text="{Binding ManualTradeWarningMessage}" />
                     </Grid>
-                </Border>
-            </Grid>
+            </Border>
 
             <Border Grid.Column="2" CornerRadius="12" Padding="16" Background="White" BorderBrush="#E4E7EC" BorderThickness="1">
                 <Grid>

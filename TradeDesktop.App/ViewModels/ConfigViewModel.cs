@@ -13,6 +13,10 @@ public sealed class ConfigViewModel : ObservableObject
 
     private string _mapName1 = string.Empty;
     private string _mapName2 = string.Empty;
+    private string _chartHwndA = string.Empty;
+    private string _tradeHwndA = string.Empty;
+    private string _chartHwndB = string.Empty;
+    private string _tradeHwndB = string.Empty;
 
     private string _loadStatus = "Đang tải theo host name máy...";
     private string _map1CheckStatus = "Chưa kiểm tra";
@@ -38,6 +42,10 @@ public sealed class ConfigViewModel : ObservableObject
         MachineHostName = runtimeConfigState.CurrentMachineHostName;
         MapName1 = runtimeConfigState.CurrentMapName1;
         MapName2 = runtimeConfigState.CurrentMapName2;
+        ChartHwndA = runtimeConfigState.CurrentChartHwndA;
+        TradeHwndA = runtimeConfigState.CurrentTradeHwndA;
+        ChartHwndB = runtimeConfigState.CurrentChartHwndB;
+        TradeHwndB = runtimeConfigState.CurrentTradeHwndB;
 
         var hasRuntimeState =
             !string.IsNullOrWhiteSpace(MachineHostName) ||
@@ -130,6 +138,30 @@ public sealed class ConfigViewModel : ObservableObject
     }
 
     public bool HasError => !string.IsNullOrWhiteSpace(ErrorMessage);
+
+    public string ChartHwndA
+    {
+        get => _chartHwndA;
+        set => SetProperty(ref _chartHwndA, value);
+    }
+
+    public string TradeHwndA
+    {
+        get => _tradeHwndA;
+        set => SetProperty(ref _tradeHwndA, value);
+    }
+
+    public string ChartHwndB
+    {
+        get => _chartHwndB;
+        set => SetProperty(ref _chartHwndB, value);
+    }
+
+    public string TradeHwndB
+    {
+        get => _tradeHwndB;
+        set => SetProperty(ref _tradeHwndB, value);
+    }
 
     public bool IsMapName1Valid
     {
@@ -294,6 +326,7 @@ public sealed class ConfigViewModel : ObservableObject
 
             LoadStatus = "✔ Lưu thành công";
             _runtimeConfigState.Update(MachineHostName, MapName1, MapName2, _runtimeConfigState.CurrentPoint);
+            _runtimeConfigState.UpdateManualTradeHwnd(ChartHwndA, TradeHwndA, ChartHwndB, TradeHwndB);
             RequestClose?.Invoke(true);
         }
         catch (Exception ex)
