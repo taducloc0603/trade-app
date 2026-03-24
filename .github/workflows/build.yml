@@ -40,6 +40,21 @@ jobs:
       - name: Restore dependencies
         run: dotnet restore
 
+      - name: Build native mt5engine C API DLL (x64)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path native-build -Force | Out-Null
+          cl /nologo /std:c++17 /EHsc /DWIN32 /D_WINDOWS /D_USRDLL /D_WINDLL /DUNICODE /D_UNICODE /I native/mt5engine-capi /c native/mt5engine-capi/engine.cpp /Fo:native-build/engine.obj
+          cl /nologo /std:c++17 /EHsc /DWIN32 /D_WINDOWS /D_USRDLL /D_WINDLL /DUNICODE /D_UNICODE /I native/mt5engine-capi /c native/mt5engine-capi/c_api.cpp /Fo:native-build/c_api.obj
+          link /nologo /DLL /OUT:native-build/mt5engine_capi.dll native-build/engine.obj native-build/c_api.obj user32.lib kernel32.lib comctl32.lib
+
+      - name: Validate native DLL output
+        shell: pwsh
+        run: |
+          if (!(Test-Path "native-build/mt5engine_capi.dll")) {
+            throw "Native DLL not found: native-build/mt5engine_capi.dll"
+          }
+
       - name: Publish app
         shell: pwsh
         run: |
@@ -78,6 +93,23 @@ jobs:
             throw "Portable exe not found: publish-portable/${{ env.APP_NAME }}.exe"
           }
 
+      - name: Bundle native DLL into publish outputs
+        shell: pwsh
+        run: |
+          Copy-Item "native-build/mt5engine_capi.dll" "publish/mt5engine_capi.dll" -Force
+          Copy-Item "native-build/mt5engine_capi.dll" "publish-portable/mt5engine_capi.dll" -Force
+
+      - name: Validate bundled native DLL
+        shell: pwsh
+        run: |
+          if (!(Test-Path "publish/mt5engine_capi.dll")) {
+            throw "Bundled native DLL missing in single-file output folder"
+          }
+
+          if (!(Test-Path "publish-portable/mt5engine_capi.dll")) {
+            throw "Bundled native DLL missing in portable output folder"
+          }
+
       - name: Prepare release files
         shell: pwsh
         run: |
@@ -94,13 +126,14 @@ jobs:
           name: Release ${{ env.VERSION }}
           body: |
             Assets:
-            - `${{ env.VERSIONED_EXE }}`: single-file self-contained (recommended)
-            - `${{ env.VERSIONED_ZIP }}`: portable fallback (non-single-file)
+            - `${{ env.VERSIONED_EXE }}`: single-file self-contained (native DLL bundled)
+            - `${{ env.VERSIONED_ZIP }}`: portable fallback (non-single-file, includes native DLL)
 
             If exe does not start on Windows:
             1) Right click file -> Properties -> Unblock (if present)
             2) Try portable zip asset
             3) Check `%LOCALAPPDATA%\TradeDesktop\logs\startup.log`
+            4) Ensure `mt5engine_capi.dll` is in the same folder as exe
           files: |
             publish/${{ env.VERSIONED_EXE }}
             publish/${{ env.LATEST_EXE }}

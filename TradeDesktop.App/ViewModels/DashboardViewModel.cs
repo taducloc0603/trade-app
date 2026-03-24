@@ -4,6 +4,7 @@ using System.Windows.Media;
 using Microsoft.Extensions.DependencyInjection;
 using TradeDesktop.App.Commands;
 using TradeDesktop.App.Helpers;
+using TradeDesktop.App.Services;
 using TradeDesktop.App.State;
 using TradeDesktop.Application.Abstractions;
 using TradeDesktop.Application.Models;
@@ -24,6 +25,7 @@ public sealed class DashboardViewModel : ObservableObject
     private readonly IMachineIdentityService _machineIdentityService;
     private readonly ITradesSharedMemoryReader _tradesSharedMemoryReader;
     private readonly IHistorySharedMemoryReader _historySharedMemoryReader;
+    private readonly IMt5ManualTradeService _mt5ManualTradeService;
     private readonly string _normalizedHostName;
     private readonly CancellationTokenSource _orderInfoPollingCts = new();
 
@@ -78,7 +80,8 @@ public sealed class DashboardViewModel : ObservableObject
         ITradeSignalLogBuilder tradeSignalLogBuilder,
         IMachineIdentityService machineIdentityService,
         ITradesSharedMemoryReader tradesSharedMemoryReader,
-        IHistorySharedMemoryReader historySharedMemoryReader)
+        IHistorySharedMemoryReader historySharedMemoryReader,
+        IMt5ManualTradeService mt5ManualTradeService)
     {
         _serviceProvider = serviceProvider;
         _runtimeConfigState = runtimeConfigState;
@@ -90,6 +93,7 @@ public sealed class DashboardViewModel : ObservableObject
         _machineIdentityService = machineIdentityService;
         _tradesSharedMemoryReader = tradesSharedMemoryReader;
         _historySharedMemoryReader = historySharedMemoryReader;
+        _mt5ManualTradeService = mt5ManualTradeService;
 
         var normalizedHostName = _machineIdentityService.GetHostName();
         _normalizedHostName = normalizedHostName;
@@ -328,11 +332,59 @@ public sealed class DashboardViewModel : ObservableObject
         return Task.CompletedTask;
     }
 
-    private Task BuyAsync() => Task.CompletedTask;
+    private async Task BuyAsync()
+    {
+        var result = await _mt5ManualTradeService.ExecuteBuyAsync(
+            _runtimeConfigState.CurrentChartHwndA,
+            _runtimeConfigState.CurrentChartHwndB);
 
-    private Task SellAsync() => Task.CompletedTask;
+        AppendManualTradeLogs(result);
+    }
 
-    private Task CloseOrderAsync() => Task.CompletedTask;
+    private async Task SellAsync()
+    {
+        var result = await _mt5ManualTradeService.ExecuteSellAsync(
+            _runtimeConfigState.CurrentChartHwndA,
+            _runtimeConfigState.CurrentChartHwndB);
+
+        AppendManualTradeLogs(result);
+    }
+
+    private async Task CloseOrderAsync()
+    {
+        var result = await _mt5ManualTradeService.ExecuteCloseAsync(
+            _runtimeConfigState.CurrentTradeHwndA,
+            _runtimeConfigState.CurrentTradeHwndB);
+
+        AppendManualTradeLogs(result);
+    }
+
+    private void AppendManualTradeLogs(ManualTradeResult result)
+    {
+        var now = DateTime.Now;
+        var lines = new List<string>
+        {
+            $"[{result.Label}] Manual",
+            "    = Manual trigger from UI buttons"
+        };
+
+        foreach (var leg in result.Legs)
+        {
+            var status = leg.Success ? "OK" : "FAILED";
+            lines.Add($"    - [{now:HH:mm:ss.fff}] {leg.Action} {leg.Exchange} {status} ({leg.Detail})");
+        }
+
+        if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
+        {
+            lines.Add($"    = ERROR: {result.ErrorMessage}");
+        }
+
+        LastSignalText = lines[0];
+        for (var i = lines.Count - 1; i >= 0; i--)
+        {
+            SignalLogItems.Insert(0, lines[i]);
+        }
+    }
 
     private void ResetTradingLogicState()
     {

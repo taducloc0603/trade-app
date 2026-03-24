@@ -6,6 +6,7 @@ using System.Windows.Threading;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using TradeDesktop.App.Services;
 using TradeDesktop.App.ViewModels;
 using TradeDesktop.App.State;
 using TradeDesktop.Application.Abstractions;
@@ -42,6 +43,7 @@ public partial class App : System.Windows.Application
                         .AddInfrastructure(configuration);
 
                     services.AddSingleton<RuntimeConfigState>();
+                    services.AddSingleton<IMt5ManualTradeService, Mt5ManualTradeService>();
                     services.AddSingleton<IRuntimeConfigProvider>(sp => sp.GetRequiredService<RuntimeConfigState>());
                     services.AddSingleton<IRuntimeConfigStateUpdater>(sp => sp.GetRequiredService<RuntimeConfigState>());
                     services.AddSingleton<DashboardViewModel>();
