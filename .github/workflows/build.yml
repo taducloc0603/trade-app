@@ -26,6 +26,11 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
+      - name: Setup MSVC build tools
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
       - name: Generate version
         shell: pwsh
         run: |
@@ -41,9 +46,9 @@ jobs:
         run: dotnet restore
 
       - name: Build native mt5engine C API DLL (x64)
-        shell: pwsh
+        shell: cmd
         run: |
-          New-Item -ItemType Directory -Path native-build -Force | Out-Null
+          if not exist native-build mkdir native-build
           cl /nologo /std:c++17 /EHsc /DWIN32 /D_WINDOWS /D_USRDLL /D_WINDLL /DUNICODE /D_UNICODE /I native/mt5engine-capi /c native/mt5engine-capi/engine.cpp /Fo:native-build/engine.obj
           cl /nologo /std:c++17 /EHsc /DWIN32 /D_WINDOWS /D_USRDLL /D_WINDLL /DUNICODE /D_UNICODE /I native/mt5engine-capi /c native/mt5engine-capi/c_api.cpp /Fo:native-build/c_api.obj
           link /nologo /DLL /OUT:native-build/mt5engine_capi.dll native-build/engine.obj native-build/c_api.obj user32.lib kernel32.lib comctl32.lib
