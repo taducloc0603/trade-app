@@ -339,6 +339,7 @@ public sealed class DashboardViewModel : ObservableObject
             _runtimeConfigState.CurrentChartHwndB);
 
         AppendManualTradeLogs(result);
+        ShowManualTradeFeedback("BUY", result);
     }
 
     private async Task SellAsync()
@@ -348,6 +349,7 @@ public sealed class DashboardViewModel : ObservableObject
             _runtimeConfigState.CurrentChartHwndB);
 
         AppendManualTradeLogs(result);
+        ShowManualTradeFeedback("SELL", result);
     }
 
     private async Task CloseOrderAsync()
@@ -357,6 +359,7 @@ public sealed class DashboardViewModel : ObservableObject
             _runtimeConfigState.CurrentTradeHwndB);
 
         AppendManualTradeLogs(result);
+        ShowManualTradeFeedback("CLOSE", result);
     }
 
     private void AppendManualTradeLogs(ManualTradeResult result)
@@ -383,6 +386,73 @@ public sealed class DashboardViewModel : ObservableObject
         for (var i = lines.Count - 1; i >= 0; i--)
         {
             SignalLogItems.Insert(0, lines[i]);
+        }
+    }
+
+    private void ShowManualTradeFeedback(string actionName, ManualTradeResult result)
+    {
+        var detail = BuildManualTradeFeedbackText(actionName, result);
+        var hasFailedLeg = result.Legs.Any(x => !x.Success);
+        var isError = !result.Success || hasFailedLeg || !string.IsNullOrWhiteSpace(result.ErrorMessage);
+
+        if (isError)
+        {
+            TryCopyToClipboard(detail);
+            System.Windows.MessageBox.Show(
+                detail + "\n\n(Đã copy lỗi vào clipboard)",
+                $"{actionName} FAILED",
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Warning);
+            return;
+        }
+
+        System.Windows.MessageBox.Show(
+            detail,
+            $"{actionName} SUCCESS",
+            System.Windows.MessageBoxButton.OK,
+            System.Windows.MessageBoxImage.Information);
+    }
+
+    private static string BuildManualTradeFeedbackText(string actionName, ManualTradeResult result)
+    {
+        var lines = new List<string>
+        {
+            $"Action: {actionName}",
+            $"Label: {result.Label}",
+            $"Time: {DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}",
+            $"Result: {(result.Success ? "SUCCESS" : "FAILED")}",
+            "Details:"
+        };
+
+        if (result.Legs.Count == 0)
+        {
+            lines.Add("- (no leg details)");
+        }
+        else
+        {
+            foreach (var leg in result.Legs)
+            {
+                lines.Add($"- {leg.Exchange} {leg.Action}: {(leg.Success ? "OK" : "FAILED")} | {leg.Detail}");
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
+        {
+            lines.Add($"Error: {result.ErrorMessage}");
+        }
+
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private static void TryCopyToClipboard(string text)
+    {
+        try
+        {
+            System.Windows.Clipboard.SetText(text);
+        }
+        catch
+        {
+            // Ignore clipboard failures.
         }
     }
 
