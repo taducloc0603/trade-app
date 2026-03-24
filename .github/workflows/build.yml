@@ -31,6 +31,11 @@ jobs:
         with:
           arch: x64
 
+      - name: Normalize .NET solution platform
+        shell: pwsh
+        run: |
+          echo "Platform=Any CPU" >> $env:GITHUB_ENV
+
       - name: Generate version
         shell: pwsh
         run: |
@@ -43,7 +48,7 @@ jobs:
           echo "TAG=v$version" >> $env:GITHUB_ENV
 
       - name: Restore dependencies
-        run: dotnet restore
+        run: dotnet restore TradeDesktop.sln -p:Platform="Any CPU"
 
       - name: Build native mt5engine C API DLL (x64)
         shell: cmd
