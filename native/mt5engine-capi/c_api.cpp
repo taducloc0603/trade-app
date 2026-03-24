@@ -75,9 +75,9 @@ MT_API int mt_click_buy(uint64_t chartHwnd)
         return 0;
     }
 
-    // One-click trading area is typically near top-left on MT chart windows.
-    // Keep behavior simple/best-effort and non-invasive.
-    PostClick(hChart, 40, 15);
+    // Keep behavior aligned with the original Node addon wrapper:
+    // clickBuy(hwnd) => postClick(hwnd, 150, 50)
+    PostClick(hChart, 150, 50);
     return 1;
 }
 
@@ -89,8 +89,8 @@ MT_API int mt_click_sell(uint64_t chartHwnd)
         return 0;
     }
 
-    // One-click trading area is typically near top-left on MT chart windows.
-    // Keep behavior simple/best-effort and non-invasive.
-    PostClick(hChart, 120, 15);
+    // Keep behavior aligned with the original Node addon wrapper:
+    // clickSell(hwnd) => postClick(hwnd, 50, 50)
+    PostClick(hChart, 50, 50);
     return 1;
 }
