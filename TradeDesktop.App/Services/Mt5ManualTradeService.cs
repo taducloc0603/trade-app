@@ -5,9 +5,6 @@ namespace TradeDesktop.App.Services;
 
 public sealed class Mt5ManualTradeService : IMt5ManualTradeService
 {
-    private const int CloseMaxAttempts = 25;
-    private static readonly TimeSpan CloseRetryDelay = TimeSpan.FromMilliseconds(140);
-
     private readonly SemaphoreSlim _actionGate = new(1, 1);
 
     public Task<ManualTradeResult> ExecuteBuyAsync(string chartHwndA, string chartHwndB, CancellationToken cancellationToken = default)
@@ -32,31 +29,13 @@ public sealed class Mt5ManualTradeService : IMt5ManualTradeService
             clickB: NativeMethods.ClickBuy,
             cancellationToken);
 
-    public async Task<ManualTradeResult> ExecuteCloseAsync(string tradeHwndA, string tradeHwndB, CancellationToken cancellationToken = default)
+    public async Task<ManualTradeResult> ExecuteCloseAsync(ManualCloseRequest? closeA, ManualCloseRequest? closeB, CancellationToken cancellationToken = default)
     {
         await _actionGate.WaitAsync(cancellationToken);
         try
         {
-            if (!TryParseHwnd(tradeHwndA, out var hwndA) || !TryParseHwnd(tradeHwndB, out var hwndB))
-            {
-                return new ManualTradeResult(
-                    Label: "CLOSE_MANUAL",
-                    Success: false,
-                    Legs: [],
-                    ErrorMessage: "HWND TRADE không hợp lệ. Vui lòng kiểm tra lại Config (định dạng 0x... hoặc số thập phân).");
-            }
-
-            if (!IsValidWindow(hwndA) || !IsValidWindow(hwndB))
-            {
-                return new ManualTradeResult(
-                    Label: "CLOSE_MANUAL",
-                    Success: false,
-                    Legs: [],
-                    ErrorMessage: "Một trong các TRADE HWND không còn hợp lệ.");
-            }
-
-            var legATask = CloseAllRowsBestEffortAsync("A", hwndA, cancellationToken);
-            var legBTask = CloseAllRowsBestEffortAsync("B", hwndB, cancellationToken);
+            var legATask = CloseFirstTradeAsync("A", closeA, cancellationToken);
+            var legBTask = CloseFirstTradeAsync("B", closeB, cancellationToken);
             var legs = await Task.WhenAll(legATask, legBTask);
 
             return new ManualTradeResult(
@@ -149,42 +128,77 @@ public sealed class Mt5ManualTradeService : IMt5ManualTradeService
         }
     }
 
-    private static async Task<ManualTradeLegResult> CloseAllRowsBestEffortAsync(string exchange, ulong tradeParentHwnd, CancellationToken cancellationToken)
+    private static Task<ManualTradeLegResult> CloseFirstTradeAsync(string exchangeLabel, ManualCloseRequest? request, CancellationToken cancellationToken)
     {
+        if (request is null)
+        {
+            return Task.FromResult(new ManualTradeLegResult(
+                Exchange: exchangeLabel,
+                Action: "CLOSE",
+                Success: true,
+                Detail: $"Close {exchangeLabel} skipped: no open trade"));
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!TryParseHwnd(request.TradeHwnd, out var tradeParentHwnd))
+        {
+            return Task.FromResult(new ManualTradeLegResult(
+                Exchange: request.Exchange,
+                Action: "CLOSE",
+                Success: false,
+                Detail: $"Close {request.Exchange} failed: ticket={request.Ticket}, error=TRADE HWND không hợp lệ"));
+        }
+
+        if (!IsValidWindow(tradeParentHwnd))
+        {
+            return Task.FromResult(new ManualTradeLegResult(
+                Exchange: request.Exchange,
+                Action: "CLOSE",
+                Success: false,
+                Detail: $"Close {request.Exchange} failed: ticket={request.Ticket}, error=TRADE HWND không còn hợp lệ"));
+        }
+
         IntPtr ctx = IntPtr.Zero;
         try
         {
             ctx = NativeMethods.CreateContextFromParent(tradeParentHwnd);
             if (ctx == IntPtr.Zero)
             {
-                return new ManualTradeLegResult(exchange, "CLOSE", false, "create_context_from_parent failed");
+                return Task.FromResult(new ManualTradeLegResult(
+                    Exchange: request.Exchange,
+                    Action: "CLOSE",
+                    Success: false,
+                    Detail: $"Close {request.Exchange} failed: ticket={request.Ticket}, error=create_context_from_parent failed"));
             }
 
-            for (var attempt = 0; attempt < CloseMaxAttempts; attempt++)
+            var rowCount = NativeMethods.UpdateRowCount(ctx);
+            if (rowCount <= 0)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                var rowCount = NativeMethods.UpdateRowCount(ctx);
-                if (rowCount <= 0)
-                {
-                    return new ManualTradeLegResult(exchange, "CLOSE", true, $"closed all rows in {attempt} attempt(s)");
-                }
-
-                _ = NativeMethods.ClosePositionMt5(ctx, 0);
-                await Task.Delay(CloseRetryDelay, cancellationToken);
+                return Task.FromResult(new ManualTradeLegResult(
+                    Exchange: request.Exchange,
+                    Action: "CLOSE",
+                    Success: true,
+                    Detail: $"Close {request.Exchange} skipped: no open trade"));
             }
 
-            var remainingRows = NativeMethods.UpdateRowCount(ctx);
-            var success = remainingRows <= 0;
-            return new ManualTradeLegResult(
-                exchange,
-                "CLOSE",
-                success,
-                success ? "closed all rows" : $"remaining rows: {remainingRows}");
+            var closeResult = NativeMethods.ClosePositionMt5(ctx, 0);
+            var success = closeResult == 1;
+            return Task.FromResult(new ManualTradeLegResult(
+                Exchange: request.Exchange,
+                Action: "CLOSE",
+                Success: success,
+                Detail: success
+                    ? $"Close {request.Exchange} first trade: ticket={request.Ticket}"
+                    : $"Close {request.Exchange} failed: ticket={request.Ticket}, error=close_position_mt5 failed"));
         }
         catch (Exception ex)
         {
-            return new ManualTradeLegResult(exchange, "CLOSE", false, ex.Message);
+            return Task.FromResult(new ManualTradeLegResult(
+                Exchange: request.Exchange,
+                Action: "CLOSE",
+                Success: false,
+                Detail: $"Close {request.Exchange} failed: ticket={request.Ticket}, error={ex.Message}"));
         }
         finally
         {

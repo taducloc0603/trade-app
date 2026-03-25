@@ -357,13 +357,93 @@ public sealed class DashboardViewModel : ObservableObject
     private async Task CloseOrderAsync()
     {
         var snapshot = _runtimeConfigState.CurrentDashboardMetrics;
+        var selectA = SelectCloseCandidateForExchange(
+            exchangeLabel: "A",
+            tradeMapName: TradeTab.LeftPanel.TargetMapName,
+            tradeHwnd: _runtimeConfigState.CurrentTradeHwndA);
+
+        var selectB = SelectCloseCandidateForExchange(
+            exchangeLabel: "B",
+            tradeMapName: TradeTab.RightPanel.TargetMapName,
+            tradeHwnd: _runtimeConfigState.CurrentTradeHwndB);
+
         var result = await _mt5ManualTradeService.ExecuteCloseAsync(
-            _runtimeConfigState.CurrentTradeHwndA,
-            _runtimeConfigState.CurrentTradeHwndB);
+            selectA.Request,
+            selectB.Request);
 
         AppendManualTradeLogs(result, snapshot);
+        AppendCloseSelectionDiagnostics(selectA, selectB);
         ShowManualTradeFeedback("CLOSE", result);
     }
+
+    private CloseSelectionResult SelectCloseCandidateForExchange(string exchangeLabel, string tradeMapName, string tradeHwnd)
+    {
+        var result = _tradesSharedMemoryReader.ReadTrades(tradeMapName);
+
+        if (!result.IsMapAvailable)
+        {
+            return new CloseSelectionResult(
+                Request: null,
+                Status: CloseSelectionStatus.MapNotFound,
+                DiagnosticMessage: $"Close {exchangeLabel} skipped: map not found ({tradeMapName})");
+        }
+
+        if (!result.IsParseSuccess)
+        {
+            return new CloseSelectionResult(
+                Request: null,
+                Status: CloseSelectionStatus.ParseError,
+                DiagnosticMessage: $"Close {exchangeLabel} skipped: parse error ({result.ErrorMessage ?? "unknown"})");
+        }
+
+        if (result.Count <= 0 || result.Records.Count == 0)
+        {
+            return new CloseSelectionResult(
+                Request: null,
+                Status: CloseSelectionStatus.NoOpenTrade,
+                DiagnosticMessage: null);
+        }
+
+        var firstTrade = result.Records[0];
+        return new CloseSelectionResult(
+            Request: new ManualCloseRequest(exchangeLabel, tradeHwnd, firstTrade.Ticket),
+            Status: CloseSelectionStatus.Candidate,
+            DiagnosticMessage: null);
+    }
+
+    private void AppendCloseSelectionDiagnostics(CloseSelectionResult selectionA, CloseSelectionResult selectionB)
+    {
+        var now = DateTime.Now;
+
+        if (!string.IsNullOrWhiteSpace(selectionA.DiagnosticMessage))
+        {
+            SignalLogItems.Insert(0, $"    - [{now:HH:mm:ss.fff}] {selectionA.DiagnosticMessage}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(selectionB.DiagnosticMessage))
+        {
+            SignalLogItems.Insert(0, $"    - [{now:HH:mm:ss.fff}] {selectionB.DiagnosticMessage}");
+        }
+
+        if (selectionA.Status == CloseSelectionStatus.NoOpenTrade &&
+            selectionB.Status == CloseSelectionStatus.NoOpenTrade)
+        {
+            SignalLogItems.Insert(0, $"    - [{now:HH:mm:ss.fff}] Close skipped: no open trade on both A and B");
+        }
+    }
+
+    private enum CloseSelectionStatus
+    {
+        Candidate,
+        NoOpenTrade,
+        MapNotFound,
+        ParseError
+    }
+
+    private sealed record CloseSelectionResult(
+        ManualCloseRequest? Request,
+        CloseSelectionStatus Status,
+        string? DiagnosticMessage);
 
     private void AppendManualTradeLogs(ManualTradeResult result, DashboardMetrics? snapshot)
     {
@@ -686,33 +766,22 @@ public sealed class DashboardViewModel : ObservableObject
             return;
         }
 
-        if (result.Records.Count == 0)
+        if (result.Count == 0)
         {
             panel.SetEmpty();
             return;
         }
 
+        if (result.Records.Count == 0)
+        {
+            panel.SetParseError("Lỗi parse dữ liệu: count > 0 nhưng không có records");
+            return;
+        }
+
         var first = result.Records[0];
-        var summaries = result.Records
-            .Select(r => new OrderRecordItemViewModel(
-                $"#{r.Ticket} | {(r.TradeType == 0 ? "BUY" : "SELL")} | Lot {r.Lot:0.##} | Profit {r.Profit:0.##}"))
-            .ToArray();
-
-        var leftFields = new[]
-        {
-            new OrderInfoFieldViewModel("Ticket", first.Ticket.ToString(CultureInfo.InvariantCulture)),
-            new OrderInfoFieldViewModel("Type", first.TradeType == 0 ? "BUY" : "SELL"),
-            new OrderInfoFieldViewModel("Lot", first.Lot.ToString("0.#####", CultureInfo.InvariantCulture)),
-            new OrderInfoFieldViewModel("Open Time", first.OpenTime.ToString(CultureInfo.InvariantCulture))
-        };
-
-        var rightFields = new[]
-        {
-            new OrderInfoFieldViewModel("Price", first.Price.ToString("0.#####", CultureInfo.InvariantCulture)),
-            new OrderInfoFieldViewModel("SL", first.Sl.ToString("0.#####", CultureInfo.InvariantCulture)),
-            new OrderInfoFieldViewModel("TP", first.Tp.ToString("0.#####", CultureInfo.InvariantCulture)),
-            new OrderInfoFieldViewModel("Profit", first.Profit.ToString("0.#####", CultureInfo.InvariantCulture))
-        };
+        var summaries = BuildTradeRecordSummaries(result.Records);
+        var leftFields = BuildTradeLeftFields(result.Count, result.Timestamp, first);
+        var rightFields = BuildTradeRightFields(first);
 
         panel.SetData(summaries, leftFields, rightFields);
     }
@@ -733,32 +802,83 @@ public sealed class DashboardViewModel : ObservableObject
             return;
         }
 
-        if (result.Records.Count == 0)
+        if (result.Count == 0)
         {
             panel.SetEmpty();
             return;
         }
 
+        if (result.Records.Count == 0)
+        {
+            panel.SetParseError("Lỗi parse dữ liệu: count > 0 nhưng không có records");
+            return;
+        }
+
         var first = result.Records[0];
-        var summaries = result.Records
-            .Select(r => new OrderRecordItemViewModel(
-                $"#{r.Ticket} | Vol {r.Volume:0.##} | Profit {r.Profit:0.##}"))
-            .ToArray();
-
-        var leftFields = new[]
-        {
-            new OrderInfoFieldViewModel("Ticket", first.Ticket.ToString(CultureInfo.InvariantCulture)),
-            new OrderInfoFieldViewModel("Volume", first.Volume.ToString("0.#####", CultureInfo.InvariantCulture))
-        };
-
-        var rightFields = new[]
-        {
-            new OrderInfoFieldViewModel("Profit", first.Profit.ToString("0.#####", CultureInfo.InvariantCulture)),
-            new OrderInfoFieldViewModel("Deal Time", first.DealTime.ToString(CultureInfo.InvariantCulture))
-        };
+        var summaries = BuildHistoryRecordSummaries(result.Records);
+        var leftFields = BuildHistoryLeftFields(result.Count, result.Timestamp, first);
+        var rightFields = BuildHistoryRightFields(first);
 
         panel.SetData(summaries, leftFields, rightFields);
     }
+
+    private static IEnumerable<OrderRecordItemViewModel> BuildTradeRecordSummaries(
+        IReadOnlyList<TradeSharedRecord> records)
+        => records.Select((record, index) => new OrderRecordItemViewModel(
+            $"#{index + 1} | Ticket {record.Ticket} | {FormatTradeType(record.TradeType)} | Lot {FormatRawDouble(record.Lot)} | Profit {FormatRawDouble(record.Profit)}"));
+
+    private static IEnumerable<OrderRecordItemViewModel> BuildHistoryRecordSummaries(
+        IReadOnlyList<HistorySharedRecord> records)
+        => records.Select((record, index) => new OrderRecordItemViewModel(
+            $"#{index + 1} | Ticket {record.Ticket} | Vol {FormatRawDouble(record.Volume)} | Profit {FormatRawDouble(record.Profit)}"));
+
+    private static IEnumerable<OrderInfoFieldViewModel> BuildTradeLeftFields(int count, ulong timestamp, TradeSharedRecord first)
+        =>
+        [
+            new OrderInfoFieldViewModel("Count", count.ToString(CultureInfo.InvariantCulture)),
+            new OrderInfoFieldViewModel("Timestamp", FormatRawTimestamp(timestamp)),
+            new OrderInfoFieldViewModel("Ticket", first.Ticket.ToString(CultureInfo.InvariantCulture)),
+            new OrderInfoFieldViewModel("Trade Type", FormatTradeType(first.TradeType)),
+            new OrderInfoFieldViewModel("Lot", FormatRawDouble(first.Lot)),
+            new OrderInfoFieldViewModel("Open Time", FormatRawIntTime(first.OpenTime))
+        ];
+
+    private static IEnumerable<OrderInfoFieldViewModel> BuildTradeRightFields(TradeSharedRecord first)
+        =>
+        [
+            new OrderInfoFieldViewModel("Price", FormatRawDouble(first.Price)),
+            new OrderInfoFieldViewModel("SL", FormatRawDouble(first.Sl)),
+            new OrderInfoFieldViewModel("TP", FormatRawDouble(first.Tp)),
+            new OrderInfoFieldViewModel("Profit", FormatRawDouble(first.Profit))
+        ];
+
+    private static IEnumerable<OrderInfoFieldViewModel> BuildHistoryLeftFields(int count, ulong timestamp, HistorySharedRecord first)
+        =>
+        [
+            new OrderInfoFieldViewModel("Count", count.ToString(CultureInfo.InvariantCulture)),
+            new OrderInfoFieldViewModel("Timestamp", FormatRawTimestamp(timestamp)),
+            new OrderInfoFieldViewModel("Ticket", first.Ticket.ToString(CultureInfo.InvariantCulture)),
+            new OrderInfoFieldViewModel("Volume", FormatRawDouble(first.Volume))
+        ];
+
+    private static IEnumerable<OrderInfoFieldViewModel> BuildHistoryRightFields(HistorySharedRecord first)
+        =>
+        [
+            new OrderInfoFieldViewModel("Profit", FormatRawDouble(first.Profit)),
+            new OrderInfoFieldViewModel("Deal Time", FormatRawIntTime(first.DealTime))
+        ];
+
+    private static string FormatTradeType(int tradeType)
+        => tradeType == 0 ? "BUY" : "SELL";
+
+    private static string FormatRawTimestamp(ulong timestamp)
+        => timestamp.ToString(CultureInfo.InvariantCulture);
+
+    private static string FormatRawIntTime(int rawTime)
+        => rawTime.ToString(CultureInfo.InvariantCulture);
+
+    private static string FormatRawDouble(double value)
+        => value.ToString("0.#####", CultureInfo.InvariantCulture);
 
     private async Task InitializeRuntimeConfigAsync()
     {
