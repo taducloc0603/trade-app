@@ -334,35 +334,38 @@ public sealed class DashboardViewModel : ObservableObject
 
     private async Task BuyAsync()
     {
+        var snapshot = _runtimeConfigState.CurrentDashboardMetrics;
         var result = await _mt5ManualTradeService.ExecuteBuyAsync(
             _runtimeConfigState.CurrentChartHwndA,
             _runtimeConfigState.CurrentChartHwndB);
 
-        AppendManualTradeLogs(result);
+        AppendManualTradeLogs(result, snapshot);
         ShowManualTradeFeedback("BUY", result);
     }
 
     private async Task SellAsync()
     {
+        var snapshot = _runtimeConfigState.CurrentDashboardMetrics;
         var result = await _mt5ManualTradeService.ExecuteSellAsync(
             _runtimeConfigState.CurrentChartHwndA,
             _runtimeConfigState.CurrentChartHwndB);
 
-        AppendManualTradeLogs(result);
+        AppendManualTradeLogs(result, snapshot);
         ShowManualTradeFeedback("SELL", result);
     }
 
     private async Task CloseOrderAsync()
     {
+        var snapshot = _runtimeConfigState.CurrentDashboardMetrics;
         var result = await _mt5ManualTradeService.ExecuteCloseAsync(
             _runtimeConfigState.CurrentTradeHwndA,
             _runtimeConfigState.CurrentTradeHwndB);
 
-        AppendManualTradeLogs(result);
+        AppendManualTradeLogs(result, snapshot);
         ShowManualTradeFeedback("CLOSE", result);
     }
 
-    private void AppendManualTradeLogs(ManualTradeResult result)
+    private void AppendManualTradeLogs(ManualTradeResult result, DashboardMetrics? snapshot)
     {
         var now = DateTime.Now;
         var lines = new List<string>
@@ -374,7 +377,12 @@ public sealed class DashboardViewModel : ObservableObject
         foreach (var leg in result.Legs)
         {
             var status = leg.Success ? "OK" : "FAILED";
-            lines.Add($"    - [{now:HH:mm:ss.fff}] {leg.Action} {leg.Exchange} {status} ({leg.Detail})");
+            var price = ResolveManualLogPrice(snapshot, leg.Exchange, leg.Action);
+            var priceText = price.HasValue
+                ? $" @{price.Value.ToString("0.#####", CultureInfo.InvariantCulture)}"
+                : string.Empty;
+
+            lines.Add($"    - [{now:HH:mm:ss.fff}] {leg.Action} {leg.Exchange}{priceText} {status} ({leg.Detail})");
         }
 
         if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
@@ -387,6 +395,47 @@ public sealed class DashboardViewModel : ObservableObject
         {
             SignalLogItems.Insert(0, lines[i]);
         }
+    }
+
+    private static decimal? ResolveManualLogPrice(DashboardMetrics? snapshot, string exchange, string action)
+    {
+        if (snapshot is null)
+        {
+            return null;
+        }
+
+        var isExchangeA = string.Equals(exchange, "A", StringComparison.OrdinalIgnoreCase);
+        var isExchangeB = string.Equals(exchange, "B", StringComparison.OrdinalIgnoreCase);
+        var isBuy = string.Equals(action, "BUY", StringComparison.OrdinalIgnoreCase);
+        var isSell = string.Equals(action, "SELL", StringComparison.OrdinalIgnoreCase);
+
+        if (isExchangeA)
+        {
+            if (isBuy)
+            {
+                return snapshot.ExchangeA.Bid;
+            }
+
+            if (isSell)
+            {
+                return snapshot.ExchangeA.Ask;
+            }
+        }
+
+        if (isExchangeB)
+        {
+            if (isBuy)
+            {
+                return snapshot.ExchangeB.Bid;
+            }
+
+            if (isSell)
+            {
+                return snapshot.ExchangeB.Ask;
+            }
+        }
+
+        return null;
     }
 
     private void ShowManualTradeFeedback(string actionName, ManualTradeResult result)
