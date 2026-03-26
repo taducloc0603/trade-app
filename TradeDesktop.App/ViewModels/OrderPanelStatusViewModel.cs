@@ -109,6 +109,7 @@ public sealed class OrderPanelStatusViewModel : ObservableObject
     public bool UseHistoryStructuredColumns => _recordLayoutMode == OrderRecordLayoutMode.HistoryTable;
 
     public ObservableCollection<OrderRecordItemViewModel> Records { get; }
+    public ObservableCollection<TradeRowViewModel> TradeRows { get; } = [];
     public ObservableCollection<HistoryRowViewModel> HistoryRows { get; } = [];
     public ObservableCollection<OrderInfoFieldViewModel> LeftItems { get; }
     public ObservableCollection<OrderInfoFieldViewModel> RightItems { get; }
@@ -127,6 +128,7 @@ public sealed class OrderPanelStatusViewModel : ObservableObject
         IsEmpty = false;
         StatusMessage = "Đang tải dữ liệu...";
         ReplaceRecords(Array.Empty<OrderRecordItemViewModel>());
+        ReplaceTradeRows(Array.Empty<TradeRowViewModel>());
         ReplaceHistoryRows(Array.Empty<HistoryRowViewModel>());
         ReplaceFields(Array.Empty<OrderInfoFieldViewModel>(), Array.Empty<OrderInfoFieldViewModel>());
     }
@@ -139,6 +141,7 @@ public sealed class OrderPanelStatusViewModel : ObservableObject
         IsEmpty = false;
         StatusMessage = $"Không tìm thấy map: {mapName}";
         ReplaceRecords(Array.Empty<OrderRecordItemViewModel>());
+        ReplaceTradeRows(Array.Empty<TradeRowViewModel>());
         ReplaceHistoryRows(Array.Empty<HistoryRowViewModel>());
         ReplaceFields(Array.Empty<OrderInfoFieldViewModel>(), Array.Empty<OrderInfoFieldViewModel>());
     }
@@ -151,6 +154,7 @@ public sealed class OrderPanelStatusViewModel : ObservableObject
         IsEmpty = false;
         StatusMessage = string.IsNullOrWhiteSpace(message) ? "Lỗi parse dữ liệu" : message;
         ReplaceRecords(Array.Empty<OrderRecordItemViewModel>());
+        ReplaceTradeRows(Array.Empty<TradeRowViewModel>());
         ReplaceHistoryRows(Array.Empty<HistoryRowViewModel>());
         ReplaceFields(Array.Empty<OrderInfoFieldViewModel>(), Array.Empty<OrderInfoFieldViewModel>());
     }
@@ -163,6 +167,7 @@ public sealed class OrderPanelStatusViewModel : ObservableObject
         IsEmpty = true;
         StatusMessage = "Chưa có dữ liệu";
         ReplaceRecords(Array.Empty<OrderRecordItemViewModel>());
+        ReplaceTradeRows(Array.Empty<TradeRowViewModel>());
         ReplaceHistoryRows(Array.Empty<HistoryRowViewModel>());
         ReplaceFields(Array.Empty<OrderInfoFieldViewModel>(), Array.Empty<OrderInfoFieldViewModel>());
     }
@@ -178,8 +183,22 @@ public sealed class OrderPanelStatusViewModel : ObservableObject
         IsEmpty = false;
         StatusMessage = "Đã kết nối";
         ReplaceRecords(records);
+        ReplaceTradeRows(Array.Empty<TradeRowViewModel>());
         ReplaceHistoryRows(Array.Empty<HistoryRowViewModel>());
         ReplaceFields(leftFields, rightFields);
+    }
+
+    public void SetTradeData(IEnumerable<TradeRowViewModel> rows)
+    {
+        IsLoading = false;
+        IsMapAvailable = true;
+        HasError = false;
+        IsEmpty = false;
+        StatusMessage = "Đã kết nối";
+        ReplaceRecords(Array.Empty<OrderRecordItemViewModel>());
+        ReplaceFields(Array.Empty<OrderInfoFieldViewModel>(), Array.Empty<OrderInfoFieldViewModel>());
+        ReplaceHistoryRows(Array.Empty<HistoryRowViewModel>());
+        ReplaceTradeRows(rows);
     }
 
     public void SetHistoryData(IEnumerable<HistoryRowViewModel> rows)
@@ -190,6 +209,7 @@ public sealed class OrderPanelStatusViewModel : ObservableObject
         IsEmpty = false;
         StatusMessage = "Đã kết nối";
         ReplaceRecords(Array.Empty<OrderRecordItemViewModel>());
+        ReplaceTradeRows(Array.Empty<TradeRowViewModel>());
         ReplaceFields(Array.Empty<OrderInfoFieldViewModel>(), Array.Empty<OrderInfoFieldViewModel>());
         ReplaceHistoryRows(rows);
     }
@@ -226,6 +246,15 @@ public sealed class OrderPanelStatusViewModel : ObservableObject
         foreach (var row in rows)
         {
             HistoryRows.Add(row);
+        }
+    }
+
+    private void ReplaceTradeRows(IEnumerable<TradeRowViewModel> rows)
+    {
+        TradeRows.Clear();
+        foreach (var row in rows)
+        {
+            TradeRows.Add(row);
         }
     }
 }

@@ -113,8 +113,8 @@ public sealed class DashboardViewModel : ObservableObject
         TradeTab = new OrderInfoTabViewModel(
             OrderTabType.Trade,
             "Trade",
-            new OrderPanelStatusViewModel("Sàn A", OrderRecordLayoutMode.Summary),
-            new OrderPanelStatusViewModel("Sàn B", OrderRecordLayoutMode.Summary));
+            new OrderPanelStatusViewModel("Sàn A", OrderRecordLayoutMode.TradeTable),
+            new OrderPanelStatusViewModel("Sàn B", OrderRecordLayoutMode.TradeTable));
 
         HistoryTab = new OrderInfoTabViewModel(
             OrderTabType.History,
@@ -835,12 +835,8 @@ public sealed class DashboardViewModel : ObservableObject
             return;
         }
 
-        var first = result.Records[0];
-        var summaries = BuildTradeRecordSummaries(result.Records);
-        var leftFields = BuildTradeLeftFields(result.Count, result.Timestamp, first);
-        var rightFields = BuildTradeRightFields(first);
-
-        panel.SetData(summaries, leftFields, rightFields);
+        var rows = BuildTradeRows(result.Records, result.Count, result.Timestamp);
+        panel.SetTradeData(rows);
     }
 
     private static void ApplyHistoryResult(
@@ -875,10 +871,22 @@ public sealed class DashboardViewModel : ObservableObject
         panel.SetHistoryData(rows);
     }
 
-    private static IEnumerable<OrderRecordItemViewModel> BuildTradeRecordSummaries(
-        IReadOnlyList<TradeSharedRecord> records)
-        => records.Select((record, index) => new OrderRecordItemViewModel(
-            $"#{index + 1} | {record.Symbol} | {record.Ticket} | {FormatTradeType(record.TradeType)} | {FormatLot(record.Lot)} | {FormatPrice(record.Price)} | {FormatPrice(record.Sl)} | {FormatPrice(record.Tp)} | {FormatProfit(record.Profit)} | {FormatTradeTime(record.TimeMsc)}"));
+    private static IEnumerable<TradeRowViewModel> BuildTradeRows(
+        IReadOnlyList<TradeSharedRecord> records,
+        int count,
+        ulong timestamp)
+        => records.Select(record => new TradeRowViewModel(
+            timestamp: FormatRawTimestamp(timestamp),
+            count: count.ToString(CultureInfo.InvariantCulture),
+            symbol: record.Symbol,
+            ticket: record.Ticket.ToString(CultureInfo.InvariantCulture),
+            type: FormatTradeType(record.TradeType),
+            lot: FormatLot(record.Lot),
+            price: FormatPrice(record.Price),
+            sl: FormatPrice(record.Sl),
+            tp: FormatPrice(record.Tp),
+            profit: FormatProfit(record.Profit),
+            time: FormatTradeTime(record.TimeMsc)));
 
     private static IEnumerable<HistoryRowViewModel> BuildHistoryRows(
         IReadOnlyList<HistorySharedRecord> records,
@@ -899,28 +907,6 @@ public sealed class DashboardViewModel : ObservableObject
             tp: FormatRawDouble(record.Tp),
             openTime: FormatTradeTime(record.OpenTimeMsc),
             closeTime: FormatTradeTime(record.CloseTimeMsc)));
-
-    private static IEnumerable<OrderInfoFieldViewModel> BuildTradeLeftFields(int count, ulong timestamp, TradeSharedRecord first)
-        =>
-        [
-            new OrderInfoFieldViewModel("Count", count.ToString(CultureInfo.InvariantCulture)),
-            new OrderInfoFieldViewModel("Timestamp", FormatRawTimestamp(timestamp)),
-            new OrderInfoFieldViewModel("Symbol", first.Symbol),
-            new OrderInfoFieldViewModel("Ticket", first.Ticket.ToString(CultureInfo.InvariantCulture)),
-            new OrderInfoFieldViewModel("Trade Type", FormatTradeType(first.TradeType)),
-            new OrderInfoFieldViewModel("Lot", FormatLot(first.Lot)),
-            new OrderInfoFieldViewModel("Price", FormatPrice(first.Price))
-        ];
-
-    private static IEnumerable<OrderInfoFieldViewModel> BuildTradeRightFields(TradeSharedRecord first)
-        =>
-        [
-            new OrderInfoFieldViewModel("SL", FormatPrice(first.Sl)),
-            new OrderInfoFieldViewModel("TP", FormatPrice(first.Tp)),
-            new OrderInfoFieldViewModel("Profit", FormatProfit(first.Profit)),
-            new OrderInfoFieldViewModel("Time", FormatTradeTime(first.TimeMsc)),
-            new OrderInfoFieldViewModel("Time MSC", FormatRawTimestamp(first.TimeMsc))
-        ];
 
     private static string FormatTradeType(int tradeType)
         => tradeType == 0 ? "BUY" : "SELL";
