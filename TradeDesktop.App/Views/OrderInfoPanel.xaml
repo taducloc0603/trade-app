@@ -82,18 +82,127 @@
                             CornerRadius="6"
                             Padding="6"
                             Background="#FAFBFC">
-                        <ListBox ItemsSource="{Binding Records}"
-                                 BorderThickness="0"
-                                 Background="Transparent"
-                                 Foreground="#101828"
-                                 FontFamily="Consolas"
-                                 FontSize="11">
-                            <ListBox.ItemTemplate>
-                                <DataTemplate>
-                                    <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" />
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="4" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+
+                            <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                                          VerticalScrollBarVisibility="Disabled"
+                                          CanContentScroll="False">
+                                <Grid MinWidth="980">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="55" />
+                                        <ColumnDefinition Width="90" />
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition Width="60" />
+                                        <ColumnDefinition Width="70" />
+                                        <ColumnDefinition Width="85" />
+                                        <ColumnDefinition Width="85" />
+                                        <ColumnDefinition Width="85" />
+                                        <ColumnDefinition Width="80" />
+                                        <ColumnDefinition Width="180" />
+                                        <ColumnDefinition Width="120" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <TextBlock Grid.Column="0" Text="#" FontWeight="SemiBold" Foreground="#475467" />
+                                    <TextBlock Grid.Column="1" Text="Symbol" FontWeight="SemiBold" Foreground="#475467" />
+                                    <TextBlock Grid.Column="2" Text="Ticket" FontWeight="SemiBold" Foreground="#475467" />
+                                    <TextBlock Grid.Column="3" Text="Type" FontWeight="SemiBold" Foreground="#475467" />
+                                    <TextBlock Grid.Column="4" Text="Lot" FontWeight="SemiBold" Foreground="#475467" />
+                                    <TextBlock Grid.Column="5" Text="Price" FontWeight="SemiBold" Foreground="#475467" />
+                                    <TextBlock Grid.Column="6" Text="SL" FontWeight="SemiBold" Foreground="#475467" />
+                                    <TextBlock Grid.Column="7" Text="TP" FontWeight="SemiBold" Foreground="#475467" />
+                                    <TextBlock Grid.Column="8" Text="Profit" FontWeight="SemiBold" Foreground="#475467" />
+                                    <TextBlock Grid.Column="9" Text="Time" FontWeight="SemiBold" Foreground="#475467" />
+                                    <TextBlock Grid.Column="10" Text="Time MSC" FontWeight="SemiBold" Foreground="#475467" />
+                                </Grid>
+                            </ScrollViewer>
+
+                            <ListBox Grid.Row="2"
+                                     ItemsSource="{Binding Records}"
+                                     BorderThickness="0"
+                                     Background="Transparent"
+                                     Foreground="#101828"
+                                     FontFamily="Consolas"
+                                     FontSize="11">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid>
+                                            <Grid.Style>
+                                                <Style TargetType="Grid">
+                                                    <Setter Property="MinWidth" Value="980" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding HasStructuredColumns}" Value="False">
+                                                            <Setter Property="MinWidth" Value="0" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Grid.Style>
+
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="55" />
+                                                <ColumnDefinition Width="90" />
+                                                <ColumnDefinition Width="110" />
+                                                <ColumnDefinition Width="60" />
+                                                <ColumnDefinition Width="70" />
+                                                <ColumnDefinition Width="85" />
+                                                <ColumnDefinition Width="85" />
+                                                <ColumnDefinition Width="85" />
+                                                <ColumnDefinition Width="80" />
+                                                <ColumnDefinition Width="180" />
+                                                <ColumnDefinition Width="120" />
+                                            </Grid.ColumnDefinitions>
+
+                                            <Grid.Resources>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="#101828" />
+                                                    <Setter Property="TextWrapping" Value="NoWrap" />
+                                                    <Setter Property="VerticalAlignment" Value="Center" />
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding HasStructuredColumns}" Value="False">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Grid.Resources>
+
+                                            <TextBlock Grid.Column="0" Text="{Binding Index}" />
+                                            <TextBlock Grid.Column="1" Text="{Binding Symbol}" />
+                                            <TextBlock Grid.Column="2" Text="{Binding Ticket}" />
+                                            <TextBlock Grid.Column="3" Text="{Binding Type}" />
+                                            <TextBlock Grid.Column="4" Text="{Binding Lot}" />
+                                            <TextBlock Grid.Column="5" Text="{Binding Price}" />
+                                            <TextBlock Grid.Column="6" Text="{Binding Sl}" />
+                                            <TextBlock Grid.Column="7" Text="{Binding Tp}" />
+                                            <TextBlock Grid.Column="8" Text="{Binding Profit}" />
+                                            <TextBlock Grid.Column="9" Text="{Binding Time}" />
+                                            <TextBlock Grid.Column="10" Text="{Binding TimeMsc}" />
+
+                                            <TextBlock Grid.ColumnSpan="11"
+                                                       Text="{Binding Summary}"
+                                                       TextWrapping="Wrap"
+                                                       Foreground="#101828"
+                                                       Visibility="Collapsed">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding HasStructuredColumns}" Value="False">
+                                                                <Setter Property="Visibility" Value="Visible" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Grid>
                     </Border>
 
                     <Grid Grid.Row="4">

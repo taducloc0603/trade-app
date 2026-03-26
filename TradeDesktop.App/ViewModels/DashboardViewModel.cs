@@ -854,7 +854,17 @@ public sealed class DashboardViewModel : ObservableObject
     private static IEnumerable<OrderRecordItemViewModel> BuildTradeRecordSummaries(
         IReadOnlyList<TradeSharedRecord> records)
         => records.Select((record, index) => new OrderRecordItemViewModel(
-            $"#{index + 1} | {record.Symbol} | {record.Ticket} | {FormatTradeType(record.TradeType)} | {FormatLot(record.Lot)} | {FormatPrice(record.Price)} | {FormatPrice(record.Sl)} | {FormatPrice(record.Tp)} | {FormatProfit(record.Profit)} | {FormatTradeTime(record.TimeMsc)}"));
+            index: $"#{index + 1}",
+            symbol: record.Symbol,
+            ticket: record.Ticket.ToString(CultureInfo.InvariantCulture),
+            type: FormatTradeType(record.TradeType),
+            lot: FormatLot(record.Lot),
+            price: FormatPrice(record.Price),
+            sl: FormatPrice(record.Sl),
+            tp: FormatPrice(record.Tp),
+            profit: FormatProfit(record.Profit),
+            time: FormatTradeTime(record.TimeMsc),
+            timeMsc: FormatRawTimestamp(record.TimeMsc)));
 
     private static IEnumerable<OrderRecordItemViewModel> BuildHistoryRecordSummaries(
         IReadOnlyList<HistorySharedRecord> records)
