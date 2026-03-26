@@ -2,6 +2,14 @@ namespace TradeDesktop.Application.Models;
 
 public sealed record HistorySharedRecord(
     ulong Ticket,
-    double Profit,
+    int TradeType,
     double Volume,
-    int DealTime);
+    double OpenPrice,
+    double ClosePrice,
+    double Sl,
+    double Tp,
+    double Commission,
+    double Profit,
+    ulong OpenTimeMsc,
+    ulong CloseTimeMsc,
+    string Symbol);

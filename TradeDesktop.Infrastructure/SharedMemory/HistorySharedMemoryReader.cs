@@ -1,5 +1,6 @@
 using System.IO;
 using System.IO.MemoryMappedFiles;
+using System.Text;
 using TradeDesktop.Application.Abstractions;
 using TradeDesktop.Application.Models;
 
@@ -8,7 +9,8 @@ namespace TradeDesktop.Infrastructure.SharedMemory;
 public sealed class HistorySharedMemoryReader : IHistorySharedMemoryReader
 {
     private const int HeaderSize = 16;
-    private const int RecordSize = 28;
+    private const int RecordSize = 116;
+    private const int SymbolSize = 32;
 
     public SharedMapReadResult<HistorySharedRecord> ReadHistory(string mapName)
     {
@@ -50,11 +52,22 @@ public sealed class HistorySharedMemoryReader : IHistorySharedMemoryReader
             for (var i = 0; i < countToRead; i++)
             {
                 var offset = HeaderSize + (i * RecordSize);
+                var symbolBytes = new byte[SymbolSize];
+                accessor.ReadArray(offset + 84, symbolBytes, 0, SymbolSize);
+
                 records.Add(new HistorySharedRecord(
                     Ticket: accessor.ReadUInt64(offset + 0),
-                    Profit: accessor.ReadDouble(offset + 8),
-                    Volume: accessor.ReadDouble(offset + 16),
-                    DealTime: accessor.ReadInt32(offset + 24)));
+                    TradeType: accessor.ReadInt32(offset + 8),
+                    Volume: accessor.ReadDouble(offset + 12),
+                    OpenPrice: accessor.ReadDouble(offset + 20),
+                    ClosePrice: accessor.ReadDouble(offset + 28),
+                    Sl: accessor.ReadDouble(offset + 36),
+                    Tp: accessor.ReadDouble(offset + 44),
+                    Commission: accessor.ReadDouble(offset + 52),
+                    Profit: accessor.ReadDouble(offset + 60),
+                    OpenTimeMsc: accessor.ReadUInt64(offset + 68),
+                    CloseTimeMsc: accessor.ReadUInt64(offset + 76),
+                    Symbol: ReadSymbol(symbolBytes)));
             }
 
             return SharedMapReadResult<HistorySharedRecord>.Success(timestamp, records, safeCount);
@@ -67,5 +80,12 @@ public sealed class HistorySharedMemoryReader : IHistorySharedMemoryReader
         {
             return SharedMapReadResult<HistorySharedRecord>.ParseError($"Lỗi parse dữ liệu: {ex.Message}");
         }
+    }
+
+    private static string ReadSymbol(byte[] symbolBytes)
+    {
+        var endIndex = Array.IndexOf(symbolBytes, (byte)0);
+        var length = endIndex >= 0 ? endIndex : symbolBytes.Length;
+        return Encoding.UTF8.GetString(symbolBytes, 0, length).Trim();
     }
 }
