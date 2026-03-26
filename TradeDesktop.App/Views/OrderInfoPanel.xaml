@@ -10,18 +10,18 @@
             BorderThickness="1"
             CornerRadius="10"
             Background="#FAFBFC"
-            Padding="14">
+            Padding="12">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
-                <RowDefinition Height="12" />
+                <RowDefinition Height="8" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="10" />
                 <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="10" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
@@ -62,14 +62,14 @@
                     BorderThickness="1"
                     CornerRadius="8"
                     Background="White"
-                    Padding="10">
+                    Padding="8">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="8" />
-                        <RowDefinition Height="95" />
-                        <RowDefinition Height="10" />
                         <RowDefinition Height="*" />
+                        <RowDefinition Height="8" />
+                        <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
 
                     <TextBlock Text="Records"
@@ -90,7 +90,7 @@
                             </Grid.RowDefinitions>
 
                             <ScrollViewer HorizontalScrollBarVisibility="Auto"
-                                          VerticalScrollBarVisibility="Disabled"
+                                          VerticalScrollBarVisibility="Auto"
                                           CanContentScroll="False">
                                 <ScrollViewer.Style>
                                     <Style TargetType="ScrollViewer">
@@ -143,7 +143,9 @@
                                      Background="Transparent"
                                      Foreground="#101828"
                                      FontFamily="Consolas"
-                                     FontSize="11">
+                                     FontSize="11"
+                                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Auto">
                                 <ListBox.Style>
                                     <Style TargetType="ListBox">
                                         <Setter Property="Visibility" Value="Collapsed" />
@@ -199,7 +201,9 @@
                                      Background="Transparent"
                                      Foreground="#101828"
                                      FontFamily="Consolas"
-                                     FontSize="11">
+                                     FontSize="11"
+                                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Auto">
                                 <ListBox.Style>
                                     <Style TargetType="ListBox">
                                         <Setter Property="Visibility" Value="Collapsed" />
@@ -222,16 +226,16 @@
                     <Grid Grid.Row="4">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="10" />
+                            <ColumnDefinition Width="8" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
 
                         <ItemsControl ItemsSource="{Binding LeftItems}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <DockPanel Margin="0,0,0,4">
+                                    <DockPanel Margin="0,0,0,2">
                                         <TextBlock DockPanel.Dock="Left"
-                                                   Width="90"
+                                                   Width="84"
                                                    Text="{Binding Label}"
                                                    FontWeight="SemiBold"
                                                    Foreground="#475467" />
@@ -246,9 +250,9 @@
                         <ItemsControl Grid.Column="2" ItemsSource="{Binding RightItems}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <DockPanel Margin="0,0,0,4">
+                                    <DockPanel Margin="0,0,0,2">
                                         <TextBlock DockPanel.Dock="Left"
-                                                   Width="90"
+                                                   Width="84"
                                                    Text="{Binding Label}"
                                                    FontWeight="SemiBold"
                                                    Foreground="#475467" />

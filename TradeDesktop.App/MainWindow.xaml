@@ -6,9 +6,9 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
         Title="Trade Desktop Dashboard"
-        Height="860"
+        Height="790"
         Width="1240"
-        MinHeight="760"
+        MinHeight="700"
         MinWidth="1100"
         WindowStartupLocation="CenterScreen"
         Background="#F4F6FA">
@@ -19,13 +19,13 @@
     <Grid Margin="20">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="16" />
+            <RowDefinition Height="12" />
             <RowDefinition Height="*" />
-            <RowDefinition Height="16" />
-            <RowDefinition Height="270" />
+            <RowDefinition Height="12" />
+            <RowDefinition Height="1.1*" />
         </Grid.RowDefinitions>
 
-        <Border Grid.Row="0" CornerRadius="12" Padding="16" Background="White" BorderBrush="#E4E7EC" BorderThickness="1">
+        <Border Grid.Row="0" CornerRadius="12" Padding="12" Background="White" BorderBrush="#E4E7EC" BorderThickness="1">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
@@ -89,19 +89,19 @@
         <Grid Grid.Row="2">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="2*" />
-                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="12" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
-            <Border Grid.Column="0" CornerRadius="12" Padding="16" Background="White" BorderBrush="#E4E7EC" BorderThickness="1">
+            <Border Grid.Column="0" CornerRadius="12" Padding="12" Background="White" BorderBrush="#E4E7EC" BorderThickness="1">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
-                            <RowDefinition Height="12" />
-                            <RowDefinition Height="*" />
-                            <RowDefinition Height="10" />
-                            <RowDefinition Height="Auto" />
                             <RowDefinition Height="8" />
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="8" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="6" />
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
 
@@ -115,7 +115,7 @@
                             </Grid.ColumnDefinitions>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
-                                <RowDefinition Height="8" />
+                                <RowDefinition Height="6" />
                                 <RowDefinition Height="*" />
                             </Grid.RowDefinitions>
 
@@ -124,6 +124,11 @@
                             <TextBlock Grid.Column="2" Text="{Binding ExchangeBHeader}" FontWeight="SemiBold" Foreground="#344054" HorizontalAlignment="Center" />
 
                             <Grid Grid.Row="2" Grid.ColumnSpan="3">
+                                <Grid.Resources>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="VerticalAlignment" Value="Center" />
+                                    </Style>
+                                </Grid.Resources>
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
@@ -136,32 +141,32 @@
                                     <RowDefinition Height="Auto" />
                                 </Grid.RowDefinitions>
 
-                                <Border Grid.Row="0" Padding="0,7" BorderBrush="#EEF1F5" BorderThickness="0,0,0,1"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><TextBlock Text="Symbol" Foreground="#344054"/><TextBlock Grid.Column="1" Text="{Binding ExchangeASymbol}" HorizontalAlignment="Center"/><TextBlock Grid.Column="2" Text="{Binding ExchangeBSymbol}" HorizontalAlignment="Center"/></Grid></Border>
-                                <Border Grid.Row="1" Padding="0,7" BorderBrush="#EEF1F5" BorderThickness="0,0,0,1"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><TextBlock Text="Bid" Foreground="#344054"/><TextBlock Grid.Column="1" Text="{Binding ExchangeABid}" HorizontalAlignment="Center"/><TextBlock Grid.Column="2" Text="{Binding ExchangeBBid}" HorizontalAlignment="Center"/></Grid></Border>
-                                <Border Grid.Row="2" Padding="0,7" BorderBrush="#EEF1F5" BorderThickness="0,0,0,1"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><TextBlock Text="Ask" Foreground="#344054"/><TextBlock Grid.Column="1" Text="{Binding ExchangeAAsk}" HorizontalAlignment="Center"/><TextBlock Grid.Column="2" Text="{Binding ExchangeBAsk}" HorizontalAlignment="Center"/></Grid></Border>
-                                <Border Grid.Row="3" Padding="0,7" BorderBrush="#EEF1F5" BorderThickness="0,0,0,1"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><TextBlock Text="Spread" Foreground="#344054"/><TextBlock Grid.Column="1" Text="{Binding ExchangeASpread}" HorizontalAlignment="Center"/><TextBlock Grid.Column="2" Text="{Binding ExchangeBSpread}" HorizontalAlignment="Center"/></Grid></Border>
-                                <Border Grid.Row="4" Padding="0,7" BorderBrush="#EEF1F5" BorderThickness="0,0,0,1"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><TextBlock Text="Latency(ms)" Foreground="#344054"/><TextBlock Grid.Column="1" Text="{Binding ExchangeALatencyMs}" HorizontalAlignment="Center"/><TextBlock Grid.Column="2" Text="{Binding ExchangeBLatencyMs}" HorizontalAlignment="Center"/></Grid></Border>
-                                <Border Grid.Row="5" Padding="0,7" BorderBrush="#EEF1F5" BorderThickness="0,0,0,1"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><TextBlock Text="TPS" Foreground="#344054"/><TextBlock Grid.Column="1" Text="{Binding ExchangeATps}" HorizontalAlignment="Center"/><TextBlock Grid.Column="2" Text="{Binding ExchangeBTps}" HorizontalAlignment="Center"/></Grid></Border>
-                                <Border Grid.Row="6" Padding="0,7" BorderBrush="#EEF1F5" BorderThickness="0,0,0,1"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><TextBlock Text="Time" Foreground="#344054"/><TextBlock Grid.Column="1" Text="{Binding ExchangeATime}" HorizontalAlignment="Center"/><TextBlock Grid.Column="2" Text="{Binding ExchangeBTime}" HorizontalAlignment="Center"/></Grid></Border>
-                                <Border Grid.Row="7" Padding="0,7" BorderBrush="#EEF1F5" BorderThickness="0,0,0,1"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><TextBlock Text="Max Lat(ms)" Foreground="#344054"/><TextBlock Grid.Column="1" Text="{Binding ExchangeAMaxLatMs}" HorizontalAlignment="Center"/><TextBlock Grid.Column="2" Text="{Binding ExchangeBMaxLatMs}" HorizontalAlignment="Center"/></Grid></Border>
-                                <Border Grid.Row="8" Padding="0,7" BorderBrush="#EEF1F5" BorderThickness="0,0,0,1"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><TextBlock Text="Avg Lat(ms)" Foreground="#344054"/><TextBlock Grid.Column="1" Text="{Binding ExchangeAAvgLatMs}" HorizontalAlignment="Center"/><TextBlock Grid.Column="2" Text="{Binding ExchangeBAvgLatMs}" HorizontalAlignment="Center"/></Grid></Border>
+                                <Border Grid.Row="0" Padding="0,5" BorderBrush="#EEF1F5" BorderThickness="0,0,0,1"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><TextBlock Text="Symbol" Foreground="#344054"/><TextBlock Grid.Column="1" Text="{Binding ExchangeASymbol}" HorizontalAlignment="Center"/><TextBlock Grid.Column="2" Text="{Binding ExchangeBSymbol}" HorizontalAlignment="Center"/></Grid></Border>
+                                <Border Grid.Row="1" Padding="0,5" BorderBrush="#EEF1F5" BorderThickness="0,0,0,1"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><TextBlock Text="Bid" Foreground="#344054"/><TextBlock Grid.Column="1" Text="{Binding ExchangeABid}" HorizontalAlignment="Center"/><TextBlock Grid.Column="2" Text="{Binding ExchangeBBid}" HorizontalAlignment="Center"/></Grid></Border>
+                                <Border Grid.Row="2" Padding="0,5" BorderBrush="#EEF1F5" BorderThickness="0,0,0,1"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><TextBlock Text="Ask" Foreground="#344054"/><TextBlock Grid.Column="1" Text="{Binding ExchangeAAsk}" HorizontalAlignment="Center"/><TextBlock Grid.Column="2" Text="{Binding ExchangeBAsk}" HorizontalAlignment="Center"/></Grid></Border>
+                                <Border Grid.Row="3" Padding="0,5" BorderBrush="#EEF1F5" BorderThickness="0,0,0,1"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><TextBlock Text="Spread" Foreground="#344054"/><TextBlock Grid.Column="1" Text="{Binding ExchangeASpread}" HorizontalAlignment="Center"/><TextBlock Grid.Column="2" Text="{Binding ExchangeBSpread}" HorizontalAlignment="Center"/></Grid></Border>
+                                <Border Grid.Row="4" Padding="0,5" BorderBrush="#EEF1F5" BorderThickness="0,0,0,1"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><TextBlock Text="Latency(ms)" Foreground="#344054"/><TextBlock Grid.Column="1" Text="{Binding ExchangeALatencyMs}" HorizontalAlignment="Center"/><TextBlock Grid.Column="2" Text="{Binding ExchangeBLatencyMs}" HorizontalAlignment="Center"/></Grid></Border>
+                                <Border Grid.Row="5" Padding="0,5" BorderBrush="#EEF1F5" BorderThickness="0,0,0,1"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><TextBlock Text="TPS" Foreground="#344054"/><TextBlock Grid.Column="1" Text="{Binding ExchangeATps}" HorizontalAlignment="Center"/><TextBlock Grid.Column="2" Text="{Binding ExchangeBTps}" HorizontalAlignment="Center"/></Grid></Border>
+                                <Border Grid.Row="6" Padding="0,5" BorderBrush="#EEF1F5" BorderThickness="0,0,0,1"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><TextBlock Text="Time" Foreground="#344054"/><TextBlock Grid.Column="1" Text="{Binding ExchangeATime}" HorizontalAlignment="Center"/><TextBlock Grid.Column="2" Text="{Binding ExchangeBTime}" HorizontalAlignment="Center"/></Grid></Border>
+                                <Border Grid.Row="7" Padding="0,5" BorderBrush="#EEF1F5" BorderThickness="0,0,0,1"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><TextBlock Text="Max Lat(ms)" Foreground="#344054"/><TextBlock Grid.Column="1" Text="{Binding ExchangeAMaxLatMs}" HorizontalAlignment="Center"/><TextBlock Grid.Column="2" Text="{Binding ExchangeBMaxLatMs}" HorizontalAlignment="Center"/></Grid></Border>
+                                <Border Grid.Row="8" Padding="0,5" BorderBrush="#EEF1F5" BorderThickness="0,0,0,1"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><TextBlock Text="Avg Lat(ms)" Foreground="#344054"/><TextBlock Grid.Column="1" Text="{Binding ExchangeAAvgLatMs}" HorizontalAlignment="Center"/><TextBlock Grid.Column="2" Text="{Binding ExchangeBAvgLatMs}" HorizontalAlignment="Center"/></Grid></Border>
                             </Grid>
                         </Grid>
 
                         <Grid Grid.Row="4">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="12" />
+                                <ColumnDefinition Width="8" />
                                 <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="40" />
+                                <ColumnDefinition Width="24" />
                                 <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="12" />
+                                <ColumnDefinition Width="8" />
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="8" />
+                                <ColumnDefinition Width="6" />
                                 <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="8" />
+                                <ColumnDefinition Width="6" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
 
@@ -217,7 +222,7 @@
                     </Grid>
             </Border>
 
-            <Border Grid.Column="2" CornerRadius="12" Padding="16" Background="White" BorderBrush="#E4E7EC" BorderThickness="1">
+            <Border Grid.Column="2" CornerRadius="12" Padding="12" Background="White" BorderBrush="#E4E7EC" BorderThickness="1">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
@@ -235,11 +240,11 @@
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
-                                <RowDefinition Height="10" />
+                                <RowDefinition Height="8" />
                                 <RowDefinition Height="Auto" />
-                                <RowDefinition Height="10" />
+                                <RowDefinition Height="8" />
                                 <RowDefinition Height="Auto" />
-                                <RowDefinition Height="6" />
+                                <RowDefinition Height="4" />
                                 <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
 
@@ -289,20 +294,16 @@
             </Border>
         </Grid>
 
-        <Border Grid.Row="4" CornerRadius="12" Padding="16" Background="White" BorderBrush="#E4E7EC" BorderThickness="1">
+        <Border Grid.Row="4" CornerRadius="12" Padding="12" Background="White" BorderBrush="#E4E7EC" BorderThickness="1">
             <Grid>
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="12" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
-                <TextBlock Text="Thông tin lệnh" FontSize="18" FontWeight="SemiBold" />
-
-                <TabControl Grid.Row="2"
+                <TabControl Grid.Row="0"
                             SelectedIndex="{Binding SelectedOrderTabIndex, Mode=TwoWay}">
                     <TabItem Header="{Binding TradeTab.TabHeader}">
-                        <Grid Margin="0,10,0,0">
+                        <Grid Margin="0,6,0,0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="16" />
@@ -315,7 +316,7 @@
                     </TabItem>
 
                     <TabItem Header="{Binding HistoryTab.TabHeader}">
-                        <Grid Margin="0,10,0,0">
+                        <Grid Margin="0,6,0,0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="16" />
