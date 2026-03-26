@@ -25,14 +25,13 @@
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
-            <TextBlock Text="{Binding PanelTitle}" FontWeight="SemiBold" Foreground="#344054" FontSize="14" />
+            <TextBlock Text="{Binding PanelHeader}" FontWeight="SemiBold" Foreground="#344054" FontSize="14" />
 
-            <TextBlock Grid.Column="2" Foreground="#475467" TextWrapping="Wrap" VerticalAlignment="Center">
-                <Run Text="Map: " FontWeight="SemiBold" />
-                <Run Text="{Binding TargetMapName}" />
-            </TextBlock>
-
-            <TextBlock Grid.Column="4" TextWrapping="Wrap" VerticalAlignment="Center">
+            <TextBlock Grid.Column="2"
+                       Grid.ColumnSpan="3"
+                       HorizontalAlignment="Right"
+                       TextWrapping="Wrap"
+                       VerticalAlignment="Center">
                 <TextBlock.Style>
                     <Style TargetType="TextBlock">
                         <Setter Property="Foreground" Value="#B42318" />
@@ -74,7 +73,18 @@
 
                     <TextBlock Text="Records"
                                FontWeight="SemiBold"
-                               Foreground="#344054" />
+                               Foreground="#344054">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Visible" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding UseHistoryStructuredColumns}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
 
                     <Border Grid.Row="2"
                             BorderBrush="#EEF1F5"
@@ -82,6 +92,16 @@
                             CornerRadius="6"
                             Padding="6"
                             Background="#FAFBFC">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Visibility" Value="Visible" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding UseHistoryStructuredColumns}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
@@ -224,6 +244,16 @@
                     </Border>
 
                     <Grid Grid.Row="4">
+                        <Grid.Style>
+                            <Style TargetType="Grid">
+                                <Setter Property="Visibility" Value="Visible" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding UseHistoryStructuredColumns}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Grid.Style>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="8" />
@@ -264,6 +294,119 @@
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
                     </Grid>
+
+                    <Border Grid.Row="0"
+                            Grid.RowSpan="5"
+                            BorderBrush="#EEF1F5"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Padding="6"
+                            Background="#FAFBFC">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding UseHistoryStructuredColumns}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="4" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+
+                            <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                                          VerticalScrollBarVisibility="Auto"
+                                          CanContentScroll="False">
+                                <Grid MinWidth="1540">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="120" />
+                                        <ColumnDefinition Width="70" />
+                                        <ColumnDefinition Width="90" />
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition Width="60" />
+                                        <ColumnDefinition Width="70" />
+                                        <ColumnDefinition Width="95" />
+                                        <ColumnDefinition Width="95" />
+                                        <ColumnDefinition Width="95" />
+                                        <ColumnDefinition Width="95" />
+                                        <ColumnDefinition Width="95" />
+                                        <ColumnDefinition Width="95" />
+                                        <ColumnDefinition Width="180" />
+                                        <ColumnDefinition Width="180" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <TextBlock Grid.Column="0" Text="Timestamp" FontWeight="SemiBold" Foreground="#475467" />
+                                    <TextBlock Grid.Column="1" Text="Count" FontWeight="SemiBold" Foreground="#475467" />
+                                    <TextBlock Grid.Column="2" Text="Symbol" FontWeight="SemiBold" Foreground="#475467" />
+                                    <TextBlock Grid.Column="3" Text="Ticket" FontWeight="SemiBold" Foreground="#475467" />
+                                    <TextBlock Grid.Column="4" Text="Type" FontWeight="SemiBold" Foreground="#475467" />
+                                    <TextBlock Grid.Column="5" Text="Volume" FontWeight="SemiBold" Foreground="#475467" />
+                                    <TextBlock Grid.Column="6" Text="Open Price" FontWeight="SemiBold" Foreground="#475467" />
+                                    <TextBlock Grid.Column="7" Text="Close Price" FontWeight="SemiBold" Foreground="#475467" />
+                                    <TextBlock Grid.Column="8" Text="PnL" FontWeight="SemiBold" Foreground="#475467" />
+                                    <TextBlock Grid.Column="9" Text="Commission" FontWeight="SemiBold" Foreground="#475467" />
+                                    <TextBlock Grid.Column="10" Text="SL" FontWeight="SemiBold" Foreground="#475467" />
+                                    <TextBlock Grid.Column="11" Text="TP" FontWeight="SemiBold" Foreground="#475467" />
+                                    <TextBlock Grid.Column="12" Text="Open Time" FontWeight="SemiBold" Foreground="#475467" />
+                                    <TextBlock Grid.Column="13" Text="Close Time" FontWeight="SemiBold" Foreground="#475467" />
+                                </Grid>
+                            </ScrollViewer>
+
+                            <ListBox Grid.Row="2"
+                                     ItemsSource="{Binding HistoryRows}"
+                                     BorderThickness="0"
+                                     Background="Transparent"
+                                     Foreground="#101828"
+                                     FontFamily="Consolas"
+                                     FontSize="11"
+                                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid MinWidth="1540">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="120" />
+                                                <ColumnDefinition Width="70" />
+                                                <ColumnDefinition Width="90" />
+                                                <ColumnDefinition Width="110" />
+                                                <ColumnDefinition Width="60" />
+                                                <ColumnDefinition Width="70" />
+                                                <ColumnDefinition Width="95" />
+                                                <ColumnDefinition Width="95" />
+                                                <ColumnDefinition Width="95" />
+                                                <ColumnDefinition Width="95" />
+                                                <ColumnDefinition Width="95" />
+                                                <ColumnDefinition Width="95" />
+                                                <ColumnDefinition Width="180" />
+                                                <ColumnDefinition Width="180" />
+                                            </Grid.ColumnDefinitions>
+
+                                            <TextBlock Grid.Column="0" Text="{Binding Timestamp}" />
+                                            <TextBlock Grid.Column="1" Text="{Binding Count}" />
+                                            <TextBlock Grid.Column="2" Text="{Binding Symbol}" />
+                                            <TextBlock Grid.Column="3" Text="{Binding Ticket}" />
+                                            <TextBlock Grid.Column="4" Text="{Binding Type}" />
+                                            <TextBlock Grid.Column="5" Text="{Binding Volume}" />
+                                            <TextBlock Grid.Column="6" Text="{Binding OpenPrice}" />
+                                            <TextBlock Grid.Column="7" Text="{Binding ClosePrice}" />
+                                            <TextBlock Grid.Column="8" Text="{Binding Pnl}" />
+                                            <TextBlock Grid.Column="9" Text="{Binding Commission}" />
+                                            <TextBlock Grid.Column="10" Text="{Binding Sl}" />
+                                            <TextBlock Grid.Column="11" Text="{Binding Tp}" />
+                                            <TextBlock Grid.Column="12" Text="{Binding OpenTime}" />
+                                            <TextBlock Grid.Column="13" Text="{Binding CloseTime}" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Grid>
+                    </Border>
                 </Grid>
             </Border>
         </Grid>

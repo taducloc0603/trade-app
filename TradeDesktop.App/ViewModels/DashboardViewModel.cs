@@ -29,6 +29,7 @@ public sealed class DashboardViewModel : ObservableObject
     private readonly string _normalizedHostName;
     private readonly CancellationTokenSource _orderInfoPollingCts = new();
     private readonly Dictionary<string, ulong> _lastTradeTimestampByMap = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, ulong> _lastHistoryTimestampByMap = new(StringComparer.Ordinal);
 
     private static readonly TimeSpan OrderInfoPollInterval = TimeSpan.FromSeconds(1);
 
@@ -742,6 +743,8 @@ public sealed class DashboardViewModel : ObservableObject
             var historyRightResult = _historySharedMemoryReader.ReadHistory(HistoryTab.RightPanel.TargetMapName);
             var shouldApplyTradeLeft = ShouldApplyTradeResult(TradeTab.LeftPanel.TargetMapName, tradeLeftResult);
             var shouldApplyTradeRight = ShouldApplyTradeResult(TradeTab.RightPanel.TargetMapName, tradeRightResult);
+            var shouldApplyHistoryLeft = ShouldApplyHistoryResult(HistoryTab.LeftPanel.TargetMapName, historyLeftResult);
+            var shouldApplyHistoryRight = ShouldApplyHistoryResult(HistoryTab.RightPanel.TargetMapName, historyRightResult);
 
             System.Windows.Application.Current.Dispatcher.Invoke(() =>
             {
@@ -755,8 +758,15 @@ public sealed class DashboardViewModel : ObservableObject
                     ApplyTradeResult(TradeTab.RightPanel, tradeRightResult);
                 }
 
-                ApplyHistoryResult(HistoryTab.LeftPanel, historyLeftResult);
-                ApplyHistoryResult(HistoryTab.RightPanel, historyRightResult);
+                if (shouldApplyHistoryLeft)
+                {
+                    ApplyHistoryResult(HistoryTab.LeftPanel, historyLeftResult);
+                }
+
+                if (shouldApplyHistoryRight)
+                {
+                    ApplyHistoryResult(HistoryTab.RightPanel, historyRightResult);
+                }
             });
         }
     }
@@ -776,6 +786,24 @@ public sealed class DashboardViewModel : ObservableObject
         }
 
         _lastTradeTimestampByMap[key] = result.Timestamp;
+        return true;
+    }
+
+    private bool ShouldApplyHistoryResult(string mapName, SharedMapReadResult<HistorySharedRecord> result)
+    {
+        if (!result.IsMapAvailable || !result.IsParseSuccess)
+        {
+            _lastHistoryTimestampByMap.Remove(mapName ?? string.Empty);
+            return true;
+        }
+
+        var key = mapName ?? string.Empty;
+        if (_lastHistoryTimestampByMap.TryGetValue(key, out var lastTimestamp) && lastTimestamp == result.Timestamp)
+        {
+            return false;
+        }
+
+        _lastHistoryTimestampByMap[key] = result.Timestamp;
         return true;
     }
 
@@ -843,12 +871,8 @@ public sealed class DashboardViewModel : ObservableObject
             return;
         }
 
-        var first = result.Records[0];
-        var summaries = BuildHistoryRecordSummaries(result.Records, result.Count, result.Timestamp);
-        var leftFields = BuildHistoryLeftFields(result.Count, result.Timestamp, first);
-        var rightFields = BuildHistoryRightFields(first);
-
-        panel.SetData(summaries, leftFields, rightFields);
+        var rows = BuildHistoryRows(result.Records, result.Count, result.Timestamp);
+        panel.SetHistoryData(rows);
     }
 
     private static IEnumerable<OrderRecordItemViewModel> BuildTradeRecordSummaries(
@@ -856,11 +880,11 @@ public sealed class DashboardViewModel : ObservableObject
         => records.Select((record, index) => new OrderRecordItemViewModel(
             $"#{index + 1} | {record.Symbol} | {record.Ticket} | {FormatTradeType(record.TradeType)} | {FormatLot(record.Lot)} | {FormatPrice(record.Price)} | {FormatPrice(record.Sl)} | {FormatPrice(record.Tp)} | {FormatProfit(record.Profit)} | {FormatTradeTime(record.TimeMsc)}"));
 
-    private static IEnumerable<OrderRecordItemViewModel> BuildHistoryRecordSummaries(
+    private static IEnumerable<HistoryRowViewModel> BuildHistoryRows(
         IReadOnlyList<HistorySharedRecord> records,
         int count,
         ulong timestamp)
-        => records.Select(record => new OrderRecordItemViewModel(
+        => records.Select(record => new HistoryRowViewModel(
             timestamp: FormatRawTimestamp(timestamp),
             count: count.ToString(CultureInfo.InvariantCulture),
             symbol: record.Symbol,
@@ -871,10 +895,10 @@ public sealed class DashboardViewModel : ObservableObject
             closePrice: FormatRawDouble(record.ClosePrice),
             pnl: FormatRawDouble(record.Profit),
             commission: FormatRawDouble(record.Commission),
-            openTime: FormatTradeTime(record.OpenTimeMsc),
-            closeTime: FormatTradeTime(record.CloseTimeMsc),
             sl: FormatRawDouble(record.Sl),
-            tp: FormatRawDouble(record.Tp)));
+            tp: FormatRawDouble(record.Tp),
+            openTime: FormatTradeTime(record.OpenTimeMsc),
+            closeTime: FormatTradeTime(record.CloseTimeMsc)));
 
     private static IEnumerable<OrderInfoFieldViewModel> BuildTradeLeftFields(int count, ulong timestamp, TradeSharedRecord first)
         =>
@@ -896,30 +920,6 @@ public sealed class DashboardViewModel : ObservableObject
             new OrderInfoFieldViewModel("Profit", FormatProfit(first.Profit)),
             new OrderInfoFieldViewModel("Time", FormatTradeTime(first.TimeMsc)),
             new OrderInfoFieldViewModel("Time MSC", FormatRawTimestamp(first.TimeMsc))
-        ];
-
-    private static IEnumerable<OrderInfoFieldViewModel> BuildHistoryLeftFields(int count, ulong timestamp, HistorySharedRecord first)
-        =>
-        [
-            new OrderInfoFieldViewModel("Count", count.ToString(CultureInfo.InvariantCulture)),
-            new OrderInfoFieldViewModel("Timestamp", FormatRawTimestamp(timestamp)),
-            new OrderInfoFieldViewModel("Symbol", first.Symbol),
-            new OrderInfoFieldViewModel("Ticket", first.Ticket.ToString(CultureInfo.InvariantCulture)),
-            new OrderInfoFieldViewModel("Trade Type", FormatTradeType(first.TradeType)),
-            new OrderInfoFieldViewModel("Volume", FormatRawDouble(first.Volume)),
-            new OrderInfoFieldViewModel("Open Price", FormatRawDouble(first.OpenPrice)),
-            new OrderInfoFieldViewModel("Close Price", FormatRawDouble(first.ClosePrice))
-        ];
-
-    private static IEnumerable<OrderInfoFieldViewModel> BuildHistoryRightFields(HistorySharedRecord first)
-        =>
-        [
-            new OrderInfoFieldViewModel("SL", FormatRawDouble(first.Sl)),
-            new OrderInfoFieldViewModel("TP", FormatRawDouble(first.Tp)),
-            new OrderInfoFieldViewModel("Commission", FormatRawDouble(first.Commission)),
-            new OrderInfoFieldViewModel("Profit", FormatRawDouble(first.Profit)),
-            new OrderInfoFieldViewModel("Open Time MSC", FormatRawTimestamp(first.OpenTimeMsc)),
-            new OrderInfoFieldViewModel("Close Time MSC", FormatRawTimestamp(first.CloseTimeMsc))
         ];
 
     private static string FormatTradeType(int tradeType)

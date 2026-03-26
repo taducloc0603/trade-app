@@ -39,7 +39,15 @@ public sealed class OrderPanelStatusViewModel : ObservableObject
     public string PanelTitle
     {
         get => _panelTitle;
-        set => SetProperty(ref _panelTitle, value);
+        set
+        {
+            if (!SetProperty(ref _panelTitle, value))
+            {
+                return;
+            }
+
+            OnPropertyChanged(nameof(PanelHeader));
+        }
     }
 
     public string SourceTickMapName
@@ -51,8 +59,20 @@ public sealed class OrderPanelStatusViewModel : ObservableObject
     public string TargetMapName
     {
         get => _targetMapName;
-        set => SetProperty(ref _targetMapName, value);
+        set
+        {
+            if (!SetProperty(ref _targetMapName, value))
+            {
+                return;
+            }
+
+            OnPropertyChanged(nameof(PanelHeader));
+        }
     }
+
+    public string PanelHeader => string.IsNullOrWhiteSpace(TargetMapName)
+        ? PanelTitle
+        : $"{PanelTitle} ({TargetMapName})";
 
     public bool IsLoading
     {
@@ -89,6 +109,7 @@ public sealed class OrderPanelStatusViewModel : ObservableObject
     public bool UseHistoryStructuredColumns => _recordLayoutMode == OrderRecordLayoutMode.HistoryTable;
 
     public ObservableCollection<OrderRecordItemViewModel> Records { get; }
+    public ObservableCollection<HistoryRowViewModel> HistoryRows { get; } = [];
     public ObservableCollection<OrderInfoFieldViewModel> LeftItems { get; }
     public ObservableCollection<OrderInfoFieldViewModel> RightItems { get; }
 
@@ -106,6 +127,7 @@ public sealed class OrderPanelStatusViewModel : ObservableObject
         IsEmpty = false;
         StatusMessage = "Đang tải dữ liệu...";
         ReplaceRecords(Array.Empty<OrderRecordItemViewModel>());
+        ReplaceHistoryRows(Array.Empty<HistoryRowViewModel>());
         ReplaceFields(Array.Empty<OrderInfoFieldViewModel>(), Array.Empty<OrderInfoFieldViewModel>());
     }
 
@@ -117,6 +139,7 @@ public sealed class OrderPanelStatusViewModel : ObservableObject
         IsEmpty = false;
         StatusMessage = $"Không tìm thấy map: {mapName}";
         ReplaceRecords(Array.Empty<OrderRecordItemViewModel>());
+        ReplaceHistoryRows(Array.Empty<HistoryRowViewModel>());
         ReplaceFields(Array.Empty<OrderInfoFieldViewModel>(), Array.Empty<OrderInfoFieldViewModel>());
     }
 
@@ -128,6 +151,7 @@ public sealed class OrderPanelStatusViewModel : ObservableObject
         IsEmpty = false;
         StatusMessage = string.IsNullOrWhiteSpace(message) ? "Lỗi parse dữ liệu" : message;
         ReplaceRecords(Array.Empty<OrderRecordItemViewModel>());
+        ReplaceHistoryRows(Array.Empty<HistoryRowViewModel>());
         ReplaceFields(Array.Empty<OrderInfoFieldViewModel>(), Array.Empty<OrderInfoFieldViewModel>());
     }
 
@@ -139,6 +163,7 @@ public sealed class OrderPanelStatusViewModel : ObservableObject
         IsEmpty = true;
         StatusMessage = "Chưa có dữ liệu";
         ReplaceRecords(Array.Empty<OrderRecordItemViewModel>());
+        ReplaceHistoryRows(Array.Empty<HistoryRowViewModel>());
         ReplaceFields(Array.Empty<OrderInfoFieldViewModel>(), Array.Empty<OrderInfoFieldViewModel>());
     }
 
@@ -153,7 +178,20 @@ public sealed class OrderPanelStatusViewModel : ObservableObject
         IsEmpty = false;
         StatusMessage = "Đã kết nối";
         ReplaceRecords(records);
+        ReplaceHistoryRows(Array.Empty<HistoryRowViewModel>());
         ReplaceFields(leftFields, rightFields);
+    }
+
+    public void SetHistoryData(IEnumerable<HistoryRowViewModel> rows)
+    {
+        IsLoading = false;
+        IsMapAvailable = true;
+        HasError = false;
+        IsEmpty = false;
+        StatusMessage = "Đã kết nối";
+        ReplaceRecords(Array.Empty<OrderRecordItemViewModel>());
+        ReplaceFields(Array.Empty<OrderInfoFieldViewModel>(), Array.Empty<OrderInfoFieldViewModel>());
+        ReplaceHistoryRows(rows);
     }
 
     private void ReplaceRecords(IEnumerable<OrderRecordItemViewModel> records)
@@ -179,6 +217,15 @@ public sealed class OrderPanelStatusViewModel : ObservableObject
         foreach (var item in rightFields)
         {
             RightItems.Add(item);
+        }
+    }
+
+    private void ReplaceHistoryRows(IEnumerable<HistoryRowViewModel> rows)
+    {
+        HistoryRows.Clear();
+        foreach (var row in rows)
+        {
+            HistoryRows.Add(row);
         }
     }
 }
