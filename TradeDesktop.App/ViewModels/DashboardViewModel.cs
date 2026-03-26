@@ -112,14 +112,14 @@ public sealed class DashboardViewModel : ObservableObject
         TradeTab = new OrderInfoTabViewModel(
             OrderTabType.Trade,
             "Trade",
-            new OrderPanelStatusViewModel("Sàn A"),
-            new OrderPanelStatusViewModel("Sàn B"));
+            new OrderPanelStatusViewModel("Sàn A", OrderRecordLayoutMode.Summary),
+            new OrderPanelStatusViewModel("Sàn B", OrderRecordLayoutMode.Summary));
 
         HistoryTab = new OrderInfoTabViewModel(
             OrderTabType.History,
             "History",
-            new OrderPanelStatusViewModel("Sàn A"),
-            new OrderPanelStatusViewModel("Sàn B"));
+            new OrderPanelStatusViewModel("Sàn A", OrderRecordLayoutMode.HistoryTable),
+            new OrderPanelStatusViewModel("Sàn B", OrderRecordLayoutMode.HistoryTable));
 
         OrderTabs = [TradeTab, HistoryTab];
 
@@ -844,7 +844,7 @@ public sealed class DashboardViewModel : ObservableObject
         }
 
         var first = result.Records[0];
-        var summaries = BuildHistoryRecordSummaries(result.Records);
+        var summaries = BuildHistoryRecordSummaries(result.Records, result.Count, result.Timestamp);
         var leftFields = BuildHistoryLeftFields(result.Count, result.Timestamp, first);
         var rightFields = BuildHistoryRightFields(first);
 
@@ -854,22 +854,27 @@ public sealed class DashboardViewModel : ObservableObject
     private static IEnumerable<OrderRecordItemViewModel> BuildTradeRecordSummaries(
         IReadOnlyList<TradeSharedRecord> records)
         => records.Select((record, index) => new OrderRecordItemViewModel(
-            index: $"#{index + 1}",
+            $"#{index + 1} | {record.Symbol} | {record.Ticket} | {FormatTradeType(record.TradeType)} | {FormatLot(record.Lot)} | {FormatPrice(record.Price)} | {FormatPrice(record.Sl)} | {FormatPrice(record.Tp)} | {FormatProfit(record.Profit)} | {FormatTradeTime(record.TimeMsc)}"));
+
+    private static IEnumerable<OrderRecordItemViewModel> BuildHistoryRecordSummaries(
+        IReadOnlyList<HistorySharedRecord> records,
+        int count,
+        ulong timestamp)
+        => records.Select(record => new OrderRecordItemViewModel(
+            timestamp: FormatRawTimestamp(timestamp),
+            count: count.ToString(CultureInfo.InvariantCulture),
             symbol: record.Symbol,
             ticket: record.Ticket.ToString(CultureInfo.InvariantCulture),
             type: FormatTradeType(record.TradeType),
-            lot: FormatLot(record.Lot),
-            price: FormatPrice(record.Price),
-            sl: FormatPrice(record.Sl),
-            tp: FormatPrice(record.Tp),
-            profit: FormatProfit(record.Profit),
-            time: FormatTradeTime(record.TimeMsc),
-            timeMsc: FormatRawTimestamp(record.TimeMsc)));
-
-    private static IEnumerable<OrderRecordItemViewModel> BuildHistoryRecordSummaries(
-        IReadOnlyList<HistorySharedRecord> records)
-        => records.Select((record, index) => new OrderRecordItemViewModel(
-            $"#{index + 1} | {record.Symbol} | Ticket {record.Ticket} | {FormatTradeType(record.TradeType)} | Vol {FormatRawDouble(record.Volume)} | Open {FormatRawDouble(record.OpenPrice)} | Close {FormatRawDouble(record.ClosePrice)} | PnL {FormatRawDouble(record.Profit)}"));
+            volume: FormatRawDouble(record.Volume),
+            openPrice: FormatRawDouble(record.OpenPrice),
+            closePrice: FormatRawDouble(record.ClosePrice),
+            pnl: FormatRawDouble(record.Profit),
+            commission: FormatRawDouble(record.Commission),
+            openTime: FormatTradeTime(record.OpenTimeMsc),
+            closeTime: FormatTradeTime(record.CloseTimeMsc),
+            sl: FormatRawDouble(record.Sl),
+            tp: FormatRawDouble(record.Tp)));
 
     private static IEnumerable<OrderInfoFieldViewModel> BuildTradeLeftFields(int count, ulong timestamp, TradeSharedRecord first)
         =>

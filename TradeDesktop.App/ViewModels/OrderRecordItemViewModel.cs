@@ -24,6 +24,16 @@ public sealed class OrderRecordItemViewModel
     public string Time { get; } = string.Empty;
     public string TimeMsc { get; } = string.Empty;
 
+    public string Timestamp { get; } = string.Empty;
+    public string Count { get; } = string.Empty;
+    public string Volume { get; } = string.Empty;
+    public string OpenPrice { get; } = string.Empty;
+    public string ClosePrice { get; } = string.Empty;
+    public string Pnl { get; } = string.Empty;
+    public string Commission { get; } = string.Empty;
+    public string OpenTime { get; } = string.Empty;
+    public string CloseTime { get; } = string.Empty;
+
     public OrderRecordItemViewModel(
         string index,
         string symbol,
@@ -62,5 +72,54 @@ public sealed class OrderRecordItemViewModel
             profit,
             time,
             timeMsc);
+    }
+
+    public OrderRecordItemViewModel(
+        string timestamp,
+        string count,
+        string symbol,
+        string ticket,
+        string type,
+        string volume,
+        string openPrice,
+        string closePrice,
+        string pnl,
+        string commission,
+        string openTime,
+        string closeTime,
+        string sl,
+        string tp)
+    {
+        Timestamp = timestamp;
+        Count = count;
+        Symbol = symbol;
+        Ticket = ticket;
+        Type = type;
+        Volume = volume;
+        OpenPrice = openPrice;
+        ClosePrice = closePrice;
+        Pnl = pnl;
+        Commission = commission;
+        OpenTime = openTime;
+        CloseTime = closeTime;
+        Sl = sl;
+        Tp = tp;
+        HasStructuredColumns = true;
+
+        Summary = string.Join(" | ",
+            timestamp,
+            count,
+            symbol,
+            ticket,
+            type,
+            volume,
+            openPrice,
+            closePrice,
+            pnl,
+            commission,
+            openTime,
+            closeTime,
+            sl,
+            tp);
     }
 }

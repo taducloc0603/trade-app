@@ -2,6 +2,13 @@ using System.Collections.ObjectModel;
 
 namespace TradeDesktop.App.ViewModels;
 
+public enum OrderRecordLayoutMode
+{
+    Summary,
+    TradeTable,
+    HistoryTable
+}
+
 public sealed class OrderPanelStatusViewModel : ObservableObject
 {
     private string _panelTitle;
@@ -12,13 +19,17 @@ public sealed class OrderPanelStatusViewModel : ObservableObject
     private bool _hasError;
     private bool _isEmpty;
     private string _statusMessage;
+    private readonly OrderRecordLayoutMode _recordLayoutMode;
 
-    public OrderPanelStatusViewModel(string panelTitle)
+    public OrderPanelStatusViewModel(
+        string panelTitle,
+        OrderRecordLayoutMode recordLayoutMode = OrderRecordLayoutMode.Summary)
     {
         _panelTitle = panelTitle;
         _sourceTickMapName = string.Empty;
         _targetMapName = string.Empty;
         _statusMessage = "Đang tải dữ liệu...";
+        _recordLayoutMode = recordLayoutMode;
 
         Records = [];
         LeftItems = [];
@@ -72,6 +83,10 @@ public sealed class OrderPanelStatusViewModel : ObservableObject
         get => _statusMessage;
         set => SetProperty(ref _statusMessage, value);
     }
+
+    public bool UseSummaryRecords => _recordLayoutMode == OrderRecordLayoutMode.Summary;
+    public bool UseTradeStructuredColumns => _recordLayoutMode == OrderRecordLayoutMode.TradeTable;
+    public bool UseHistoryStructuredColumns => _recordLayoutMode == OrderRecordLayoutMode.HistoryTable;
 
     public ObservableCollection<OrderRecordItemViewModel> Records { get; }
     public ObservableCollection<OrderInfoFieldViewModel> LeftItems { get; }
