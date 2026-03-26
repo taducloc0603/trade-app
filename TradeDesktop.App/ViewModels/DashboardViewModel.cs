@@ -28,6 +28,7 @@ public sealed class DashboardViewModel : ObservableObject
     private readonly IMt5ManualTradeService _mt5ManualTradeService;
     private readonly string _normalizedHostName;
     private readonly CancellationTokenSource _orderInfoPollingCts = new();
+    private readonly Dictionary<string, ulong> _lastTradeTimestampByMap = new(StringComparer.Ordinal);
 
     private static readonly TimeSpan OrderInfoPollInterval = TimeSpan.FromSeconds(1);
 
@@ -739,15 +740,43 @@ public sealed class DashboardViewModel : ObservableObject
             var tradeRightResult = _tradesSharedMemoryReader.ReadTrades(TradeTab.RightPanel.TargetMapName);
             var historyLeftResult = _historySharedMemoryReader.ReadHistory(HistoryTab.LeftPanel.TargetMapName);
             var historyRightResult = _historySharedMemoryReader.ReadHistory(HistoryTab.RightPanel.TargetMapName);
+            var shouldApplyTradeLeft = ShouldApplyTradeResult(TradeTab.LeftPanel.TargetMapName, tradeLeftResult);
+            var shouldApplyTradeRight = ShouldApplyTradeResult(TradeTab.RightPanel.TargetMapName, tradeRightResult);
 
             System.Windows.Application.Current.Dispatcher.Invoke(() =>
             {
-                ApplyTradeResult(TradeTab.LeftPanel, tradeLeftResult);
-                ApplyTradeResult(TradeTab.RightPanel, tradeRightResult);
+                if (shouldApplyTradeLeft)
+                {
+                    ApplyTradeResult(TradeTab.LeftPanel, tradeLeftResult);
+                }
+
+                if (shouldApplyTradeRight)
+                {
+                    ApplyTradeResult(TradeTab.RightPanel, tradeRightResult);
+                }
+
                 ApplyHistoryResult(HistoryTab.LeftPanel, historyLeftResult);
                 ApplyHistoryResult(HistoryTab.RightPanel, historyRightResult);
             });
         }
+    }
+
+    private bool ShouldApplyTradeResult(string mapName, SharedMapReadResult<TradeSharedRecord> result)
+    {
+        if (!result.IsMapAvailable || !result.IsParseSuccess)
+        {
+            _lastTradeTimestampByMap.Remove(mapName ?? string.Empty);
+            return true;
+        }
+
+        var key = mapName ?? string.Empty;
+        if (_lastTradeTimestampByMap.TryGetValue(key, out var lastTimestamp) && lastTimestamp == result.Timestamp)
+        {
+            return false;
+        }
+
+        _lastTradeTimestampByMap[key] = result.Timestamp;
+        return true;
     }
 
     private static void ApplyTradeResult(
@@ -825,31 +854,33 @@ public sealed class DashboardViewModel : ObservableObject
     private static IEnumerable<OrderRecordItemViewModel> BuildTradeRecordSummaries(
         IReadOnlyList<TradeSharedRecord> records)
         => records.Select((record, index) => new OrderRecordItemViewModel(
-            $"#{index + 1} | Ticket {record.Ticket} | {FormatTradeType(record.TradeType)} | Lot {FormatRawDouble(record.Lot)} | Profit {FormatRawDouble(record.Profit)}"));
+            $"#{index + 1} | {record.Symbol} | {record.Ticket} | {FormatTradeType(record.TradeType)} | {FormatLot(record.Lot)} | {FormatPrice(record.Price)} | {FormatPrice(record.Sl)} | {FormatPrice(record.Tp)} | {FormatProfit(record.Profit)} | {FormatTradeTime(record.TimeMsc)}"));
 
     private static IEnumerable<OrderRecordItemViewModel> BuildHistoryRecordSummaries(
         IReadOnlyList<HistorySharedRecord> records)
         => records.Select((record, index) => new OrderRecordItemViewModel(
-            $"#{index + 1} | Ticket {record.Ticket} | Vol {FormatRawDouble(record.Volume)} | Profit {FormatRawDouble(record.Profit)}"));
+            $"#{index + 1} | {record.Symbol} | Ticket {record.Ticket} | {FormatTradeType(record.TradeType)} | Vol {FormatRawDouble(record.Volume)} | Open {FormatRawDouble(record.OpenPrice)} | Close {FormatRawDouble(record.ClosePrice)} | PnL {FormatRawDouble(record.Profit)}"));
 
     private static IEnumerable<OrderInfoFieldViewModel> BuildTradeLeftFields(int count, ulong timestamp, TradeSharedRecord first)
         =>
         [
             new OrderInfoFieldViewModel("Count", count.ToString(CultureInfo.InvariantCulture)),
             new OrderInfoFieldViewModel("Timestamp", FormatRawTimestamp(timestamp)),
+            new OrderInfoFieldViewModel("Symbol", first.Symbol),
             new OrderInfoFieldViewModel("Ticket", first.Ticket.ToString(CultureInfo.InvariantCulture)),
             new OrderInfoFieldViewModel("Trade Type", FormatTradeType(first.TradeType)),
-            new OrderInfoFieldViewModel("Lot", FormatRawDouble(first.Lot)),
-            new OrderInfoFieldViewModel("Open Time", FormatRawIntTime(first.OpenTime))
+            new OrderInfoFieldViewModel("Lot", FormatLot(first.Lot)),
+            new OrderInfoFieldViewModel("Price", FormatPrice(first.Price))
         ];
 
     private static IEnumerable<OrderInfoFieldViewModel> BuildTradeRightFields(TradeSharedRecord first)
         =>
         [
-            new OrderInfoFieldViewModel("Price", FormatRawDouble(first.Price)),
-            new OrderInfoFieldViewModel("SL", FormatRawDouble(first.Sl)),
-            new OrderInfoFieldViewModel("TP", FormatRawDouble(first.Tp)),
-            new OrderInfoFieldViewModel("Profit", FormatRawDouble(first.Profit))
+            new OrderInfoFieldViewModel("SL", FormatPrice(first.Sl)),
+            new OrderInfoFieldViewModel("TP", FormatPrice(first.Tp)),
+            new OrderInfoFieldViewModel("Profit", FormatProfit(first.Profit)),
+            new OrderInfoFieldViewModel("Time", FormatTradeTime(first.TimeMsc)),
+            new OrderInfoFieldViewModel("Time MSC", FormatRawTimestamp(first.TimeMsc))
         ];
 
     private static IEnumerable<OrderInfoFieldViewModel> BuildHistoryLeftFields(int count, ulong timestamp, HistorySharedRecord first)
@@ -857,15 +888,23 @@ public sealed class DashboardViewModel : ObservableObject
         [
             new OrderInfoFieldViewModel("Count", count.ToString(CultureInfo.InvariantCulture)),
             new OrderInfoFieldViewModel("Timestamp", FormatRawTimestamp(timestamp)),
+            new OrderInfoFieldViewModel("Symbol", first.Symbol),
             new OrderInfoFieldViewModel("Ticket", first.Ticket.ToString(CultureInfo.InvariantCulture)),
-            new OrderInfoFieldViewModel("Volume", FormatRawDouble(first.Volume))
+            new OrderInfoFieldViewModel("Trade Type", FormatTradeType(first.TradeType)),
+            new OrderInfoFieldViewModel("Volume", FormatRawDouble(first.Volume)),
+            new OrderInfoFieldViewModel("Open Price", FormatRawDouble(first.OpenPrice)),
+            new OrderInfoFieldViewModel("Close Price", FormatRawDouble(first.ClosePrice))
         ];
 
     private static IEnumerable<OrderInfoFieldViewModel> BuildHistoryRightFields(HistorySharedRecord first)
         =>
         [
+            new OrderInfoFieldViewModel("SL", FormatRawDouble(first.Sl)),
+            new OrderInfoFieldViewModel("TP", FormatRawDouble(first.Tp)),
+            new OrderInfoFieldViewModel("Commission", FormatRawDouble(first.Commission)),
             new OrderInfoFieldViewModel("Profit", FormatRawDouble(first.Profit)),
-            new OrderInfoFieldViewModel("Deal Time", FormatRawIntTime(first.DealTime))
+            new OrderInfoFieldViewModel("Open Time MSC", FormatRawTimestamp(first.OpenTimeMsc)),
+            new OrderInfoFieldViewModel("Close Time MSC", FormatRawTimestamp(first.CloseTimeMsc))
         ];
 
     private static string FormatTradeType(int tradeType)
@@ -874,11 +913,35 @@ public sealed class DashboardViewModel : ObservableObject
     private static string FormatRawTimestamp(ulong timestamp)
         => timestamp.ToString(CultureInfo.InvariantCulture);
 
-    private static string FormatRawIntTime(int rawTime)
-        => rawTime.ToString(CultureInfo.InvariantCulture);
-
     private static string FormatRawDouble(double value)
         => value.ToString("0.#####", CultureInfo.InvariantCulture);
+
+    private static string FormatLot(double value)
+        => value.ToString("0.00", CultureInfo.InvariantCulture);
+
+    private static string FormatPrice(double value)
+        => value.ToString("0.00000", CultureInfo.InvariantCulture);
+
+    private static string FormatProfit(double value)
+        => value.ToString("0.00", CultureInfo.InvariantCulture);
+
+    private static string FormatTradeTime(ulong timeMsc)
+    {
+        if (timeMsc == 0)
+        {
+            return "-";
+        }
+
+        try
+        {
+            var clamped = timeMsc > long.MaxValue ? long.MaxValue : (long)timeMsc;
+            return DateTimeOffset.FromUnixTimeMilliseconds(clamped).ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture);
+        }
+        catch
+        {
+            return FormatRawTimestamp(timeMsc);
+        }
+    }
 
     private async Task InitializeRuntimeConfigAsync()
     {

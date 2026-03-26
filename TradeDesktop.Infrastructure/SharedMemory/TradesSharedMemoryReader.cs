@@ -1,5 +1,7 @@
 using System.IO;
 using System.IO.MemoryMappedFiles;
+using System.Text;
+using System.Diagnostics;
 using TradeDesktop.Application.Abstractions;
 using TradeDesktop.Application.Models;
 
@@ -8,7 +10,8 @@ namespace TradeDesktop.Infrastructure.SharedMemory;
 public sealed class TradesSharedMemoryReader : ITradesSharedMemoryReader
 {
     private const int HeaderSize = 16;
-    private const int RecordSize = 56;
+    private const int RecordSize = 92;
+    private const int SymbolSize = 32;
 
     public SharedMapReadResult<TradeSharedRecord> ReadTrades(string mapName)
     {
@@ -38,7 +41,7 @@ public sealed class TradesSharedMemoryReader : ITradesSharedMemoryReader
 
             if (safeCount > maxCountByCapacity)
             {
-                return SharedMapReadResult<TradeSharedRecord>.ParseError("Lỗi parse dữ liệu: count vượt quá kích thước map");
+                Debug.WriteLine($"[TradesSharedMemoryReader] count ({safeCount}) vượt maxCountByCapacity ({maxCountByCapacity}) của map {normalizedMapName}. Chỉ đọc {countToRead} record.");
             }
 
             if (countToRead == 0)
@@ -50,15 +53,19 @@ public sealed class TradesSharedMemoryReader : ITradesSharedMemoryReader
             for (var i = 0; i < countToRead; i++)
             {
                 var offset = HeaderSize + (i * RecordSize);
+                var symbolBytes = new byte[SymbolSize];
+                accessor.ReadArray(offset + 60, symbolBytes, 0, SymbolSize);
+
                 records.Add(new TradeSharedRecord(
                     Ticket: accessor.ReadUInt64(offset + 0),
+                    Symbol: ReadSymbol(symbolBytes),
+                    TradeType: accessor.ReadInt32(offset + 48),
                     Lot: accessor.ReadDouble(offset + 8),
                     Price: accessor.ReadDouble(offset + 16),
                     Sl: accessor.ReadDouble(offset + 24),
                     Tp: accessor.ReadDouble(offset + 32),
                     Profit: accessor.ReadDouble(offset + 40),
-                    TradeType: accessor.ReadInt32(offset + 48),
-                    OpenTime: accessor.ReadInt32(offset + 52)));
+                    TimeMsc: accessor.ReadUInt64(offset + 52)));
             }
 
             return SharedMapReadResult<TradeSharedRecord>.Success(timestamp, records, safeCount);
@@ -71,5 +78,12 @@ public sealed class TradesSharedMemoryReader : ITradesSharedMemoryReader
         {
             return SharedMapReadResult<TradeSharedRecord>.ParseError($"Lỗi parse dữ liệu: {ex.Message}");
         }
+    }
+
+    private static string ReadSymbol(byte[] symbolBytes)
+    {
+        var endIndex = Array.IndexOf(symbolBytes, (byte)0);
+        var length = endIndex >= 0 ? endIndex : symbolBytes.Length;
+        return Encoding.UTF8.GetString(symbolBytes, 0, length).Trim();
     }
 }
