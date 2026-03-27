@@ -30,7 +30,6 @@ public sealed class DashboardViewModel : ObservableObject
     private readonly CancellationTokenSource _orderInfoPollingCts = new();
     private readonly Dictionary<string, ulong> _lastTradeTimestampByMap = new(StringComparer.Ordinal);
     private readonly Dictionary<string, ulong> _lastHistoryTimestampByMap = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, (decimal? Bid, decimal? Ask)> _lastTradeQuoteByPanel = new(StringComparer.Ordinal);
 
     private static readonly TimeSpan OrderInfoPollInterval = TimeSpan.FromSeconds(1);
 
@@ -749,18 +748,14 @@ public sealed class DashboardViewModel : ObservableObject
 
             System.Windows.Application.Current.Dispatcher.Invoke(() =>
             {
-                var snapshotMetrics = _runtimeConfigState.CurrentDashboardMetrics;
-                var leftQuoteChanged = ShouldApplyTradeQuoteChange(TradeTab.LeftPanel.TargetMapName, snapshotMetrics?.ExchangeA);
-                var rightQuoteChanged = ShouldApplyTradeQuoteChange(TradeTab.RightPanel.TargetMapName, snapshotMetrics?.ExchangeB);
-
-                if (shouldApplyTradeLeft || leftQuoteChanged)
+                if (shouldApplyTradeLeft)
                 {
-                    ApplyTradeResult(TradeTab.LeftPanel, tradeLeftResult, snapshotMetrics?.ExchangeA);
+                    ApplyTradeResult(TradeTab.LeftPanel, tradeLeftResult);
                 }
 
-                if (shouldApplyTradeRight || rightQuoteChanged)
+                if (shouldApplyTradeRight)
                 {
-                    ApplyTradeResult(TradeTab.RightPanel, tradeRightResult, snapshotMetrics?.ExchangeB);
+                    ApplyTradeResult(TradeTab.RightPanel, tradeRightResult);
                 }
 
                 if (shouldApplyHistoryLeft)
@@ -781,7 +776,6 @@ public sealed class DashboardViewModel : ObservableObject
         if (!result.IsMapAvailable || !result.IsParseSuccess)
         {
             _lastTradeTimestampByMap.Remove(mapName ?? string.Empty);
-            _lastTradeQuoteByPanel.Remove(mapName ?? string.Empty);
             return true;
         }
 
@@ -792,26 +786,6 @@ public sealed class DashboardViewModel : ObservableObject
         }
 
         _lastTradeTimestampByMap[key] = result.Timestamp;
-        return true;
-    }
-
-    private bool ShouldApplyTradeQuoteChange(string mapName, ExchangeDashboardMetrics? metrics)
-    {
-        if (metrics is null)
-        {
-            return false;
-        }
-
-        var key = mapName ?? string.Empty;
-        var current = (metrics.Bid, metrics.Ask);
-        if (_lastTradeQuoteByPanel.TryGetValue(key, out var previous) &&
-            previous.Bid == current.Bid &&
-            previous.Ask == current.Ask)
-        {
-            return false;
-        }
-
-        _lastTradeQuoteByPanel[key] = current;
         return true;
     }
 
@@ -833,10 +807,9 @@ public sealed class DashboardViewModel : ObservableObject
         return true;
     }
 
-    private void ApplyTradeResult(
+    private static void ApplyTradeResult(
         OrderPanelStatusViewModel panel,
-        SharedMapReadResult<TradeSharedRecord> result,
-        ExchangeDashboardMetrics? exchangeMetrics)
+        SharedMapReadResult<TradeSharedRecord> result)
     {
         if (!result.IsMapAvailable)
         {
@@ -862,7 +835,7 @@ public sealed class DashboardViewModel : ObservableObject
             return;
         }
 
-        var rows = BuildTradeRows(result.Records, result.Count, result.Timestamp, exchangeMetrics);
+        var rows = BuildTradeRows(result.Records, result.Count, result.Timestamp);
         panel.SetTradeData(rows);
     }
 
@@ -901,8 +874,7 @@ public sealed class DashboardViewModel : ObservableObject
     private static IEnumerable<TradeRowViewModel> BuildTradeRows(
         IReadOnlyList<TradeSharedRecord> records,
         int count,
-        ulong timestamp,
-        ExchangeDashboardMetrics? exchangeMetrics)
+        ulong timestamp)
         => records.Select(record => new TradeRowViewModel(
             timestamp: FormatRawTimestamp(timestamp),
             count: count.ToString(CultureInfo.InvariantCulture),
@@ -913,8 +885,7 @@ public sealed class DashboardViewModel : ObservableObject
             price: FormatPrice(record.Price),
             sl: FormatPrice(record.Sl),
             tp: FormatPrice(record.Tp),
-            feeSpread: FormatProfit(record.Profit),
-            profit: ComputeTradeProfit(record, exchangeMetrics),
+            profit: FormatProfit(record.Profit),
             time: FormatTradeTime(record.TimeMsc)));
 
     private static IEnumerable<HistoryRowViewModel> BuildHistoryRows(
@@ -930,47 +901,12 @@ public sealed class DashboardViewModel : ObservableObject
             volume: FormatRawDouble(record.Volume),
             openPrice: FormatRawDouble(record.OpenPrice),
             closePrice: FormatRawDouble(record.ClosePrice),
-            feeSpread: FormatRawDouble(record.Profit),
-            profit: ComputeHistoryProfit(record),
+            pnl: FormatRawDouble(record.Profit),
             commission: FormatRawDouble(record.Commission),
             sl: FormatRawDouble(record.Sl),
             tp: FormatRawDouble(record.Tp),
             openTime: FormatTradeTime(record.OpenTimeMsc),
             closeTime: FormatTradeTime(record.CloseTimeMsc)));
-
-    private static string ComputeTradeProfit(TradeSharedRecord record, ExchangeDashboardMetrics? exchangeMetrics)
-    {
-        if (exchangeMetrics is null)
-        {
-            return "-";
-        }
-
-        decimal? rawProfit = record.TradeType == 0
-            ? ComputeBuyProfit(exchangeMetrics.Bid, (decimal)record.Price)
-            : ComputeSellProfit((decimal)record.Price, exchangeMetrics.Ask);
-
-        return rawProfit.HasValue
-            ? (rawProfit.Value * 100m).ToString("0.00", CultureInfo.InvariantCulture)
-            : "-";
-    }
-
-    private static string ComputeHistoryProfit(HistorySharedRecord record)
-    {
-        var openPrice = (decimal)record.OpenPrice;
-        var closePrice = (decimal)record.ClosePrice;
-
-        var rawProfit = record.TradeType == 0
-            ? closePrice - openPrice
-            : openPrice - closePrice;
-
-        return (rawProfit * 100m).ToString("0.00", CultureInfo.InvariantCulture);
-    }
-
-    private static decimal? ComputeBuyProfit(decimal? bid, decimal openPrice)
-        => bid.HasValue ? bid.Value - openPrice : null;
-
-    private static decimal? ComputeSellProfit(decimal openPrice, decimal? ask)
-        => ask.HasValue ? openPrice - ask.Value : null;
 
     private static string FormatTradeType(int tradeType)
         => tradeType == 0 ? "BUY" : "SELL";
