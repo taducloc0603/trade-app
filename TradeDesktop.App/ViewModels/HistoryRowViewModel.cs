@@ -12,6 +12,7 @@ public sealed class HistoryRowViewModel
         string openPrice,
         string closePrice,
         string feeSpread,
+        string profit,
         string commission,
         string sl,
         string tp,
@@ -27,6 +28,7 @@ public sealed class HistoryRowViewModel
         OpenPrice = openPrice;
         ClosePrice = closePrice;
         FeeSpread = feeSpread;
+        Profit = profit;
         Commission = commission;
         Sl = sl;
         Tp = tp;
@@ -43,6 +45,7 @@ public sealed class HistoryRowViewModel
     public string OpenPrice { get; }
     public string ClosePrice { get; }
     public string FeeSpread { get; }
+    public string Profit { get; }
     public string Commission { get; }
     public string Sl { get; }
     public string Tp { get; }

@@ -325,7 +325,7 @@
                         <Grid>
                             <DataGrid ItemsSource="{Binding HistoryRows}"
                                       AutoGenerateColumns="False"
-                                      MinWidth="1460"
+                                      MinWidth="1555"
                                       IsReadOnly="True"
                                       CanUserAddRows="False"
                                       CanUserDeleteRows="False"
@@ -360,6 +360,7 @@
                                     <DataGridTextColumn Header="Open Price" Binding="{Binding OpenPrice}" Width="95" />
                                     <DataGridTextColumn Header="Close Price" Binding="{Binding ClosePrice}" Width="95" />
                                     <DataGridTextColumn Header="Fee Spread" Binding="{Binding FeeSpread}" Width="95" />
+                                    <DataGridTextColumn Header="Profit" Binding="{Binding Profit}" Width="95" />
                                     <DataGridTextColumn Header="Commission" Binding="{Binding Commission}" Width="95" />
                                     <DataGridTextColumn Header="SL" Binding="{Binding Sl}" Width="95" />
                                     <DataGridTextColumn Header="TP" Binding="{Binding Tp}" Width="95" />
@@ -390,7 +391,7 @@
 
                         <DataGrid ItemsSource="{Binding TradeRows}"
                                   AutoGenerateColumns="False"
-                                  MinWidth="1090"
+                                  MinWidth="1185"
                                   IsReadOnly="True"
                                   CanUserAddRows="False"
                                   CanUserDeleteRows="False"
@@ -426,6 +427,7 @@
                                 <DataGridTextColumn Header="SL" Binding="{Binding Sl}" Width="95" />
                                 <DataGridTextColumn Header="TP" Binding="{Binding Tp}" Width="95" />
                                 <DataGridTextColumn Header="Fee Spread" Binding="{Binding FeeSpread}" Width="95" />
+                                <DataGridTextColumn Header="Profit" Binding="{Binding Profit}" Width="95" />
                                 <DataGridTextColumn Header="Time" Binding="{Binding Time}" Width="180" />
                             </DataGrid.Columns>
                         </DataGrid>
