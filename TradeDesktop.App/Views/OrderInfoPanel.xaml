@@ -128,7 +128,7 @@
                                         </Style.Triggers>
                                     </Style>
                                 </ScrollViewer.Style>
-                                <Grid MinWidth="1460">
+                                <Grid MinWidth="1640">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="120" />
                                         <ColumnDefinition Width="70" />
@@ -144,6 +144,7 @@
                                         <ColumnDefinition Width="95" />
                                         <ColumnDefinition Width="180" />
                                         <ColumnDefinition Width="180" />
+                                        <ColumnDefinition Width="180" />
                                     </Grid.ColumnDefinitions>
 
                                     <TextBlock Grid.Column="0" Text="Timestamp" FontWeight="SemiBold" Foreground="#475467" />
@@ -154,12 +155,13 @@
                                     <TextBlock Grid.Column="5" Text="Volume" FontWeight="SemiBold" Foreground="#475467" />
                                     <TextBlock Grid.Column="6" Text="Open Price" FontWeight="SemiBold" Foreground="#475467" />
                                     <TextBlock Grid.Column="7" Text="Close Price" FontWeight="SemiBold" Foreground="#475467" />
-                                    <TextBlock Grid.Column="8" Text="PnL" FontWeight="SemiBold" Foreground="#475467" />
-                                    <TextBlock Grid.Column="9" Text="Commission" FontWeight="SemiBold" Foreground="#475467" />
-                                    <TextBlock Grid.Column="10" Text="SL" FontWeight="SemiBold" Foreground="#475467" />
-                                    <TextBlock Grid.Column="11" Text="TP" FontWeight="SemiBold" Foreground="#475467" />
-                                    <TextBlock Grid.Column="12" Text="Open Time" FontWeight="SemiBold" Foreground="#475467" />
-                                    <TextBlock Grid.Column="13" Text="Close Time" FontWeight="SemiBold" Foreground="#475467" />
+                                    <TextBlock Grid.Column="8" Text="Profit" FontWeight="SemiBold" Foreground="#475467" />
+                                    <TextBlock Grid.Column="9" Text="Fee Spread" FontWeight="SemiBold" Foreground="#475467" />
+                                    <TextBlock Grid.Column="10" Text="Commission" FontWeight="SemiBold" Foreground="#475467" />
+                                    <TextBlock Grid.Column="11" Text="SL" FontWeight="SemiBold" Foreground="#475467" />
+                                    <TextBlock Grid.Column="12" Text="TP" FontWeight="SemiBold" Foreground="#475467" />
+                                    <TextBlock Grid.Column="13" Text="Open Time" FontWeight="SemiBold" Foreground="#475467" />
+                                    <TextBlock Grid.Column="14" Text="Close Time" FontWeight="SemiBold" Foreground="#475467" />
                                 </Grid>
                             </ScrollViewer>
 
@@ -184,7 +186,7 @@
                                 </ListBox.Style>
                                 <ListBox.ItemTemplate>
                                     <DataTemplate>
-                                        <Grid MinWidth="1460">
+                                        <Grid MinWidth="1640">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="120" />
                                                 <ColumnDefinition Width="70" />
@@ -200,6 +202,7 @@
                                                 <ColumnDefinition Width="95" />
                                                 <ColumnDefinition Width="180" />
                                                 <ColumnDefinition Width="180" />
+                                                <ColumnDefinition Width="180" />
                                             </Grid.ColumnDefinitions>
 
                                             <TextBlock Grid.Column="0" Text="{Binding Timestamp}" />
@@ -210,12 +213,13 @@
                                             <TextBlock Grid.Column="5" Text="{Binding Volume}" />
                                             <TextBlock Grid.Column="6" Text="{Binding OpenPrice}" />
                                             <TextBlock Grid.Column="7" Text="{Binding ClosePrice}" />
-                                            <TextBlock Grid.Column="8" Text="{Binding Pnl}" />
-                                            <TextBlock Grid.Column="9" Text="{Binding Commission}" />
-                                            <TextBlock Grid.Column="10" Text="{Binding Sl}" />
-                                            <TextBlock Grid.Column="11" Text="{Binding Tp}" />
-                                            <TextBlock Grid.Column="12" Text="{Binding OpenTime}" />
-                                            <TextBlock Grid.Column="13" Text="{Binding CloseTime}" />
+                                            <TextBlock Grid.Column="8" Text="{Binding Profit}" />
+                                            <TextBlock Grid.Column="9" Text="{Binding FeeSpread}" />
+                                            <TextBlock Grid.Column="10" Text="{Binding Commission}" />
+                                            <TextBlock Grid.Column="11" Text="{Binding Sl}" />
+                                            <TextBlock Grid.Column="12" Text="{Binding Tp}" />
+                                            <TextBlock Grid.Column="13" Text="{Binding OpenTime}" />
+                                            <TextBlock Grid.Column="14" Text="{Binding CloseTime}" />
                                         </Grid>
                                     </DataTemplate>
                                 </ListBox.ItemTemplate>
@@ -342,8 +346,24 @@
                                       FontFamily="Consolas"
                                       FontSize="11"
                                       ScrollViewer.CanContentScroll="False"
-                                      ScrollViewer.HorizontalScrollBarVisibility="Visible"
+                                      ScrollViewer.HorizontalScrollBarVisibility="Hidden"
                                       ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                <DataGrid.Style>
+                                    <Style TargetType="DataGrid">
+                                        <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Hidden" />
+                                        <Style.Triggers>
+                                            <MultiDataTrigger>
+                                                <MultiDataTrigger.Conditions>
+                                                    <Condition Binding="{Binding IsMapAvailable}" Value="True" />
+                                                    <Condition Binding="{Binding IsLoading}" Value="False" />
+                                                    <Condition Binding="{Binding HasError}" Value="False" />
+                                                    <Condition Binding="{Binding IsEmpty}" Value="False" />
+                                                </MultiDataTrigger.Conditions>
+                                                <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Visible" />
+                                            </MultiDataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </DataGrid.Style>
                                 <DataGrid.ColumnHeaderStyle>
                                     <Style TargetType="DataGridColumnHeader">
                                         <Setter Property="FontWeight" Value="SemiBold" />
@@ -361,7 +381,8 @@
                                     <DataGridTextColumn Header="Volume" Binding="{Binding Volume}" Width="70" />
                                     <DataGridTextColumn Header="Open Price" Binding="{Binding OpenPrice}" Width="95" />
                                     <DataGridTextColumn Header="Close Price" Binding="{Binding ClosePrice}" Width="95" />
-                                    <DataGridTextColumn Header="PnL" Binding="{Binding Pnl}" Width="95" />
+                                    <DataGridTextColumn Header="Profit" Binding="{Binding Profit}" Width="95" />
+                                    <DataGridTextColumn Header="Fee Spread" Binding="{Binding FeeSpread}" Width="95" />
                                     <DataGridTextColumn Header="Commission" Binding="{Binding Commission}" Width="95" />
                                     <DataGridTextColumn Header="SL" Binding="{Binding Sl}" Width="95" />
                                     <DataGridTextColumn Header="TP" Binding="{Binding Tp}" Width="95" />
@@ -409,8 +430,24 @@
                                   FontFamily="Consolas"
                                   FontSize="11"
                                   ScrollViewer.CanContentScroll="False"
-                                  ScrollViewer.HorizontalScrollBarVisibility="Visible"
+                                  ScrollViewer.HorizontalScrollBarVisibility="Hidden"
                                   ScrollViewer.VerticalScrollBarVisibility="Auto">
+                            <DataGrid.Style>
+                                <Style TargetType="DataGrid">
+                                    <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Hidden" />
+                                    <Style.Triggers>
+                                        <MultiDataTrigger>
+                                            <MultiDataTrigger.Conditions>
+                                                <Condition Binding="{Binding IsMapAvailable}" Value="True" />
+                                                <Condition Binding="{Binding IsLoading}" Value="False" />
+                                                <Condition Binding="{Binding HasError}" Value="False" />
+                                                <Condition Binding="{Binding IsEmpty}" Value="False" />
+                                            </MultiDataTrigger.Conditions>
+                                            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Visible" />
+                                        </MultiDataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </DataGrid.Style>
                             <DataGrid.ColumnHeaderStyle>
                                 <Style TargetType="DataGridColumnHeader">
                                     <Setter Property="FontWeight" Value="SemiBold" />
@@ -430,6 +467,7 @@
                                 <DataGridTextColumn Header="SL" Binding="{Binding Sl}" Width="95" />
                                 <DataGridTextColumn Header="TP" Binding="{Binding Tp}" Width="95" />
                                 <DataGridTextColumn Header="Profit" Binding="{Binding Profit}" Width="95" />
+                                <DataGridTextColumn Header="Fee Spread" Binding="{Binding FeeSpread}" Width="95" />
                                 <DataGridTextColumn Header="Time" Binding="{Binding Time}" Width="180" />
                             </DataGrid.Columns>
                         </DataGrid>

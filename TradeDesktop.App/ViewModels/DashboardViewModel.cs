@@ -745,17 +745,18 @@ public sealed class DashboardViewModel : ObservableObject
             var shouldApplyTradeRight = ShouldApplyTradeResult(TradeTab.RightPanel.TargetMapName, tradeRightResult);
             var shouldApplyHistoryLeft = ShouldApplyHistoryResult(HistoryTab.LeftPanel.TargetMapName, historyLeftResult);
             var shouldApplyHistoryRight = ShouldApplyHistoryResult(HistoryTab.RightPanel.TargetMapName, historyRightResult);
+            var snapshot = _runtimeConfigState.CurrentDashboardMetrics;
 
             System.Windows.Application.Current.Dispatcher.Invoke(() =>
             {
                 if (shouldApplyTradeLeft)
                 {
-                    ApplyTradeResult(TradeTab.LeftPanel, tradeLeftResult);
+                    ApplyTradeResult(TradeTab.LeftPanel, tradeLeftResult, snapshot, isExchangeA: true);
                 }
 
                 if (shouldApplyTradeRight)
                 {
-                    ApplyTradeResult(TradeTab.RightPanel, tradeRightResult);
+                    ApplyTradeResult(TradeTab.RightPanel, tradeRightResult, snapshot, isExchangeA: false);
                 }
 
                 if (shouldApplyHistoryLeft)
@@ -809,7 +810,9 @@ public sealed class DashboardViewModel : ObservableObject
 
     private static void ApplyTradeResult(
         OrderPanelStatusViewModel panel,
-        SharedMapReadResult<TradeSharedRecord> result)
+        SharedMapReadResult<TradeSharedRecord> result,
+        DashboardMetrics? snapshot,
+        bool isExchangeA)
     {
         if (!result.IsMapAvailable)
         {
@@ -835,7 +838,7 @@ public sealed class DashboardViewModel : ObservableObject
             return;
         }
 
-        var rows = BuildTradeRows(result.Records, result.Count, result.Timestamp);
+        var rows = BuildTradeRows(result.Records, result.Count, result.Timestamp, snapshot, isExchangeA);
         panel.SetTradeData(rows);
     }
 
@@ -874,7 +877,9 @@ public sealed class DashboardViewModel : ObservableObject
     private static IEnumerable<TradeRowViewModel> BuildTradeRows(
         IReadOnlyList<TradeSharedRecord> records,
         int count,
-        ulong timestamp)
+        ulong timestamp,
+        DashboardMetrics? snapshot,
+        bool isExchangeA)
         => records.Select(record => new TradeRowViewModel(
             timestamp: FormatRawTimestamp(timestamp),
             count: count.ToString(CultureInfo.InvariantCulture),
@@ -885,7 +890,8 @@ public sealed class DashboardViewModel : ObservableObject
             price: FormatPrice(record.Price),
             sl: FormatPrice(record.Sl),
             tp: FormatPrice(record.Tp),
-            profit: FormatProfit(record.Profit),
+            profit: FormatProfit(CalculateTradeProfit(record, snapshot, isExchangeA)),
+            feeSpread: FormatProfit(record.Profit),
             time: FormatTradeTime(record.TimeMsc)));
 
     private static IEnumerable<HistoryRowViewModel> BuildHistoryRows(
@@ -901,12 +907,50 @@ public sealed class DashboardViewModel : ObservableObject
             volume: FormatRawDouble(record.Volume),
             openPrice: FormatRawDouble(record.OpenPrice),
             closePrice: FormatRawDouble(record.ClosePrice),
-            pnl: FormatRawDouble(record.Profit),
+            profit: FormatRawDouble(CalculateHistoryProfit(record)),
+            feeSpread: FormatRawDouble(record.Profit),
             commission: FormatRawDouble(record.Commission),
             sl: FormatRawDouble(record.Sl),
             tp: FormatRawDouble(record.Tp),
             openTime: FormatTradeTime(record.OpenTimeMsc),
             closeTime: FormatTradeTime(record.CloseTimeMsc)));
+
+    private static double CalculateTradeProfit(
+        TradeSharedRecord record,
+        DashboardMetrics? snapshot,
+        bool isExchangeA)
+    {
+        if (snapshot is null)
+        {
+            return 0d;
+        }
+
+        var exchange = isExchangeA ? snapshot.ExchangeA : snapshot.ExchangeB;
+        var openPrice = (decimal)record.Price;
+        var isBuy = record.TradeType == 0;
+
+        if (isBuy)
+        {
+            if (!exchange.Bid.HasValue)
+            {
+                return 0d;
+            }
+
+            return (double)((exchange.Bid.Value - openPrice) * 100m);
+        }
+
+        if (!exchange.Ask.HasValue)
+        {
+            return 0d;
+        }
+
+        return (double)((openPrice - exchange.Ask.Value) * 100m);
+    }
+
+    private static double CalculateHistoryProfit(HistorySharedRecord record)
+        => record.TradeType == 0
+            ? (record.ClosePrice - record.OpenPrice) * 100d
+            : (record.OpenPrice - record.ClosePrice) * 100d;
 
     private static string FormatTradeType(int tradeType)
         => tradeType == 0 ? "BUY" : "SELL";
