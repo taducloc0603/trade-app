@@ -6,4 +6,5 @@ public sealed record SharedMemoryTickRecord(
     double Bid,
     double Ask,
     double Spread,
+    long TickTimeMsc,
     string Symbol);
