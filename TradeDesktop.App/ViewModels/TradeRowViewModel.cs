@@ -12,7 +12,7 @@ public sealed class TradeRowViewModel
         string price,
         string sl,
         string tp,
-        string profit,
+        string feeSpread,
         string time)
     {
         Timestamp = timestamp;
@@ -24,7 +24,7 @@ public sealed class TradeRowViewModel
         Price = price;
         Sl = sl;
         Tp = tp;
-        Profit = profit;
+        FeeSpread = feeSpread;
         Time = time;
     }
 
@@ -37,6 +37,6 @@ public sealed class TradeRowViewModel
     public string Price { get; }
     public string Sl { get; }
     public string Tp { get; }
-    public string Profit { get; }
+    public string FeeSpread { get; }
     public string Time { get; }
 }

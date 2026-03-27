@@ -885,7 +885,7 @@ public sealed class DashboardViewModel : ObservableObject
             price: FormatPrice(record.Price),
             sl: FormatPrice(record.Sl),
             tp: FormatPrice(record.Tp),
-            profit: FormatProfit(record.Profit),
+            feeSpread: FormatProfit(record.Profit),
             time: FormatTradeTime(record.TimeMsc)));
 
     private static IEnumerable<HistoryRowViewModel> BuildHistoryRows(
@@ -901,7 +901,7 @@ public sealed class DashboardViewModel : ObservableObject
             volume: FormatRawDouble(record.Volume),
             openPrice: FormatRawDouble(record.OpenPrice),
             closePrice: FormatRawDouble(record.ClosePrice),
-            pnl: FormatRawDouble(record.Profit),
+            feeSpread: FormatRawDouble(record.Profit),
             commission: FormatRawDouble(record.Commission),
             sl: FormatRawDouble(record.Sl),
             tp: FormatRawDouble(record.Tp),

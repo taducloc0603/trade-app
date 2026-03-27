@@ -325,6 +325,7 @@
                         <Grid>
                             <DataGrid ItemsSource="{Binding HistoryRows}"
                                       AutoGenerateColumns="False"
+                                      MinWidth="1460"
                                       IsReadOnly="True"
                                       CanUserAddRows="False"
                                       CanUserDeleteRows="False"
@@ -339,7 +340,7 @@
                                       Foreground="#101828"
                                       FontFamily="Consolas"
                                       FontSize="11"
-                                      ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                      ScrollViewer.HorizontalScrollBarVisibility="Visible"
                                       ScrollViewer.VerticalScrollBarVisibility="Auto">
                                 <DataGrid.ColumnHeaderStyle>
                                     <Style TargetType="DataGridColumnHeader">
@@ -358,7 +359,7 @@
                                     <DataGridTextColumn Header="Volume" Binding="{Binding Volume}" Width="70" />
                                     <DataGridTextColumn Header="Open Price" Binding="{Binding OpenPrice}" Width="95" />
                                     <DataGridTextColumn Header="Close Price" Binding="{Binding ClosePrice}" Width="95" />
-                                    <DataGridTextColumn Header="PnL" Binding="{Binding Pnl}" Width="95" />
+                                    <DataGridTextColumn Header="Fee Spread" Binding="{Binding FeeSpread}" Width="95" />
                                     <DataGridTextColumn Header="Commission" Binding="{Binding Commission}" Width="95" />
                                     <DataGridTextColumn Header="SL" Binding="{Binding Sl}" Width="95" />
                                     <DataGridTextColumn Header="TP" Binding="{Binding Tp}" Width="95" />
@@ -389,6 +390,7 @@
 
                         <DataGrid ItemsSource="{Binding TradeRows}"
                                   AutoGenerateColumns="False"
+                                  MinWidth="1090"
                                   IsReadOnly="True"
                                   CanUserAddRows="False"
                                   CanUserDeleteRows="False"
@@ -403,7 +405,7 @@
                                   Foreground="#101828"
                                   FontFamily="Consolas"
                                   FontSize="11"
-                                  ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                  ScrollViewer.HorizontalScrollBarVisibility="Visible"
                                   ScrollViewer.VerticalScrollBarVisibility="Auto">
                             <DataGrid.ColumnHeaderStyle>
                                 <Style TargetType="DataGridColumnHeader">
@@ -423,7 +425,7 @@
                                 <DataGridTextColumn Header="Price" Binding="{Binding Price}" Width="95" />
                                 <DataGridTextColumn Header="SL" Binding="{Binding Sl}" Width="95" />
                                 <DataGridTextColumn Header="TP" Binding="{Binding Tp}" Width="95" />
-                                <DataGridTextColumn Header="Profit" Binding="{Binding Profit}" Width="95" />
+                                <DataGridTextColumn Header="Fee Spread" Binding="{Binding FeeSpread}" Width="95" />
                                 <DataGridTextColumn Header="Time" Binding="{Binding Time}" Width="180" />
                             </DataGrid.Columns>
                         </DataGrid>
