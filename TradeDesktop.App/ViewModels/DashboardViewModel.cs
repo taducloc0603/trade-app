@@ -30,6 +30,7 @@ public sealed class DashboardViewModel : ObservableObject
     private readonly CancellationTokenSource _orderInfoPollingCts = new();
     private readonly Dictionary<string, ulong> _lastTradeTimestampByMap = new(StringComparer.Ordinal);
     private readonly Dictionary<string, ulong> _lastHistoryTimestampByMap = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (decimal? Bid, decimal? Ask)> _lastTradeQuoteByPanel = new(StringComparer.Ordinal);
 
     private static readonly TimeSpan OrderInfoPollInterval = TimeSpan.FromSeconds(1);
 
@@ -749,13 +750,15 @@ public sealed class DashboardViewModel : ObservableObject
             System.Windows.Application.Current.Dispatcher.Invoke(() =>
             {
                 var snapshotMetrics = _runtimeConfigState.CurrentDashboardMetrics;
+                var leftQuoteChanged = ShouldApplyTradeQuoteChange(TradeTab.LeftPanel.TargetMapName, snapshotMetrics?.ExchangeA);
+                var rightQuoteChanged = ShouldApplyTradeQuoteChange(TradeTab.RightPanel.TargetMapName, snapshotMetrics?.ExchangeB);
 
-                if (shouldApplyTradeLeft)
+                if (shouldApplyTradeLeft || leftQuoteChanged)
                 {
                     ApplyTradeResult(TradeTab.LeftPanel, tradeLeftResult, snapshotMetrics?.ExchangeA);
                 }
 
-                if (shouldApplyTradeRight)
+                if (shouldApplyTradeRight || rightQuoteChanged)
                 {
                     ApplyTradeResult(TradeTab.RightPanel, tradeRightResult, snapshotMetrics?.ExchangeB);
                 }
@@ -778,6 +781,7 @@ public sealed class DashboardViewModel : ObservableObject
         if (!result.IsMapAvailable || !result.IsParseSuccess)
         {
             _lastTradeTimestampByMap.Remove(mapName ?? string.Empty);
+            _lastTradeQuoteByPanel.Remove(mapName ?? string.Empty);
             return true;
         }
 
@@ -788,6 +792,26 @@ public sealed class DashboardViewModel : ObservableObject
         }
 
         _lastTradeTimestampByMap[key] = result.Timestamp;
+        return true;
+    }
+
+    private bool ShouldApplyTradeQuoteChange(string mapName, ExchangeDashboardMetrics? metrics)
+    {
+        if (metrics is null)
+        {
+            return false;
+        }
+
+        var key = mapName ?? string.Empty;
+        var current = (metrics.Bid, metrics.Ask);
+        if (_lastTradeQuoteByPanel.TryGetValue(key, out var previous) &&
+            previous.Bid == current.Bid &&
+            previous.Ask == current.Ask)
+        {
+            return false;
+        }
+
+        _lastTradeQuoteByPanel[key] = current;
         return true;
     }
 
