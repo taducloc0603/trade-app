@@ -10,6 +10,7 @@ namespace TradeDesktop.Infrastructure.MarketData;
 public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(120);
+    private static readonly decimal MaxReasonableLatencyMs = 86_400_000m; // 24h
 
     private const int ExpectedVersion = 1;
 
@@ -18,6 +19,7 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
     private const long BidOffset = 16;
     private const long AskOffset = 24;
     private const long SpreadOffset = 32;
+    private const long TickTimeMscOffset = 40;
     private const long SymbolOffset = 52;
     private const int MaxSymbolBytesToRead = 64;
 
@@ -135,16 +137,16 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
             var spreadDecimal = (decimal)tickRecord.Spread;
 
             Debug.WriteLine(
-                $"[SHM:{normalizedMapName}] version={tickRecord.Version} symbol={symbol} tsMs={tickRecord.TimestampMs} bid={tickRecord.Bid} ask={tickRecord.Ask} spread={tickRecord.Spread}");
+                $"[SHM:{normalizedMapName}] version={tickRecord.Version} symbol={symbol} tsMs={tickRecord.TimestampMs} tickTimeMsc={tickRecord.TickTimeMsc} bid={tickRecord.Bid} ask={tickRecord.Ask} spread={tickRecord.Spread}");
 
             return new ExchangeMetrics(
                 Symbol: symbol,
                 Bid: bidDecimal,
                 Ask: askDecimal,
                 Spread: spreadDecimal,
-                LatencyMs: TryComputeLatencyMs(tickRecord.TimestampMs),
+                LatencyMs: TryComputeLatencyMs(tickRecord.TickTimeMsc),
                 Tps: null,
-                Time: FormatTickTime(tickRecord.TimestampMs),
+                Time: FormatTickTime(tickRecord.TickTimeMsc),
                 MaxLatMs: null,
                 AvgLatMs: null,
                 IsConnected: true,
@@ -236,7 +238,7 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
         out SharedMemoryTickRecord tickRecord,
         out string? error)
     {
-        tickRecord = new SharedMemoryTickRecord(0, 0, 0, 0, 0, string.Empty);
+        tickRecord = new SharedMemoryTickRecord(0, 0, 0, 0, 0, 0, string.Empty);
         error = null;
 
         var capacity = accessor.Capacity;
@@ -263,6 +265,7 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
         var bid = accessor.ReadDouble(BidOffset);
         var ask = accessor.ReadDouble(AskOffset);
         var spread = accessor.ReadDouble(SpreadOffset);
+        var tickTimeMsc = accessor.ReadInt64(TickTimeMscOffset);
 
         if (double.IsNaN(bid) || double.IsInfinity(bid) || bid <= 0 ||
             double.IsNaN(ask) || double.IsInfinity(ask) || ask <= 0 ||
@@ -285,6 +288,7 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
             Bid: bid,
             Ask: ask,
             Spread: spread,
+            TickTimeMsc: tickTimeMsc,
             Symbol: symbol);
 
         return true;
@@ -330,8 +334,14 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
     {
         try
         {
-            var diff = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - timestampMs;
-            return diff < 0 ? 0 : diff;
+            var diff = Environment.TickCount64 - timestampMs;
+            if (diff < 0)
+            {
+                return 0;
+            }
+
+            var latency = (decimal)diff;
+            return latency > MaxReasonableLatencyMs ? null : latency;
         }
         catch
         {
