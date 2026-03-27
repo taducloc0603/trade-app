@@ -325,13 +325,14 @@
                         <Grid>
                             <DataGrid ItemsSource="{Binding HistoryRows}"
                                       AutoGenerateColumns="False"
-                                      MinWidth="1460"
                                       IsReadOnly="True"
                                       CanUserAddRows="False"
                                       CanUserDeleteRows="False"
                                       CanUserReorderColumns="False"
                                       CanUserResizeRows="False"
                                       CanUserSortColumns="False"
+                                      EnableColumnVirtualization="False"
+                                      EnableRowVirtualization="False"
                                       HeadersVisibility="Column"
                                       GridLinesVisibility="Horizontal"
                                       RowHeaderWidth="0"
@@ -340,6 +341,7 @@
                                       Foreground="#101828"
                                       FontFamily="Consolas"
                                       FontSize="11"
+                                      ScrollViewer.CanContentScroll="False"
                                       ScrollViewer.HorizontalScrollBarVisibility="Visible"
                                       ScrollViewer.VerticalScrollBarVisibility="Auto">
                                 <DataGrid.ColumnHeaderStyle>
@@ -390,13 +392,14 @@
 
                         <DataGrid ItemsSource="{Binding TradeRows}"
                                   AutoGenerateColumns="False"
-                                  MinWidth="1090"
                                   IsReadOnly="True"
                                   CanUserAddRows="False"
                                   CanUserDeleteRows="False"
                                   CanUserReorderColumns="False"
                                   CanUserResizeRows="False"
                                   CanUserSortColumns="False"
+                                  EnableColumnVirtualization="False"
+                                  EnableRowVirtualization="False"
                                   HeadersVisibility="Column"
                                   GridLinesVisibility="Horizontal"
                                   RowHeaderWidth="0"
@@ -405,6 +408,7 @@
                                   Foreground="#101828"
                                   FontFamily="Consolas"
                                   FontSize="11"
+                                  ScrollViewer.CanContentScroll="False"
                                   ScrollViewer.HorizontalScrollBarVisibility="Visible"
                                   ScrollViewer.VerticalScrollBarVisibility="Auto">
                             <DataGrid.ColumnHeaderStyle>
