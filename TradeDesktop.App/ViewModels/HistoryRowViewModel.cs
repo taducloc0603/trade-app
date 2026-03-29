@@ -20,7 +20,9 @@ public sealed class HistoryRowViewModel
         string tp,
         string openTime,
         string closeTime,
-        string closeEaTimeLocal)
+        string closeEaTimeLocal,
+        string openExecution,
+        string closeExecution)
     {
         Timestamp = timestamp;
         Count = count;
@@ -40,6 +42,8 @@ public sealed class HistoryRowViewModel
         OpenTime = openTime;
         CloseTime = closeTime;
         CloseEaTimeLocal = closeEaTimeLocal;
+        OpenExecution = openExecution;
+        CloseExecution = closeExecution;
     }
 
     public string Timestamp { get; }
@@ -60,4 +64,6 @@ public sealed class HistoryRowViewModel
     public string OpenTime { get; }
     public string CloseTime { get; }
     public string CloseEaTimeLocal { get; }
+    public string OpenExecution { get; }
+    public string CloseExecution { get; }
 }

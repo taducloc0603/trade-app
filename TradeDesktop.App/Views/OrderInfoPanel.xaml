@@ -346,18 +346,8 @@
                                       FontFamily="Consolas"
                                       FontSize="11"
                                       ScrollViewer.CanContentScroll="False"
-                                      ScrollViewer.HorizontalScrollBarVisibility="Hidden"
+                                      ScrollViewer.HorizontalScrollBarVisibility="Auto"
                                       ScrollViewer.VerticalScrollBarVisibility="Auto">
-                                <DataGrid.Style>
-                                    <Style TargetType="DataGrid">
-                                        <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Hidden" />
-                                        <Style.Triggers>
-                                            <Trigger Property="HasItems" Value="True">
-                                                <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Auto" />
-                                            </Trigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </DataGrid.Style>
                                 <DataGrid.ColumnHeaderStyle>
                                     <Style TargetType="DataGridColumnHeader">
                                         <Setter Property="FontWeight" Value="SemiBold" />
@@ -368,6 +358,8 @@
 
                                 <DataGrid.Columns>
                                     <DataGridTextColumn Header="Close EA Time Local" Binding="{Binding CloseEaTimeLocal}" Width="180" />
+                                <DataGridTextColumn Header="Open excution" Binding="{Binding OpenExecution}" Width="130" />
+                                <DataGridTextColumn Header="Close excution" Binding="{Binding CloseExecution}" Width="130" />
                                     <DataGridTextColumn Header="Timestamp" Binding="{Binding Timestamp}" Width="120" />
                                     <DataGridTextColumn Header="Count" Binding="{Binding Count}" Width="70" />
                                     <DataGridTextColumn Header="Symbol" Binding="{Binding Symbol}" Width="90" />
@@ -427,18 +419,8 @@
                                   FontFamily="Consolas"
                                   FontSize="11"
                                   ScrollViewer.CanContentScroll="False"
-                                  ScrollViewer.HorizontalScrollBarVisibility="Hidden"
+                                  ScrollViewer.HorizontalScrollBarVisibility="Auto"
                                   ScrollViewer.VerticalScrollBarVisibility="Auto">
-                            <DataGrid.Style>
-                                <Style TargetType="DataGrid">
-                                    <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Hidden" />
-                                    <Style.Triggers>
-                                        <Trigger Property="HasItems" Value="True">
-                                            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Auto" />
-                                        </Trigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </DataGrid.Style>
                             <DataGrid.ColumnHeaderStyle>
                                 <Style TargetType="DataGridColumnHeader">
                                     <Setter Property="FontWeight" Value="SemiBold" />
@@ -449,6 +431,7 @@
 
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="Open EA Time Local" Binding="{Binding OpenEaTimeLocal}" Width="180" />
+                                <DataGridTextColumn Header="Open excution" Binding="{Binding OpenExecution}" Width="130" />
                                 <DataGridTextColumn Header="Timestamp" Binding="{Binding Timestamp}" Width="120" />
                                 <DataGridTextColumn Header="Count" Binding="{Binding Count}" Width="70" />
                                 <DataGridTextColumn Header="Symbol" Binding="{Binding Symbol}" Width="90" />

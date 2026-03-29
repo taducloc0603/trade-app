@@ -31,17 +31,21 @@ public sealed class DashboardViewModel : ObservableObject
     private readonly Dictionary<string, ulong> _lastTradeTimestampByMap = new(StringComparer.Ordinal);
     private readonly Dictionary<string, ulong> _lastHistoryTimestampByMap = new(StringComparer.Ordinal);
     private readonly Dictionary<string, HashSet<ulong>> _knownTradeTicketsByMap = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, HashSet<ulong>> _knownHistoryTicketsByMap = new(StringComparer.Ordinal);
     private readonly Dictionary<string, List<ExpectedOpenCapture>> _pendingOpenExpectedByMap = new(StringComparer.Ordinal);
     private readonly Dictionary<ulong, ExpectedOpenCapture> _openExpectedByTicket = [];
     private readonly Dictionary<ulong, double> _openSlippageByTicket = [];
+    private readonly Dictionary<ulong, long> _openRequestedAtMonotonicMsByTicket = [];
+    private readonly Dictionary<ulong, long> _openExecutionMsByTicket = [];
     private readonly Dictionary<ulong, ExpectedCloseCapture> _closeExpectedByTicket = [];
+    private readonly Dictionary<ulong, long> _closeExecutionMsByTicket = [];
     private SharedMapReadResult<TradeSharedRecord>? _latestTradeLeftResult;
     private SharedMapReadResult<TradeSharedRecord>? _latestTradeRightResult;
 
     private static readonly TimeSpan OrderInfoPollInterval = TimeSpan.FromSeconds(1);
 
-    private sealed record ExpectedOpenCapture(int TradeType, double ExpectedPrice, DateTime CapturedAtUtc);
-    private sealed record ExpectedCloseCapture(int TradeType, double ExpectedPrice, DateTime CapturedAtUtc);
+    private sealed record ExpectedOpenCapture(int TradeType, double ExpectedPrice, long AppRequestedAtMonotonicMs);
+    private sealed record ExpectedCloseCapture(int TradeType, double ExpectedPrice, long AppRequestedAtMonotonicMs);
 
     private string _runtimeSummary = string.Empty;
     private string _dbInlineData = string.Empty;
@@ -484,7 +488,7 @@ public sealed class DashboardViewModel : ObservableObject
             _pendingOpenExpectedByMap[key] = pendingList;
         }
 
-        pendingList.Add(new ExpectedOpenCapture(tradeType, expectedPrice.Value, DateTime.UtcNow));
+        pendingList.Add(new ExpectedOpenCapture(tradeType, expectedPrice.Value, GetCurrentMonotonicMilliseconds()));
     }
 
     private void CaptureCloseExpected(CloseSelectionResult selection, DashboardMetrics? snapshot, bool isExchangeA)
@@ -503,7 +507,7 @@ public sealed class DashboardViewModel : ObservableObject
         _closeExpectedByTicket[selection.Request.Ticket] = new ExpectedCloseCapture(
             selection.TradeType.Value,
             expectedPrice.Value,
-            DateTime.UtcNow);
+            GetCurrentMonotonicMilliseconds());
     }
 
     private void AppendManualTradeLogs(ManualTradeResult result, DashboardMetrics? snapshot)
@@ -971,6 +975,7 @@ public sealed class DashboardViewModel : ObservableObject
             return;
         }
 
+        RegisterCloseExecutionForNewHistoryTickets(panel.TargetMapName, result.Records);
         var rows = BuildHistoryRows(result.Records, result.Count, result.Timestamp, point);
         panel.SetHistoryData(rows);
     }
@@ -1000,6 +1005,8 @@ public sealed class DashboardViewModel : ObservableObject
                 var capture = pendingList[pendingIndex];
                 pendingList.RemoveAt(pendingIndex);
                 _openExpectedByTicket[newRecord.Ticket] = capture;
+                _openRequestedAtMonotonicMsByTicket[newRecord.Ticket] = capture.AppRequestedAtMonotonicMs;
+                TryCacheOpenExecution(newRecord.Ticket, newRecord.OpenEaTimeLocal, capture.AppRequestedAtMonotonicMs);
             }
 
             if (pendingList.Count == 0)
@@ -1011,6 +1018,39 @@ public sealed class DashboardViewModel : ObservableObject
         _knownTradeTicketsByMap[key] = currentTickets;
     }
 
+    private void RegisterCloseExecutionForNewHistoryTickets(string historyMapName, IReadOnlyList<HistorySharedRecord> records)
+    {
+        var key = historyMapName ?? string.Empty;
+        if (!_knownHistoryTicketsByMap.TryGetValue(key, out var knownTickets))
+        {
+            knownTickets = [];
+            _knownHistoryTicketsByMap[key] = knownTickets;
+        }
+
+        var currentTickets = records.Select(r => r.Ticket).ToHashSet();
+        var newRecords = records
+            .Where(r => !knownTickets.Contains(r.Ticket))
+            .OrderBy(r => r.CloseTimeMsc)
+            .ToList();
+
+        foreach (var record in newRecords)
+        {
+            if (_closeExecutionMsByTicket.ContainsKey(record.Ticket))
+            {
+                continue;
+            }
+
+            if (!_closeExpectedByTicket.TryGetValue(record.Ticket, out var closeExpected) || closeExpected.TradeType != record.TradeType)
+            {
+                continue;
+            }
+
+            TryCacheCloseExecution(record.Ticket, record.CloseEaTimeLocal, closeExpected.AppRequestedAtMonotonicMs);
+        }
+
+        _knownHistoryTicketsByMap[key] = currentTickets;
+    }
+
     private IEnumerable<TradeRowViewModel> BuildTradeRows(
         IReadOnlyList<TradeSharedRecord> records,
         int count,
@@ -1018,46 +1058,117 @@ public sealed class DashboardViewModel : ObservableObject
         DashboardMetrics? snapshot,
         bool isExchangeA,
         int point)
-        => records.Select(record => new TradeRowViewModel(
-            timestamp: FormatRawTimestamp(timestamp),
-            count: count.ToString(CultureInfo.InvariantCulture),
-            symbol: record.Symbol,
-            ticket: record.Ticket.ToString(CultureInfo.InvariantCulture),
-            type: FormatTradeType(record.TradeType),
-            lot: FormatLot(record.Lot),
-            price: FormatPrice(record.Price),
-            sl: FormatPrice(record.Sl),
-            tp: FormatPrice(record.Tp),
-            slippage: FormatOptionalProfit(CalculateTradeOpenSlippage(record, point)),
-            profit: FormatProfit(CalculateTradeProfit(record, snapshot, isExchangeA, point)),
-            feeSpread: FormatProfit(record.Profit),
-            time: FormatTradeTime(record.TimeMsc),
-            openEaTimeLocal: FormatEaLocalTime(record.OpenEaTimeLocal)));
+        => records.Select(record =>
+        {
+            if (_openRequestedAtMonotonicMsByTicket.TryGetValue(record.Ticket, out var requestedAtMonotonicMs))
+            {
+                TryCacheOpenExecution(record.Ticket, record.OpenEaTimeLocal, requestedAtMonotonicMs);
+            }
+
+            _openExecutionMsByTicket.TryGetValue(record.Ticket, out var openExecutionMs);
+
+            return new TradeRowViewModel(
+                timestamp: FormatRawTimestamp(timestamp),
+                count: count.ToString(CultureInfo.InvariantCulture),
+                symbol: record.Symbol,
+                ticket: record.Ticket.ToString(CultureInfo.InvariantCulture),
+                type: FormatTradeType(record.TradeType),
+                lot: FormatLot(record.Lot),
+                price: FormatPrice(record.Price),
+                sl: FormatPrice(record.Sl),
+                tp: FormatPrice(record.Tp),
+                slippage: FormatOptionalProfit(CalculateTradeOpenSlippage(record, point)),
+                profit: FormatProfit(CalculateTradeProfit(record, snapshot, isExchangeA, point)),
+                feeSpread: FormatProfit(record.Profit),
+                time: FormatTradeTime(record.TimeMsc),
+                openEaTimeLocal: FormatEaLocalTime(record.OpenEaTimeLocal),
+                openExecution: FormatExecutionMs(_openExecutionMsByTicket.ContainsKey(record.Ticket) ? openExecutionMs : null));
+        });
 
     private IEnumerable<HistoryRowViewModel> BuildHistoryRows(
         IReadOnlyList<HistorySharedRecord> records,
         int count,
         ulong timestamp,
         int point)
-        => records.Select(record => new HistoryRowViewModel(
-            timestamp: FormatRawTimestamp(timestamp),
-            count: count.ToString(CultureInfo.InvariantCulture),
-            symbol: record.Symbol,
-            ticket: record.Ticket.ToString(CultureInfo.InvariantCulture),
-            type: FormatTradeType(record.TradeType),
-            volume: FormatRawDouble(record.Volume),
-            openPrice: FormatRawDouble(record.OpenPrice),
-            closePrice: FormatRawDouble(record.ClosePrice),
-            openSlippage: FormatOptionalProfit(CalculateHistoryOpenSlippage(record, point)),
-            closeSlippage: FormatOptionalProfit(CalculateHistoryCloseSlippage(record, point)),
-            profit: FormatRawDouble(CalculateHistoryProfit(record)),
-            feeSpread: FormatRawDouble(record.Profit),
-            commission: FormatRawDouble(record.Commission),
-            sl: FormatRawDouble(record.Sl),
-            tp: FormatRawDouble(record.Tp),
-            openTime: FormatTradeTime(record.OpenTimeMsc),
-            closeTime: FormatTradeTime(record.CloseTimeMsc),
-            closeEaTimeLocal: FormatEaLocalTime(record.CloseEaTimeLocal)));
+        => records.Select(record =>
+        {
+            _openExecutionMsByTicket.TryGetValue(record.Ticket, out var openExecutionMs);
+            _closeExecutionMsByTicket.TryGetValue(record.Ticket, out var closeExecutionMs);
+
+            return new HistoryRowViewModel(
+                timestamp: FormatRawTimestamp(timestamp),
+                count: count.ToString(CultureInfo.InvariantCulture),
+                symbol: record.Symbol,
+                ticket: record.Ticket.ToString(CultureInfo.InvariantCulture),
+                type: FormatTradeType(record.TradeType),
+                volume: FormatRawDouble(record.Volume),
+                openPrice: FormatRawDouble(record.OpenPrice),
+                closePrice: FormatRawDouble(record.ClosePrice),
+                openSlippage: FormatOptionalProfit(CalculateHistoryOpenSlippage(record, point)),
+                closeSlippage: FormatOptionalProfit(CalculateHistoryCloseSlippage(record, point)),
+                profit: FormatRawDouble(CalculateHistoryProfit(record)),
+                feeSpread: FormatRawDouble(record.Profit),
+                commission: FormatRawDouble(record.Commission),
+                sl: FormatRawDouble(record.Sl),
+                tp: FormatRawDouble(record.Tp),
+                openTime: FormatTradeTime(record.OpenTimeMsc),
+                closeTime: FormatTradeTime(record.CloseTimeMsc),
+                closeEaTimeLocal: FormatEaLocalTime(record.CloseEaTimeLocal),
+                openExecution: FormatExecutionMs(_openExecutionMsByTicket.ContainsKey(record.Ticket) ? openExecutionMs : null),
+                closeExecution: FormatExecutionMs(_closeExecutionMsByTicket.ContainsKey(record.Ticket) ? closeExecutionMs : null));
+        });
+
+    private void TryCacheOpenExecution(ulong ticket, ulong eaTimeLocalMs, long appRequestedAtMonotonicMs)
+    {
+        if (_openExecutionMsByTicket.ContainsKey(ticket))
+        {
+            return;
+        }
+
+        if (!TryComputeExecutionMilliseconds(eaTimeLocalMs, appRequestedAtMonotonicMs, out var executionMs))
+        {
+            return;
+        }
+
+        _openExecutionMsByTicket[ticket] = executionMs;
+    }
+
+    private void TryCacheCloseExecution(ulong ticket, ulong eaTimeLocalMs, long appRequestedAtMonotonicMs)
+    {
+        if (_closeExecutionMsByTicket.ContainsKey(ticket))
+        {
+            return;
+        }
+
+        if (!TryComputeExecutionMilliseconds(eaTimeLocalMs, appRequestedAtMonotonicMs, out var executionMs))
+        {
+            return;
+        }
+
+        _closeExecutionMsByTicket[ticket] = executionMs;
+    }
+
+    private static bool TryComputeExecutionMilliseconds(
+        ulong eaTimeLocalMs,
+        long appRequestedAtMonotonicMs,
+        out long executionMs)
+    {
+        executionMs = 0;
+        if (eaTimeLocalMs == 0 || eaTimeLocalMs > long.MaxValue)
+        {
+            return false;
+        }
+
+        var eaTimeLocalMsSigned = (long)eaTimeLocalMs;
+        var diff = eaTimeLocalMsSigned - appRequestedAtMonotonicMs;
+        if (diff < 0)
+        {
+            return false;
+        }
+
+        executionMs = diff;
+        return true;
+    }
 
     private double? CalculateTradeOpenSlippage(TradeSharedRecord record, int point)
     {
@@ -1159,6 +1270,14 @@ public sealed class DashboardViewModel : ObservableObject
         => value.HasValue
             ? value.Value.ToString("0.00", CultureInfo.InvariantCulture)
             : "-";
+
+    private static string FormatExecutionMs(long? value)
+        => value.HasValue && value.Value >= 0
+            ? $"{value.Value.ToString(CultureInfo.InvariantCulture)} ms"
+            : "-";
+
+    private static long GetCurrentMonotonicMilliseconds()
+        => Environment.TickCount64;
 
     private static string FormatTradeTime(ulong timeMsc)
     {
