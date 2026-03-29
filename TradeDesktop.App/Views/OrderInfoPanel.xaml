@@ -346,11 +346,22 @@
                                       FontFamily="Consolas"
                                       FontSize="11"
                                       ScrollViewer.CanContentScroll="False"
-                                      ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                      ScrollViewer.HorizontalScrollBarVisibility="Hidden"
                                       ScrollViewer.VerticalScrollBarVisibility="Auto">
                                 <DataGrid.Style>
                                     <Style TargetType="DataGrid">
-                                        <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Auto" />
+                                        <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Hidden" />
+                                        <Style.Triggers>
+                                            <MultiDataTrigger>
+                                                <MultiDataTrigger.Conditions>
+                                                    <Condition Binding="{Binding IsMapAvailable}" Value="True" />
+                                                    <Condition Binding="{Binding IsLoading}" Value="False" />
+                                                    <Condition Binding="{Binding HasError}" Value="False" />
+                                                    <Condition Binding="{Binding IsEmpty}" Value="False" />
+                                                </MultiDataTrigger.Conditions>
+                                                <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Visible" />
+                                            </MultiDataTrigger>
+                                        </Style.Triggers>
                                     </Style>
                                 </DataGrid.Style>
                                 <DataGrid.ColumnHeaderStyle>
@@ -362,6 +373,7 @@
                                 </DataGrid.ColumnHeaderStyle>
 
                                 <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Close EA Time Local" Binding="{Binding CloseEaTimeLocal}" Width="180" />
                                     <DataGridTextColumn Header="Timestamp" Binding="{Binding Timestamp}" Width="120" />
                                     <DataGridTextColumn Header="Count" Binding="{Binding Count}" Width="70" />
                                     <DataGridTextColumn Header="Symbol" Binding="{Binding Symbol}" Width="90" />
@@ -379,7 +391,6 @@
                                     <DataGridTextColumn Header="TP" Binding="{Binding Tp}" Width="95" />
                                     <DataGridTextColumn Header="Open Time" Binding="{Binding OpenTime}" Width="180" />
                                     <DataGridTextColumn Header="Close Time" Binding="{Binding CloseTime}" Width="180" />
-                                    <DataGridTextColumn Header="Close EA Time Local" Binding="{Binding CloseEaTimeLocal}" Width="180" />
                                 </DataGrid.Columns>
                             </DataGrid>
                         </Grid>
@@ -422,11 +433,22 @@
                                   FontFamily="Consolas"
                                   FontSize="11"
                                   ScrollViewer.CanContentScroll="False"
-                                  ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                  ScrollViewer.HorizontalScrollBarVisibility="Hidden"
                                   ScrollViewer.VerticalScrollBarVisibility="Auto">
                             <DataGrid.Style>
                                 <Style TargetType="DataGrid">
-                                    <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Auto" />
+                                    <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Hidden" />
+                                    <Style.Triggers>
+                                        <MultiDataTrigger>
+                                            <MultiDataTrigger.Conditions>
+                                                <Condition Binding="{Binding IsMapAvailable}" Value="True" />
+                                                <Condition Binding="{Binding IsLoading}" Value="False" />
+                                                <Condition Binding="{Binding HasError}" Value="False" />
+                                                <Condition Binding="{Binding IsEmpty}" Value="False" />
+                                            </MultiDataTrigger.Conditions>
+                                            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Visible" />
+                                        </MultiDataTrigger>
+                                    </Style.Triggers>
                                 </Style>
                             </DataGrid.Style>
                             <DataGrid.ColumnHeaderStyle>
@@ -438,6 +460,7 @@
                             </DataGrid.ColumnHeaderStyle>
 
                             <DataGrid.Columns>
+                                <DataGridTextColumn Header="Open EA Time Local" Binding="{Binding OpenEaTimeLocal}" Width="180" />
                                 <DataGridTextColumn Header="Timestamp" Binding="{Binding Timestamp}" Width="120" />
                                 <DataGridTextColumn Header="Count" Binding="{Binding Count}" Width="70" />
                                 <DataGridTextColumn Header="Symbol" Binding="{Binding Symbol}" Width="90" />
@@ -451,7 +474,6 @@
                                 <DataGridTextColumn Header="Profit" Binding="{Binding Profit}" Width="95" />
                                 <DataGridTextColumn Header="Fee Spread" Binding="{Binding FeeSpread}" Width="95" />
                                 <DataGridTextColumn Header="Time" Binding="{Binding Time}" Width="180" />
-                                <DataGridTextColumn Header="Open EA Time Local" Binding="{Binding OpenEaTimeLocal}" Width="180" />
                             </DataGrid.Columns>
                         </DataGrid>
                     </Border>

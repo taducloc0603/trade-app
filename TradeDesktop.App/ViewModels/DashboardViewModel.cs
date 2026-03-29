@@ -1032,7 +1032,7 @@ public sealed class DashboardViewModel : ObservableObject
             profit: FormatProfit(CalculateTradeProfit(record, snapshot, isExchangeA, point)),
             feeSpread: FormatProfit(record.Profit),
             time: FormatTradeTime(record.TimeMsc),
-            openEaTimeLocal: FormatRawTimestamp(record.OpenEaTimeLocal)));
+            openEaTimeLocal: FormatEaLocalTime(record.OpenEaTimeLocal)));
 
     private IEnumerable<HistoryRowViewModel> BuildHistoryRows(
         IReadOnlyList<HistorySharedRecord> records,
@@ -1057,7 +1057,7 @@ public sealed class DashboardViewModel : ObservableObject
             tp: FormatRawDouble(record.Tp),
             openTime: FormatTradeTime(record.OpenTimeMsc),
             closeTime: FormatTradeTime(record.CloseTimeMsc),
-            closeEaTimeLocal: FormatRawTimestamp(record.CloseEaTimeLocal)));
+            closeEaTimeLocal: FormatEaLocalTime(record.CloseEaTimeLocal)));
 
     private double? CalculateTradeOpenSlippage(TradeSharedRecord record, int point)
     {
@@ -1171,6 +1171,25 @@ public sealed class DashboardViewModel : ObservableObject
         {
             var clamped = timeMsc > long.MaxValue ? long.MaxValue : (long)timeMsc;
             return DateTimeOffset.FromUnixTimeMilliseconds(clamped).ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture);
+        }
+        catch
+        {
+            return FormatRawTimestamp(timeMsc);
+        }
+    }
+
+    private static string FormatEaLocalTime(ulong timeMsc)
+    {
+        if (timeMsc == 0)
+        {
+            return "-";
+        }
+
+        try
+        {
+            var clamped = timeMsc > long.MaxValue ? long.MaxValue : (long)timeMsc;
+            var time = TimeSpan.FromMilliseconds(clamped);
+            return $"{time.Hours:00}:{time.Minutes:00}:{time.Seconds:00}.{time.Milliseconds:000}";
         }
         catch
         {
