@@ -30,8 +30,17 @@ public sealed class DashboardViewModel : ObservableObject
     private readonly CancellationTokenSource _orderInfoPollingCts = new();
     private readonly Dictionary<string, ulong> _lastTradeTimestampByMap = new(StringComparer.Ordinal);
     private readonly Dictionary<string, ulong> _lastHistoryTimestampByMap = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, HashSet<ulong>> _knownTradeTicketsByMap = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, List<ExpectedOpenCapture>> _pendingOpenExpectedByMap = new(StringComparer.Ordinal);
+    private readonly Dictionary<ulong, ExpectedOpenCapture> _openExpectedByTicket = [];
+    private readonly Dictionary<ulong, ExpectedCloseCapture> _closeExpectedByTicket = [];
+    private SharedMapReadResult<TradeSharedRecord>? _latestTradeLeftResult;
+    private SharedMapReadResult<TradeSharedRecord>? _latestTradeRightResult;
 
     private static readonly TimeSpan OrderInfoPollInterval = TimeSpan.FromSeconds(1);
+
+    private sealed record ExpectedOpenCapture(int TradeType, double ExpectedPrice, DateTime CapturedAtUtc);
+    private sealed record ExpectedCloseCapture(int TradeType, double ExpectedPrice, DateTime CapturedAtUtc);
 
     private string _runtimeSummary = string.Empty;
     private string _dbInlineData = string.Empty;
@@ -337,6 +346,8 @@ public sealed class DashboardViewModel : ObservableObject
     private async Task BuyAsync()
     {
         var snapshot = _runtimeConfigState.CurrentDashboardMetrics;
+        EnqueueOpenExpected(TradeTab.LeftPanel.TargetMapName, snapshot, isExchangeA: true, tradeType: 0);
+        EnqueueOpenExpected(TradeTab.RightPanel.TargetMapName, snapshot, isExchangeA: false, tradeType: 1);
         var result = await _mt5ManualTradeService.ExecuteBuyAsync(
             _runtimeConfigState.CurrentChartHwndA,
             _runtimeConfigState.CurrentChartHwndB);
@@ -348,6 +359,8 @@ public sealed class DashboardViewModel : ObservableObject
     private async Task SellAsync()
     {
         var snapshot = _runtimeConfigState.CurrentDashboardMetrics;
+        EnqueueOpenExpected(TradeTab.LeftPanel.TargetMapName, snapshot, isExchangeA: true, tradeType: 1);
+        EnqueueOpenExpected(TradeTab.RightPanel.TargetMapName, snapshot, isExchangeA: false, tradeType: 0);
         var result = await _mt5ManualTradeService.ExecuteSellAsync(
             _runtimeConfigState.CurrentChartHwndA,
             _runtimeConfigState.CurrentChartHwndB);
@@ -369,6 +382,9 @@ public sealed class DashboardViewModel : ObservableObject
             tradeMapName: TradeTab.RightPanel.TargetMapName,
             tradeHwnd: _runtimeConfigState.CurrentTradeHwndB);
 
+        CaptureCloseExpected(selectA, snapshot, isExchangeA: true);
+        CaptureCloseExpected(selectB, snapshot, isExchangeA: false);
+
         var result = await _mt5ManualTradeService.ExecuteCloseAsync(
             selectA.Request,
             selectB.Request);
@@ -387,6 +403,7 @@ public sealed class DashboardViewModel : ObservableObject
             return new CloseSelectionResult(
                 Request: null,
                 Status: CloseSelectionStatus.MapNotFound,
+                TradeType: null,
                 DiagnosticMessage: $"Close {exchangeLabel} skipped: map not found ({tradeMapName})");
         }
 
@@ -395,6 +412,7 @@ public sealed class DashboardViewModel : ObservableObject
             return new CloseSelectionResult(
                 Request: null,
                 Status: CloseSelectionStatus.ParseError,
+                TradeType: null,
                 DiagnosticMessage: $"Close {exchangeLabel} skipped: parse error ({result.ErrorMessage ?? "unknown"})");
         }
 
@@ -403,6 +421,7 @@ public sealed class DashboardViewModel : ObservableObject
             return new CloseSelectionResult(
                 Request: null,
                 Status: CloseSelectionStatus.NoOpenTrade,
+                TradeType: null,
                 DiagnosticMessage: null);
         }
 
@@ -410,6 +429,7 @@ public sealed class DashboardViewModel : ObservableObject
         return new CloseSelectionResult(
             Request: new ManualCloseRequest(exchangeLabel, tradeHwnd, firstTrade.Ticket),
             Status: CloseSelectionStatus.Candidate,
+            TradeType: firstTrade.TradeType,
             DiagnosticMessage: null);
     }
 
@@ -445,7 +465,45 @@ public sealed class DashboardViewModel : ObservableObject
     private sealed record CloseSelectionResult(
         ManualCloseRequest? Request,
         CloseSelectionStatus Status,
+        int? TradeType,
         string? DiagnosticMessage);
+
+    private void EnqueueOpenExpected(string tradeMapName, DashboardMetrics? snapshot, bool isExchangeA, int tradeType)
+    {
+        var expectedPrice = ResolveExpectedOpenPrice(snapshot, isExchangeA, tradeType);
+        if (!expectedPrice.HasValue)
+        {
+            return;
+        }
+
+        var key = tradeMapName ?? string.Empty;
+        if (!_pendingOpenExpectedByMap.TryGetValue(key, out var pendingList))
+        {
+            pendingList = [];
+            _pendingOpenExpectedByMap[key] = pendingList;
+        }
+
+        pendingList.Add(new ExpectedOpenCapture(tradeType, expectedPrice.Value, DateTime.UtcNow));
+    }
+
+    private void CaptureCloseExpected(CloseSelectionResult selection, DashboardMetrics? snapshot, bool isExchangeA)
+    {
+        if (selection.Request is null || !selection.TradeType.HasValue)
+        {
+            return;
+        }
+
+        var expectedPrice = ResolveExpectedClosePrice(snapshot, isExchangeA, selection.TradeType.Value);
+        if (!expectedPrice.HasValue)
+        {
+            return;
+        }
+
+        _closeExpectedByTicket[selection.Request.Ticket] = new ExpectedCloseCapture(
+            selection.TradeType.Value,
+            expectedPrice.Value,
+            DateTime.UtcNow);
+    }
 
     private void AppendManualTradeLogs(ManualTradeResult result, DashboardMetrics? snapshot)
     {
@@ -518,6 +576,42 @@ public sealed class DashboardViewModel : ObservableObject
         }
 
         return null;
+    }
+
+    private static double? ResolveExpectedOpenPrice(DashboardMetrics? snapshot, bool isExchangeA, int tradeType)
+    {
+        if (snapshot is null)
+        {
+            return null;
+        }
+
+        var exchange = isExchangeA ? snapshot.ExchangeA : snapshot.ExchangeB;
+        var isBuy = tradeType == 0;
+
+        if (isBuy)
+        {
+            return exchange.Ask.HasValue ? (double)exchange.Ask.Value : null;
+        }
+
+        return exchange.Bid.HasValue ? (double)exchange.Bid.Value : null;
+    }
+
+    private static double? ResolveExpectedClosePrice(DashboardMetrics? snapshot, bool isExchangeA, int originalTradeType)
+    {
+        if (snapshot is null)
+        {
+            return null;
+        }
+
+        var exchange = isExchangeA ? snapshot.ExchangeA : snapshot.ExchangeB;
+        var isBuyPosition = originalTradeType == 0;
+
+        if (isBuyPosition)
+        {
+            return exchange.Bid.HasValue ? (double)exchange.Bid.Value : null;
+        }
+
+        return exchange.Ask.HasValue ? (double)exchange.Ask.Value : null;
     }
 
     private void ShowManualTradeFeedback(string actionName, ManualTradeResult result)
@@ -746,27 +840,30 @@ public sealed class DashboardViewModel : ObservableObject
             var shouldApplyHistoryLeft = ShouldApplyHistoryResult(HistoryTab.LeftPanel.TargetMapName, historyLeftResult);
             var shouldApplyHistoryRight = ShouldApplyHistoryResult(HistoryTab.RightPanel.TargetMapName, historyRightResult);
             var snapshot = _runtimeConfigState.CurrentDashboardMetrics;
+            var point = _runtimeConfigState.CurrentPoint;
 
             System.Windows.Application.Current.Dispatcher.Invoke(() =>
             {
                 if (shouldApplyTradeLeft)
                 {
-                    ApplyTradeResult(TradeTab.LeftPanel, tradeLeftResult, snapshot, isExchangeA: true);
+                    _latestTradeLeftResult = tradeLeftResult;
+                    ApplyTradeResult(TradeTab.LeftPanel, tradeLeftResult, snapshot, isExchangeA: true, point);
                 }
 
                 if (shouldApplyTradeRight)
                 {
-                    ApplyTradeResult(TradeTab.RightPanel, tradeRightResult, snapshot, isExchangeA: false);
+                    _latestTradeRightResult = tradeRightResult;
+                    ApplyTradeResult(TradeTab.RightPanel, tradeRightResult, snapshot, isExchangeA: false, point);
                 }
 
                 if (shouldApplyHistoryLeft)
                 {
-                    ApplyHistoryResult(HistoryTab.LeftPanel, historyLeftResult);
+                    ApplyHistoryResult(HistoryTab.LeftPanel, historyLeftResult, point);
                 }
 
                 if (shouldApplyHistoryRight)
                 {
-                    ApplyHistoryResult(HistoryTab.RightPanel, historyRightResult);
+                    ApplyHistoryResult(HistoryTab.RightPanel, historyRightResult, point);
                 }
             });
         }
@@ -808,11 +905,12 @@ public sealed class DashboardViewModel : ObservableObject
         return true;
     }
 
-    private static void ApplyTradeResult(
+    private void ApplyTradeResult(
         OrderPanelStatusViewModel panel,
         SharedMapReadResult<TradeSharedRecord> result,
         DashboardMetrics? snapshot,
-        bool isExchangeA)
+        bool isExchangeA,
+        int point)
     {
         if (!result.IsMapAvailable)
         {
@@ -838,13 +936,15 @@ public sealed class DashboardViewModel : ObservableObject
             return;
         }
 
-        var rows = BuildTradeRows(result.Records, result.Count, result.Timestamp, snapshot, isExchangeA);
+        RegisterOpenExpectedForNewTickets(panel.TargetMapName, result.Records);
+        var rows = BuildTradeRows(result.Records, result.Count, result.Timestamp, snapshot, isExchangeA, point);
         panel.SetTradeData(rows);
     }
 
-    private static void ApplyHistoryResult(
+    private void ApplyHistoryResult(
         OrderPanelStatusViewModel panel,
-        SharedMapReadResult<HistorySharedRecord> result)
+        SharedMapReadResult<HistorySharedRecord> result,
+        int point)
     {
         if (!result.IsMapAvailable)
         {
@@ -870,16 +970,53 @@ public sealed class DashboardViewModel : ObservableObject
             return;
         }
 
-        var rows = BuildHistoryRows(result.Records, result.Count, result.Timestamp);
+        var rows = BuildHistoryRows(result.Records, result.Count, result.Timestamp, point);
         panel.SetHistoryData(rows);
     }
 
-    private static IEnumerable<TradeRowViewModel> BuildTradeRows(
+    private void RegisterOpenExpectedForNewTickets(string tradeMapName, IReadOnlyList<TradeSharedRecord> records)
+    {
+        var key = tradeMapName ?? string.Empty;
+        if (!_knownTradeTicketsByMap.TryGetValue(key, out var knownTickets))
+        {
+            knownTickets = [];
+            _knownTradeTicketsByMap[key] = knownTickets;
+        }
+
+        var currentTickets = records.Select(r => r.Ticket).ToHashSet();
+        var newRecords = records.Where(r => !knownTickets.Contains(r.Ticket)).OrderBy(r => r.TimeMsc).ToList();
+
+        if (_pendingOpenExpectedByMap.TryGetValue(key, out var pendingList) && pendingList.Count > 0)
+        {
+            foreach (var newRecord in newRecords)
+            {
+                var pendingIndex = pendingList.FindIndex(p => p.TradeType == newRecord.TradeType);
+                if (pendingIndex < 0)
+                {
+                    pendingIndex = 0;
+                }
+
+                var capture = pendingList[pendingIndex];
+                pendingList.RemoveAt(pendingIndex);
+                _openExpectedByTicket[newRecord.Ticket] = capture;
+            }
+
+            if (pendingList.Count == 0)
+            {
+                _pendingOpenExpectedByMap.Remove(key);
+            }
+        }
+
+        _knownTradeTicketsByMap[key] = currentTickets;
+    }
+
+    private IEnumerable<TradeRowViewModel> BuildTradeRows(
         IReadOnlyList<TradeSharedRecord> records,
         int count,
         ulong timestamp,
         DashboardMetrics? snapshot,
-        bool isExchangeA)
+        bool isExchangeA,
+        int point)
         => records.Select(record => new TradeRowViewModel(
             timestamp: FormatRawTimestamp(timestamp),
             count: count.ToString(CultureInfo.InvariantCulture),
@@ -890,14 +1027,16 @@ public sealed class DashboardViewModel : ObservableObject
             price: FormatPrice(record.Price),
             sl: FormatPrice(record.Sl),
             tp: FormatPrice(record.Tp),
-            profit: FormatProfit(CalculateTradeProfit(record, snapshot, isExchangeA)),
+            slippage: FormatOptionalProfit(CalculateTradeOpenSlippage(record, point)),
+            profit: FormatProfit(CalculateTradeProfit(record, snapshot, isExchangeA, point)),
             feeSpread: FormatProfit(record.Profit),
             time: FormatTradeTime(record.TimeMsc)));
 
-    private static IEnumerable<HistoryRowViewModel> BuildHistoryRows(
+    private IEnumerable<HistoryRowViewModel> BuildHistoryRows(
         IReadOnlyList<HistorySharedRecord> records,
         int count,
-        ulong timestamp)
+        ulong timestamp,
+        int point)
         => records.Select(record => new HistoryRowViewModel(
             timestamp: FormatRawTimestamp(timestamp),
             count: count.ToString(CultureInfo.InvariantCulture),
@@ -907,6 +1046,8 @@ public sealed class DashboardViewModel : ObservableObject
             volume: FormatRawDouble(record.Volume),
             openPrice: FormatRawDouble(record.OpenPrice),
             closePrice: FormatRawDouble(record.ClosePrice),
+            openSlippage: FormatOptionalProfit(CalculateHistoryOpenSlippage(record, point)),
+            closeSlippage: FormatOptionalProfit(CalculateHistoryCloseSlippage(record, point)),
             profit: FormatRawDouble(CalculateHistoryProfit(record)),
             feeSpread: FormatRawDouble(record.Profit),
             commission: FormatRawDouble(record.Commission),
@@ -915,10 +1056,50 @@ public sealed class DashboardViewModel : ObservableObject
             openTime: FormatTradeTime(record.OpenTimeMsc),
             closeTime: FormatTradeTime(record.CloseTimeMsc)));
 
+    private double? CalculateTradeOpenSlippage(TradeSharedRecord record, int point)
+    {
+        if (!_openExpectedByTicket.TryGetValue(record.Ticket, out var expected) || expected.TradeType != record.TradeType)
+        {
+            return null;
+        }
+
+        var pointValue = Math.Max(1, point);
+        return record.TradeType == 0
+            ? (expected.ExpectedPrice - record.Price) * pointValue
+            : (record.Price - expected.ExpectedPrice) * pointValue;
+    }
+
+    private double? CalculateHistoryOpenSlippage(HistorySharedRecord record, int point)
+    {
+        if (!_openExpectedByTicket.TryGetValue(record.Ticket, out var expected) || expected.TradeType != record.TradeType)
+        {
+            return null;
+        }
+
+        var pointValue = Math.Max(1, point);
+        return record.TradeType == 0
+            ? (expected.ExpectedPrice - record.OpenPrice) * pointValue
+            : (record.OpenPrice - expected.ExpectedPrice) * pointValue;
+    }
+
+    private double? CalculateHistoryCloseSlippage(HistorySharedRecord record, int point)
+    {
+        if (!_closeExpectedByTicket.TryGetValue(record.Ticket, out var expected) || expected.TradeType != record.TradeType)
+        {
+            return null;
+        }
+
+        var pointValue = Math.Max(1, point);
+        return record.TradeType == 0
+            ? (record.ClosePrice - expected.ExpectedPrice) * pointValue
+            : (expected.ExpectedPrice - record.ClosePrice) * pointValue;
+    }
+
     private static double CalculateTradeProfit(
         TradeSharedRecord record,
         DashboardMetrics? snapshot,
-        bool isExchangeA)
+        bool isExchangeA,
+        int point)
     {
         if (snapshot is null)
         {
@@ -927,6 +1108,7 @@ public sealed class DashboardViewModel : ObservableObject
 
         var exchange = isExchangeA ? snapshot.ExchangeA : snapshot.ExchangeB;
         var openPrice = (decimal)record.Price;
+        var pointValue = Math.Max(1, point);
         var isBuy = record.TradeType == 0;
 
         if (isBuy)
@@ -936,7 +1118,7 @@ public sealed class DashboardViewModel : ObservableObject
                 return 0d;
             }
 
-            return (double)((exchange.Bid.Value - openPrice) * 100m);
+            return (double)((exchange.Bid.Value - openPrice) * pointValue);
         }
 
         if (!exchange.Ask.HasValue)
@@ -944,7 +1126,7 @@ public sealed class DashboardViewModel : ObservableObject
             return 0d;
         }
 
-        return (double)((openPrice - exchange.Ask.Value) * 100m);
+        return (double)((openPrice - exchange.Ask.Value) * pointValue);
     }
 
     private static double CalculateHistoryProfit(HistorySharedRecord record)
@@ -969,6 +1151,11 @@ public sealed class DashboardViewModel : ObservableObject
 
     private static string FormatProfit(double value)
         => value.ToString("0.00", CultureInfo.InvariantCulture);
+
+    private static string FormatOptionalProfit(double? value)
+        => value.HasValue
+            ? value.Value.ToString("0.00", CultureInfo.InvariantCulture)
+            : "-";
 
     private static string FormatTradeTime(ulong timeMsc)
     {
@@ -1097,6 +1284,7 @@ public sealed class DashboardViewModel : ObservableObject
             IsLoading = false;
 
             BindDashboardMetrics(metrics);
+            RefreshTradeRowsFromSnapshot(metrics, _runtimeConfigState.CurrentPoint);
 
             if (!IsTradingLogicEnabled)
             {
@@ -1156,6 +1344,29 @@ public sealed class DashboardViewModel : ObservableObject
                 SignalLogItems.Insert(0, waitText);
             }
         });
+    }
+
+    private void RefreshTradeRowsFromSnapshot(DashboardMetrics metrics, int point)
+    {
+        if (_latestTradeLeftResult is not null)
+        {
+            ApplyTradeResult(
+                TradeTab.LeftPanel,
+                _latestTradeLeftResult,
+                metrics,
+                isExchangeA: true,
+                point);
+        }
+
+        if (_latestTradeRightResult is not null)
+        {
+            ApplyTradeResult(
+                TradeTab.RightPanel,
+                _latestTradeRightResult,
+                metrics,
+                isExchangeA: false,
+                point);
+        }
     }
 
     private string ResolveCurrentPositionText()

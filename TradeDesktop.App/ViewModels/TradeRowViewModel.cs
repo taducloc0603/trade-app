@@ -12,6 +12,7 @@ public sealed class TradeRowViewModel
         string price,
         string sl,
         string tp,
+        string slippage,
         string profit,
         string feeSpread,
         string time)
@@ -25,6 +26,7 @@ public sealed class TradeRowViewModel
         Price = price;
         Sl = sl;
         Tp = tp;
+        Slippage = slippage;
         Profit = profit;
         FeeSpread = feeSpread;
         Time = time;
@@ -39,6 +41,7 @@ public sealed class TradeRowViewModel
     public string Price { get; }
     public string Sl { get; }
     public string Tp { get; }
+    public string Slippage { get; }
     public string Profit { get; }
     public string FeeSpread { get; }
     public string Time { get; }
