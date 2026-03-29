@@ -352,15 +352,9 @@
                                     <Style TargetType="DataGrid">
                                         <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Hidden" />
                                         <Style.Triggers>
-                                            <MultiDataTrigger>
-                                                <MultiDataTrigger.Conditions>
-                                                    <Condition Binding="{Binding IsMapAvailable}" Value="True" />
-                                                    <Condition Binding="{Binding IsLoading}" Value="False" />
-                                                    <Condition Binding="{Binding HasError}" Value="False" />
-                                                    <Condition Binding="{Binding IsEmpty}" Value="False" />
-                                                </MultiDataTrigger.Conditions>
-                                                <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Visible" />
-                                            </MultiDataTrigger>
+                                            <Trigger Property="HasItems" Value="True">
+                                                <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Auto" />
+                                            </Trigger>
                                         </Style.Triggers>
                                     </Style>
                                 </DataGrid.Style>
@@ -439,15 +433,9 @@
                                 <Style TargetType="DataGrid">
                                     <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Hidden" />
                                     <Style.Triggers>
-                                        <MultiDataTrigger>
-                                            <MultiDataTrigger.Conditions>
-                                                <Condition Binding="{Binding IsMapAvailable}" Value="True" />
-                                                <Condition Binding="{Binding IsLoading}" Value="False" />
-                                                <Condition Binding="{Binding HasError}" Value="False" />
-                                                <Condition Binding="{Binding IsEmpty}" Value="False" />
-                                            </MultiDataTrigger.Conditions>
-                                            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Visible" />
-                                        </MultiDataTrigger>
+                                        <Trigger Property="HasItems" Value="True">
+                                            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Auto" />
+                                        </Trigger>
                                     </Style.Triggers>
                                 </Style>
                             </DataGrid.Style>
