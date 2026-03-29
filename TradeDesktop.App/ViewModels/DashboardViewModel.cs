@@ -33,6 +33,7 @@ public sealed class DashboardViewModel : ObservableObject
     private readonly Dictionary<string, HashSet<ulong>> _knownTradeTicketsByMap = new(StringComparer.Ordinal);
     private readonly Dictionary<string, List<ExpectedOpenCapture>> _pendingOpenExpectedByMap = new(StringComparer.Ordinal);
     private readonly Dictionary<ulong, ExpectedOpenCapture> _openExpectedByTicket = [];
+    private readonly Dictionary<ulong, double> _openSlippageByTicket = [];
     private readonly Dictionary<ulong, ExpectedCloseCapture> _closeExpectedByTicket = [];
     private SharedMapReadResult<TradeSharedRecord>? _latestTradeLeftResult;
     private SharedMapReadResult<TradeSharedRecord>? _latestTradeRightResult;
@@ -1064,22 +1065,22 @@ public sealed class DashboardViewModel : ObservableObject
         }
 
         var pointValue = Math.Max(1, point);
-        return record.TradeType == 0
+        var slippage = record.TradeType == 0
             ? (expected.ExpectedPrice - record.Price) * pointValue
             : (record.Price - expected.ExpectedPrice) * pointValue;
+
+        _openSlippageByTicket[record.Ticket] = slippage;
+        return slippage;
     }
 
     private double? CalculateHistoryOpenSlippage(HistorySharedRecord record, int point)
     {
-        if (!_openExpectedByTicket.TryGetValue(record.Ticket, out var expected) || expected.TradeType != record.TradeType)
+        if (!_openSlippageByTicket.TryGetValue(record.Ticket, out var openSlippage))
         {
             return null;
         }
 
-        var pointValue = Math.Max(1, point);
-        return record.TradeType == 0
-            ? (expected.ExpectedPrice - record.OpenPrice) * pointValue
-            : (record.OpenPrice - expected.ExpectedPrice) * pointValue;
+        return openSlippage;
     }
 
     private double? CalculateHistoryCloseSlippage(HistorySharedRecord record, int point)
