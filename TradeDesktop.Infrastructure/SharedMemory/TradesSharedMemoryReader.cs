@@ -10,7 +10,7 @@ namespace TradeDesktop.Infrastructure.SharedMemory;
 public sealed class TradesSharedMemoryReader : ITradesSharedMemoryReader
 {
     private const int HeaderSize = 16;
-    private const int RecordSize = 92;
+    private const int RecordSize = 100;
     private const int SymbolSize = 32;
 
     public SharedMapReadResult<TradeSharedRecord> ReadTrades(string mapName)
@@ -54,7 +54,7 @@ public sealed class TradesSharedMemoryReader : ITradesSharedMemoryReader
             {
                 var offset = HeaderSize + (i * RecordSize);
                 var symbolBytes = new byte[SymbolSize];
-                accessor.ReadArray(offset + 60, symbolBytes, 0, SymbolSize);
+                accessor.ReadArray(offset + 68, symbolBytes, 0, SymbolSize);
 
                 records.Add(new TradeSharedRecord(
                     Ticket: accessor.ReadUInt64(offset + 0),
@@ -65,7 +65,8 @@ public sealed class TradesSharedMemoryReader : ITradesSharedMemoryReader
                     Sl: accessor.ReadDouble(offset + 24),
                     Tp: accessor.ReadDouble(offset + 32),
                     Profit: accessor.ReadDouble(offset + 40),
-                    TimeMsc: accessor.ReadUInt64(offset + 52)));
+                    TimeMsc: accessor.ReadUInt64(offset + 52),
+                    OpenEaTimeLocal: accessor.ReadUInt64(offset + 60)));
             }
 
             return SharedMapReadResult<TradeSharedRecord>.Success(timestamp, records, safeCount);

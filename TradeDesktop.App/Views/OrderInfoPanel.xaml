@@ -379,6 +379,7 @@
                                     <DataGridTextColumn Header="TP" Binding="{Binding Tp}" Width="95" />
                                     <DataGridTextColumn Header="Open Time" Binding="{Binding OpenTime}" Width="180" />
                                     <DataGridTextColumn Header="Close Time" Binding="{Binding CloseTime}" Width="180" />
+                                    <DataGridTextColumn Header="Close EA Time Local" Binding="{Binding CloseEaTimeLocal}" Width="180" />
                                 </DataGrid.Columns>
                             </DataGrid>
                         </Grid>
@@ -450,6 +451,7 @@
                                 <DataGridTextColumn Header="Profit" Binding="{Binding Profit}" Width="95" />
                                 <DataGridTextColumn Header="Fee Spread" Binding="{Binding FeeSpread}" Width="95" />
                                 <DataGridTextColumn Header="Time" Binding="{Binding Time}" Width="180" />
+                                <DataGridTextColumn Header="Open EA Time Local" Binding="{Binding OpenEaTimeLocal}" Width="180" />
                             </DataGrid.Columns>
                         </DataGrid>
                     </Border>

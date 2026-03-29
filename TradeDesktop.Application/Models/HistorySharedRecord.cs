@@ -12,4 +12,5 @@ public sealed record HistorySharedRecord(
     double Profit,
     ulong OpenTimeMsc,
     ulong CloseTimeMsc,
+    ulong CloseEaTimeLocal,
     string Symbol);

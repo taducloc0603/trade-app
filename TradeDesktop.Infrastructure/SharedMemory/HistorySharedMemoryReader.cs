@@ -9,7 +9,7 @@ namespace TradeDesktop.Infrastructure.SharedMemory;
 public sealed class HistorySharedMemoryReader : IHistorySharedMemoryReader
 {
     private const int HeaderSize = 16;
-    private const int RecordSize = 116;
+    private const int RecordSize = 124;
     private const int SymbolSize = 32;
 
     public SharedMapReadResult<HistorySharedRecord> ReadHistory(string mapName)
@@ -53,7 +53,7 @@ public sealed class HistorySharedMemoryReader : IHistorySharedMemoryReader
             {
                 var offset = HeaderSize + (i * RecordSize);
                 var symbolBytes = new byte[SymbolSize];
-                accessor.ReadArray(offset + 84, symbolBytes, 0, SymbolSize);
+                accessor.ReadArray(offset + 92, symbolBytes, 0, SymbolSize);
 
                 records.Add(new HistorySharedRecord(
                     Ticket: accessor.ReadUInt64(offset + 0),
@@ -67,6 +67,7 @@ public sealed class HistorySharedMemoryReader : IHistorySharedMemoryReader
                     Profit: accessor.ReadDouble(offset + 60),
                     OpenTimeMsc: accessor.ReadUInt64(offset + 68),
                     CloseTimeMsc: accessor.ReadUInt64(offset + 76),
+                    CloseEaTimeLocal: accessor.ReadUInt64(offset + 84),
                     Symbol: ReadSymbol(symbolBytes)));
             }
 

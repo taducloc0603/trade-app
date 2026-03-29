@@ -1031,7 +1031,8 @@ public sealed class DashboardViewModel : ObservableObject
             slippage: FormatOptionalProfit(CalculateTradeOpenSlippage(record, point)),
             profit: FormatProfit(CalculateTradeProfit(record, snapshot, isExchangeA, point)),
             feeSpread: FormatProfit(record.Profit),
-            time: FormatTradeTime(record.TimeMsc)));
+            time: FormatTradeTime(record.TimeMsc),
+            openEaTimeLocal: FormatRawTimestamp(record.OpenEaTimeLocal)));
 
     private IEnumerable<HistoryRowViewModel> BuildHistoryRows(
         IReadOnlyList<HistorySharedRecord> records,
@@ -1055,7 +1056,8 @@ public sealed class DashboardViewModel : ObservableObject
             sl: FormatRawDouble(record.Sl),
             tp: FormatRawDouble(record.Tp),
             openTime: FormatTradeTime(record.OpenTimeMsc),
-            closeTime: FormatTradeTime(record.CloseTimeMsc)));
+            closeTime: FormatTradeTime(record.CloseTimeMsc),
+            closeEaTimeLocal: FormatRawTimestamp(record.CloseEaTimeLocal)));
 
     private double? CalculateTradeOpenSlippage(TradeSharedRecord record, int point)
     {

@@ -15,7 +15,8 @@ public sealed class TradeRowViewModel
         string slippage,
         string profit,
         string feeSpread,
-        string time)
+        string time,
+        string openEaTimeLocal)
     {
         Timestamp = timestamp;
         Count = count;
@@ -30,6 +31,7 @@ public sealed class TradeRowViewModel
         Profit = profit;
         FeeSpread = feeSpread;
         Time = time;
+        OpenEaTimeLocal = openEaTimeLocal;
     }
 
     public string Timestamp { get; }
@@ -45,4 +47,5 @@ public sealed class TradeRowViewModel
     public string Profit { get; }
     public string FeeSpread { get; }
     public string Time { get; }
+    public string OpenEaTimeLocal { get; }
 }

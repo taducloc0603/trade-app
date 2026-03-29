@@ -9,4 +9,5 @@ public sealed record TradeSharedRecord(
     double Sl,
     double Tp,
     double Profit,
-    ulong TimeMsc);
+    ulong TimeMsc,
+    ulong OpenEaTimeLocal);
