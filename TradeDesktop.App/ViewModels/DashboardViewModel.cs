@@ -1528,7 +1528,7 @@ public sealed class DashboardViewModel : ObservableObject
             return result;
         }
 
-        return $"(open_ea_raw - app_open_raw / {openEaTimeLocal} - {appOpenRequestRawMs.Value}) {result}";
+        return $"(open_ea_time_local - app_open_raw / {openEaTimeLocal} - {appOpenRequestRawMs.Value}) {result}";
     }
 
     private static string FormatCloseExecutionDebug(ulong closeEaTimeLocal, long? appCloseRequestRawMs, long? closeExecutionMs)
@@ -1539,7 +1539,7 @@ public sealed class DashboardViewModel : ObservableObject
             return result;
         }
 
-        return $"(close_ea_raw - app_close_raw / {closeEaTimeLocal} - {appCloseRequestRawMs.Value}) {result}";
+        return $"(close_ea_time_local - app_close_raw / {closeEaTimeLocal} - {appCloseRequestRawMs.Value}) {result}";
     }
 
     private static string FormatTradeOpenSlippageDebug(TradeSharedRecord record, PendingOpenRequest? openRequest, int point, double? slippage)
