@@ -1359,15 +1359,23 @@ public sealed class DashboardViewModel : ObservableObject
             }
 
             _openRequestByTicket[newRecord.Ticket] = pendingRequest;
-            var openExecutionMs = ComputeExecutionMilliseconds(newRecord.OpenEaTimeLocal, pendingRequest.AppOpenRequestUnixMs);
+            var openExecutionMs = ComputeExecutionMilliseconds(
+                newRecord.OpenEaTimeLocal,
+                pendingRequest.AppOpenRequestTimeLocal,
+                out var openEaFullLocal);
             if (openExecutionMs.HasValue)
             {
                 _openExecutionMsByTicket[newRecord.Ticket] = openExecutionMs.Value;
             }
 
             Debug.WriteLine(
+                $"[ExecOpen][Raw] key={matchKey}, ticket={newRecord.Ticket}, app_open_request_time_raw={pendingRequest.AppOpenRequestTimeLocal:O}, " +
+                $"open_ea_time_local_raw={newRecord.OpenEaTimeLocal}");
+
+            Debug.WriteLine(
                 $"[ExecOpen][Match] key={matchKey}, ticket={newRecord.Ticket}, app_open_request_time={pendingRequest.AppOpenRequestTimeLocal:O}, " +
-                $"open_ea_time_local={newRecord.OpenEaTimeLocal}, open_execution={(openExecutionMs.HasValue ? openExecutionMs.Value.ToString(CultureInfo.InvariantCulture) : "--")}");
+                $"open_ea_time_local={newRecord.OpenEaTimeLocal}, open_ea_full_local={(openEaFullLocal.HasValue ? openEaFullLocal.Value.ToString("O", CultureInfo.InvariantCulture) : "--")}, " +
+                $"open_execution={(openExecutionMs.HasValue ? openExecutionMs.Value.ToString(CultureInfo.InvariantCulture) : "--")}");
         }
 
         _knownTradeTicketsByMap[key] = currentTickets;
@@ -1403,15 +1411,23 @@ public sealed class DashboardViewModel : ObservableObject
             }
 
             _closeRequestByTicket[record.Ticket] = pendingRequest;
-            var closeExecutionMs = ComputeExecutionMilliseconds(record.CloseEaTimeLocal, pendingRequest.AppCloseRequestUnixMs);
+            var closeExecutionMs = ComputeExecutionMilliseconds(
+                record.CloseEaTimeLocal,
+                pendingRequest.AppCloseRequestTimeLocal,
+                out var closeEaFullLocal);
             if (closeExecutionMs.HasValue)
             {
                 _closeExecutionMsByTicket[record.Ticket] = closeExecutionMs.Value;
             }
 
             Debug.WriteLine(
+                $"[ExecClose][Raw] key={matchKey}, ticket={record.Ticket}, app_close_request_time_raw={pendingRequest.AppCloseRequestTimeLocal:O}, " +
+                $"close_ea_time_local_raw={record.CloseEaTimeLocal}");
+
+            Debug.WriteLine(
                 $"[ExecClose][Match] key={matchKey}, ticket={record.Ticket}, app_close_request_time={pendingRequest.AppCloseRequestTimeLocal:O}, " +
-                $"close_ea_time_local={record.CloseEaTimeLocal}, close_execution={(closeExecutionMs.HasValue ? closeExecutionMs.Value.ToString(CultureInfo.InvariantCulture) : "--")}");
+                $"close_ea_time_local={record.CloseEaTimeLocal}, close_ea_full_local={(closeEaFullLocal.HasValue ? closeEaFullLocal.Value.ToString("O", CultureInfo.InvariantCulture) : "--")}, " +
+                $"close_execution={(closeExecutionMs.HasValue ? closeExecutionMs.Value.ToString(CultureInfo.InvariantCulture) : "--")}");
         }
 
         _knownHistoryTicketsByMap[key] = currentTickets;
@@ -1604,15 +1620,39 @@ public sealed class DashboardViewModel : ObservableObject
         return true;
     }
 
-    private static long? ComputeExecutionMilliseconds(ulong eaTimeLocalMs, long appRequestUnixMs)
+    private static long? ComputeExecutionMilliseconds(
+        ulong eaTimeLocalMs,
+        DateTimeOffset appRequestTimeLocal,
+        out DateTimeOffset? eaFullLocal)
     {
+        eaFullLocal = null;
         if (eaTimeLocalMs == 0)
         {
             return null;
         }
 
-        var ea = eaTimeLocalMs > long.MaxValue ? long.MaxValue : (long)eaTimeLocalMs;
-        return ea - appRequestUnixMs;
+        const double oneDayMs = 24d * 60d * 60d * 1000d;
+        var rawMs = eaTimeLocalMs > long.MaxValue ? long.MaxValue : (long)eaTimeLocalMs;
+        var todMs = rawMs % (long)oneDayMs;
+        if (todMs < 0)
+        {
+            todMs += (long)oneDayMs;
+        }
+
+        var tod = TimeSpan.FromMilliseconds(todMs);
+        var baseDate = appRequestTimeLocal.Date;
+
+        var candidateSameDay = new DateTimeOffset(baseDate + tod, appRequestTimeLocal.Offset);
+        var candidatePrevDay = candidateSameDay.AddDays(-1);
+        var candidateNextDay = candidateSameDay.AddDays(1);
+
+        var candidates = new[] { candidatePrevDay, candidateSameDay, candidateNextDay };
+        var selected = candidates
+            .OrderBy(x => Math.Abs((x - appRequestTimeLocal).TotalMilliseconds))
+            .First();
+
+        eaFullLocal = selected;
+        return (long)Math.Round((selected - appRequestTimeLocal).TotalMilliseconds, MidpointRounding.AwayFromZero);
     }
 
     private static bool IsNullOrMatch(string? pending, string? actual)
