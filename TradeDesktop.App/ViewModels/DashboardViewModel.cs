@@ -52,7 +52,8 @@ public sealed class DashboardViewModel : ObservableObject
         double? Volume,
         double ExpectedPrice,
         DateTimeOffset AppOpenRequestTimeLocal,
-        long AppOpenRequestUnixMs);
+        long AppOpenRequestUnixMs,
+        long AppOpenRequestRawMs);
 
     private sealed record PendingCloseRequest(
         string TradeMapName,
@@ -62,7 +63,8 @@ public sealed class DashboardViewModel : ObservableObject
         double? Volume,
         double ExpectedPrice,
         DateTimeOffset AppCloseRequestTimeLocal,
-        long AppCloseRequestUnixMs);
+        long AppCloseRequestUnixMs,
+        long AppCloseRequestRawMs);
 
     private string _runtimeSummary = string.Empty;
     private string _dbInlineData = string.Empty;
@@ -369,12 +371,13 @@ public sealed class DashboardViewModel : ObservableObject
     {
         var snapshot = _runtimeConfigState.CurrentDashboardMetrics;
         var appOpenRequestTimeLocal = DateTimeOffset.Now;
+        var appOpenRequestRawMs = Environment.TickCount64;
         var result = await _mt5ManualTradeService.ExecuteBuyAsync(
             _runtimeConfigState.CurrentChartHwndA,
             _runtimeConfigState.CurrentChartHwndB);
 
-        CapturePendingOpenRequest(TradeTab.LeftPanel.TargetMapName, snapshot, isExchangeA: true, tradeType: 0, appOpenRequestTimeLocal);
-        CapturePendingOpenRequest(TradeTab.RightPanel.TargetMapName, snapshot, isExchangeA: false, tradeType: 1, appOpenRequestTimeLocal);
+        CapturePendingOpenRequest(TradeTab.LeftPanel.TargetMapName, snapshot, isExchangeA: true, tradeType: 0, appOpenRequestTimeLocal, appOpenRequestRawMs);
+        CapturePendingOpenRequest(TradeTab.RightPanel.TargetMapName, snapshot, isExchangeA: false, tradeType: 1, appOpenRequestTimeLocal, appOpenRequestRawMs);
 
         AppendManualTradeLogs(result, snapshot);
         ShowManualTradeFeedback("BUY", result);
@@ -384,12 +387,13 @@ public sealed class DashboardViewModel : ObservableObject
     {
         var snapshot = _runtimeConfigState.CurrentDashboardMetrics;
         var appOpenRequestTimeLocal = DateTimeOffset.Now;
+        var appOpenRequestRawMs = Environment.TickCount64;
         var result = await _mt5ManualTradeService.ExecuteSellAsync(
             _runtimeConfigState.CurrentChartHwndA,
             _runtimeConfigState.CurrentChartHwndB);
 
-        CapturePendingOpenRequest(TradeTab.LeftPanel.TargetMapName, snapshot, isExchangeA: true, tradeType: 1, appOpenRequestTimeLocal);
-        CapturePendingOpenRequest(TradeTab.RightPanel.TargetMapName, snapshot, isExchangeA: false, tradeType: 0, appOpenRequestTimeLocal);
+        CapturePendingOpenRequest(TradeTab.LeftPanel.TargetMapName, snapshot, isExchangeA: true, tradeType: 1, appOpenRequestTimeLocal, appOpenRequestRawMs);
+        CapturePendingOpenRequest(TradeTab.RightPanel.TargetMapName, snapshot, isExchangeA: false, tradeType: 0, appOpenRequestTimeLocal, appOpenRequestRawMs);
 
         AppendManualTradeLogs(result, snapshot);
         ShowManualTradeFeedback("SELL", result);
@@ -409,12 +413,13 @@ public sealed class DashboardViewModel : ObservableObject
             tradeHwnd: _runtimeConfigState.CurrentTradeHwndB);
 
         var appCloseRequestTimeLocal = DateTimeOffset.Now;
+        var appCloseRequestRawMs = Environment.TickCount64;
         var result = await _mt5ManualTradeService.ExecuteCloseAsync(
             selectA.Request,
             selectB.Request);
 
-        CapturePendingCloseRequest(selectA, snapshot, isExchangeA: true, appCloseRequestTimeLocal);
-        CapturePendingCloseRequest(selectB, snapshot, isExchangeA: false, appCloseRequestTimeLocal);
+        CapturePendingCloseRequest(selectA, snapshot, isExchangeA: true, appCloseRequestTimeLocal, appCloseRequestRawMs);
+        CapturePendingCloseRequest(selectB, snapshot, isExchangeA: false, appCloseRequestTimeLocal, appCloseRequestRawMs);
 
         AppendManualTradeLogs(result, snapshot);
         AppendCloseSelectionDiagnostics(selectA, selectB);
@@ -454,12 +459,13 @@ public sealed class DashboardViewModel : ObservableObject
     private async Task AutoBuyAsync(GapSignalTriggerResult trigger)
     {
         var appOpenRequestTimeLocal = DateTimeOffset.Now;
+        var appOpenRequestRawMs = Environment.TickCount64;
         var result = await _mt5ManualTradeService.ExecuteBuyAsync(
             _runtimeConfigState.CurrentChartHwndA,
             _runtimeConfigState.CurrentChartHwndB);
 
-        CapturePendingOpenRequestFromTrigger(TradeTab.LeftPanel.TargetMapName, trigger, isExchangeA: true, tradeType: 0, appOpenRequestTimeLocal);
-        CapturePendingOpenRequestFromTrigger(TradeTab.RightPanel.TargetMapName, trigger, isExchangeA: false, tradeType: 1, appOpenRequestTimeLocal);
+        CapturePendingOpenRequestFromTrigger(TradeTab.LeftPanel.TargetMapName, trigger, isExchangeA: true, tradeType: 0, appOpenRequestTimeLocal, appOpenRequestRawMs);
+        CapturePendingOpenRequestFromTrigger(TradeTab.RightPanel.TargetMapName, trigger, isExchangeA: false, tradeType: 1, appOpenRequestTimeLocal, appOpenRequestRawMs);
 
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
@@ -470,12 +476,13 @@ public sealed class DashboardViewModel : ObservableObject
     private async Task AutoSellAsync(GapSignalTriggerResult trigger)
     {
         var appOpenRequestTimeLocal = DateTimeOffset.Now;
+        var appOpenRequestRawMs = Environment.TickCount64;
         var result = await _mt5ManualTradeService.ExecuteSellAsync(
             _runtimeConfigState.CurrentChartHwndA,
             _runtimeConfigState.CurrentChartHwndB);
 
-        CapturePendingOpenRequestFromTrigger(TradeTab.LeftPanel.TargetMapName, trigger, isExchangeA: true, tradeType: 1, appOpenRequestTimeLocal);
-        CapturePendingOpenRequestFromTrigger(TradeTab.RightPanel.TargetMapName, trigger, isExchangeA: false, tradeType: 0, appOpenRequestTimeLocal);
+        CapturePendingOpenRequestFromTrigger(TradeTab.LeftPanel.TargetMapName, trigger, isExchangeA: true, tradeType: 1, appOpenRequestTimeLocal, appOpenRequestRawMs);
+        CapturePendingOpenRequestFromTrigger(TradeTab.RightPanel.TargetMapName, trigger, isExchangeA: false, tradeType: 0, appOpenRequestTimeLocal, appOpenRequestRawMs);
 
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
@@ -496,12 +503,13 @@ public sealed class DashboardViewModel : ObservableObject
             tradeHwnd: _runtimeConfigState.CurrentTradeHwndB);
 
         var appCloseRequestTimeLocal = DateTimeOffset.Now;
+        var appCloseRequestRawMs = Environment.TickCount64;
         var result = await _mt5ManualTradeService.ExecuteCloseAsync(
             selectA.Request,
             selectB.Request);
 
-        CapturePendingCloseRequestFromTrigger(selectA, trigger, isExchangeA: true, appCloseRequestTimeLocal);
-        CapturePendingCloseRequestFromTrigger(selectB, trigger, isExchangeA: false, appCloseRequestTimeLocal);
+        CapturePendingCloseRequestFromTrigger(selectA, trigger, isExchangeA: true, appCloseRequestTimeLocal, appCloseRequestRawMs);
+        CapturePendingCloseRequestFromTrigger(selectB, trigger, isExchangeA: false, appCloseRequestTimeLocal, appCloseRequestRawMs);
 
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
@@ -547,7 +555,8 @@ public sealed class DashboardViewModel : ObservableObject
         GapSignalTriggerResult trigger,
         bool isExchangeA,
         int tradeType,
-        DateTimeOffset appOpenRequestTimeLocal)
+        DateTimeOffset appOpenRequestTimeLocal,
+        long appOpenRequestRawMs)
     {
         var expectedPrice = ResolveExpectedPriceFromTrigger(trigger, isExchangeA, tradeType);
         if (!expectedPrice.HasValue)
@@ -561,14 +570,16 @@ public sealed class DashboardViewModel : ObservableObject
             volume: null,
             tradeType: tradeType,
             expectedPrice: expectedPrice.Value,
-            appOpenRequestTimeLocal: appOpenRequestTimeLocal);
+            appOpenRequestTimeLocal: appOpenRequestTimeLocal,
+            appOpenRequestRawMs: appOpenRequestRawMs);
     }
 
     private void CapturePendingCloseRequestFromTrigger(
         CloseSelectionResult selection,
         GapSignalTriggerResult trigger,
         bool isExchangeA,
-        DateTimeOffset appCloseRequestTimeLocal)
+        DateTimeOffset appCloseRequestTimeLocal,
+        long appCloseRequestRawMs)
     {
         if (selection.Request is null || !selection.TradeType.HasValue)
         {
@@ -589,6 +600,7 @@ public sealed class DashboardViewModel : ObservableObject
             tradeType: originalTradeType,
             expectedPrice: expectedPrice.Value,
             appCloseRequestTimeLocal: appCloseRequestTimeLocal,
+            appCloseRequestRawMs: appCloseRequestRawMs,
             symbol: selection.Symbol,
             volume: selection.Volume);
     }
@@ -743,7 +755,8 @@ public sealed class DashboardViewModel : ObservableObject
         DashboardMetrics? snapshot,
         bool isExchangeA,
         int tradeType,
-        DateTimeOffset appOpenRequestTimeLocal)
+        DateTimeOffset appOpenRequestTimeLocal,
+        long appOpenRequestRawMs)
     {
         var expectedPrice = ResolveExpectedOpenPrice(snapshot, isExchangeA, tradeType);
         if (!expectedPrice.HasValue)
@@ -757,14 +770,16 @@ public sealed class DashboardViewModel : ObservableObject
             volume: null,
             tradeType: tradeType,
             expectedPrice: expectedPrice.Value,
-            appOpenRequestTimeLocal: appOpenRequestTimeLocal);
+            appOpenRequestTimeLocal: appOpenRequestTimeLocal,
+            appOpenRequestRawMs: appOpenRequestRawMs);
     }
 
     private void CapturePendingCloseRequest(
         CloseSelectionResult selection,
         DashboardMetrics? snapshot,
         bool isExchangeA,
-        DateTimeOffset appCloseRequestTimeLocal)
+        DateTimeOffset appCloseRequestTimeLocal,
+        long appCloseRequestRawMs)
     {
         if (selection.Request is null || !selection.TradeType.HasValue)
         {
@@ -783,6 +798,7 @@ public sealed class DashboardViewModel : ObservableObject
             tradeType: selection.TradeType.Value,
             expectedPrice: expectedPrice.Value,
             appCloseRequestTimeLocal: appCloseRequestTimeLocal,
+            appCloseRequestRawMs: appCloseRequestRawMs,
             symbol: selection.Symbol,
             volume: selection.Volume);
     }
@@ -793,7 +809,8 @@ public sealed class DashboardViewModel : ObservableObject
         double? volume,
         int tradeType,
         double expectedPrice,
-        DateTimeOffset appOpenRequestTimeLocal)
+        DateTimeOffset appOpenRequestTimeLocal,
+        long appOpenRequestRawMs)
     {
         var key = NormalizeMapName(tradeMapName);
         if (!_pendingOpenRequestsByMap.TryGetValue(key, out var pendingList))
@@ -809,10 +826,11 @@ public sealed class DashboardViewModel : ObservableObject
             Volume: volume,
             ExpectedPrice: expectedPrice,
             AppOpenRequestTimeLocal: appOpenRequestTimeLocal,
-            AppOpenRequestUnixMs: appOpenRequestTimeLocal.ToUnixTimeMilliseconds());
+            AppOpenRequestUnixMs: appOpenRequestTimeLocal.ToUnixTimeMilliseconds(),
+            AppOpenRequestRawMs: appOpenRequestRawMs);
 
         pendingList.Add(pending);
-        Debug.WriteLine($"[ExecOpen][Capture] map={key}, type={tradeType}, app_open_request_time={pending.AppOpenRequestTimeLocal:O}");
+        Debug.WriteLine($"[ExecOpen][Capture] map={key}, type={tradeType}, app_open_request_time={pending.AppOpenRequestTimeLocal:O}, app_open_request_raw_ms={pending.AppOpenRequestRawMs}");
     }
 
     private void RegisterPendingCloseRequest(
@@ -821,6 +839,7 @@ public sealed class DashboardViewModel : ObservableObject
         int tradeType,
         double expectedPrice,
         DateTimeOffset appCloseRequestTimeLocal,
+        long appCloseRequestRawMs,
         string? symbol,
         double? volume)
     {
@@ -839,10 +858,11 @@ public sealed class DashboardViewModel : ObservableObject
             Volume: volume,
             ExpectedPrice: expectedPrice,
             AppCloseRequestTimeLocal: appCloseRequestTimeLocal,
-            AppCloseRequestUnixMs: appCloseRequestTimeLocal.ToUnixTimeMilliseconds());
+            AppCloseRequestUnixMs: appCloseRequestTimeLocal.ToUnixTimeMilliseconds(),
+            AppCloseRequestRawMs: appCloseRequestRawMs);
 
         pendingList.Add(pending);
-        Debug.WriteLine($"[ExecClose][Capture] map={key}, ticket={(ticket.HasValue ? ticket.Value.ToString(CultureInfo.InvariantCulture) : "-")}, type={tradeType}, app_close_request_time={pending.AppCloseRequestTimeLocal:O}");
+        Debug.WriteLine($"[ExecClose][Capture] map={key}, ticket={(ticket.HasValue ? ticket.Value.ToString(CultureInfo.InvariantCulture) : "-")}, type={tradeType}, app_close_request_time={pending.AppCloseRequestTimeLocal:O}, app_close_request_raw_ms={pending.AppCloseRequestRawMs}");
     }
 
     private static string ResolveTradeMapNameFromCloseSelection(CloseSelectionResult selection)
@@ -1361,20 +1381,19 @@ public sealed class DashboardViewModel : ObservableObject
             _openRequestByTicket[newRecord.Ticket] = pendingRequest;
             var openExecutionMs = ComputeExecutionMilliseconds(
                 newRecord.OpenEaTimeLocal,
-                pendingRequest.AppOpenRequestTimeLocal,
-                out var openEaFullLocal);
+                pendingRequest.AppOpenRequestRawMs);
             if (openExecutionMs.HasValue)
             {
                 _openExecutionMsByTicket[newRecord.Ticket] = openExecutionMs.Value;
             }
 
             Debug.WriteLine(
-                $"[ExecOpen][Raw] key={matchKey}, ticket={newRecord.Ticket}, app_open_request_time_raw={pendingRequest.AppOpenRequestTimeLocal:O}, " +
+                $"[ExecOpen][Raw] key={matchKey}, ticket={newRecord.Ticket}, app_open_request_time_raw={pendingRequest.AppOpenRequestTimeLocal:O}, app_open_request_raw_ms={pendingRequest.AppOpenRequestRawMs}, " +
                 $"open_ea_time_local_raw={newRecord.OpenEaTimeLocal}");
 
             Debug.WriteLine(
                 $"[ExecOpen][Match] key={matchKey}, ticket={newRecord.Ticket}, app_open_request_time={pendingRequest.AppOpenRequestTimeLocal:O}, " +
-                $"open_ea_time_local={newRecord.OpenEaTimeLocal}, open_ea_full_local={(openEaFullLocal.HasValue ? openEaFullLocal.Value.ToString("O", CultureInfo.InvariantCulture) : "--")}, " +
+                $"open_ea_time_local={newRecord.OpenEaTimeLocal}, app_open_request_raw_ms={pendingRequest.AppOpenRequestRawMs}, " +
                 $"open_execution={(openExecutionMs.HasValue ? openExecutionMs.Value.ToString(CultureInfo.InvariantCulture) : "--")}");
         }
 
@@ -1413,20 +1432,19 @@ public sealed class DashboardViewModel : ObservableObject
             _closeRequestByTicket[record.Ticket] = pendingRequest;
             var closeExecutionMs = ComputeExecutionMilliseconds(
                 record.CloseEaTimeLocal,
-                pendingRequest.AppCloseRequestTimeLocal,
-                out var closeEaFullLocal);
+                pendingRequest.AppCloseRequestRawMs);
             if (closeExecutionMs.HasValue)
             {
                 _closeExecutionMsByTicket[record.Ticket] = closeExecutionMs.Value;
             }
 
             Debug.WriteLine(
-                $"[ExecClose][Raw] key={matchKey}, ticket={record.Ticket}, app_close_request_time_raw={pendingRequest.AppCloseRequestTimeLocal:O}, " +
+                $"[ExecClose][Raw] key={matchKey}, ticket={record.Ticket}, app_close_request_time_raw={pendingRequest.AppCloseRequestTimeLocal:O}, app_close_request_raw_ms={pendingRequest.AppCloseRequestRawMs}, " +
                 $"close_ea_time_local_raw={record.CloseEaTimeLocal}");
 
             Debug.WriteLine(
                 $"[ExecClose][Match] key={matchKey}, ticket={record.Ticket}, app_close_request_time={pendingRequest.AppCloseRequestTimeLocal:O}, " +
-                $"close_ea_time_local={record.CloseEaTimeLocal}, close_ea_full_local={(closeEaFullLocal.HasValue ? closeEaFullLocal.Value.ToString("O", CultureInfo.InvariantCulture) : "--")}, " +
+                $"close_ea_time_local={record.CloseEaTimeLocal}, app_close_request_raw_ms={pendingRequest.AppCloseRequestRawMs}, " +
                 $"close_execution={(closeExecutionMs.HasValue ? closeExecutionMs.Value.ToString(CultureInfo.InvariantCulture) : "--")}");
         }
 
@@ -1462,7 +1480,7 @@ public sealed class DashboardViewModel : ObservableObject
                 feeSpread: FormatProfit(record.Profit),
                 time: FormatTradeTime(record.TimeMsc),
                 openEaTimeLocal: FormatEaLocalTime(record.OpenEaTimeLocal),
-                openExecution: FormatOpenExecutionDebug(record.OpenEaTimeLocal, openRequest?.AppOpenRequestTimeLocal, openExecutionMs));
+                openExecution: FormatOpenExecutionDebug(record.OpenEaTimeLocal, openRequest?.AppOpenRequestRawMs, openExecutionMs));
         });
 
     private IEnumerable<HistoryRowViewModel> BuildHistoryRows(
@@ -1499,29 +1517,29 @@ public sealed class DashboardViewModel : ObservableObject
                 closeTime: FormatTradeTime(record.CloseTimeMsc),
                 closeEaTimeLocal: FormatEaLocalTime(record.CloseEaTimeLocal),
                 openExecution: FormatExecutionMs(openExecutionMs),
-                closeExecution: FormatCloseExecutionDebug(record.CloseEaTimeLocal, closeRequest?.AppCloseRequestTimeLocal, closeExecutionMs));
+                closeExecution: FormatCloseExecutionDebug(record.CloseEaTimeLocal, closeRequest?.AppCloseRequestRawMs, closeExecutionMs));
         });
 
-    private static string FormatOpenExecutionDebug(ulong openEaTimeLocal, DateTimeOffset? appOpenRequestTimeLocal, long? openExecutionMs)
+    private static string FormatOpenExecutionDebug(ulong openEaTimeLocal, long? appOpenRequestRawMs, long? openExecutionMs)
     {
         var result = FormatExecutionMs(openExecutionMs);
-        if (!appOpenRequestTimeLocal.HasValue || !openExecutionMs.HasValue)
+        if (!appOpenRequestRawMs.HasValue || !openExecutionMs.HasValue)
         {
             return result;
         }
 
-        return $"(open_ea_time_local - app_open_request_time / {openEaTimeLocal} - {appOpenRequestTimeLocal.Value:HH:mm:ss.fff}) {result}";
+        return $"(open_ea_raw - app_open_raw / {openEaTimeLocal} - {appOpenRequestRawMs.Value}) {result}";
     }
 
-    private static string FormatCloseExecutionDebug(ulong closeEaTimeLocal, DateTimeOffset? appCloseRequestTimeLocal, long? closeExecutionMs)
+    private static string FormatCloseExecutionDebug(ulong closeEaTimeLocal, long? appCloseRequestRawMs, long? closeExecutionMs)
     {
         var result = FormatExecutionMs(closeExecutionMs);
-        if (!appCloseRequestTimeLocal.HasValue || !closeExecutionMs.HasValue)
+        if (!appCloseRequestRawMs.HasValue || !closeExecutionMs.HasValue)
         {
             return result;
         }
 
-        return $"(close_ea_time_local - app_close_request_time / {closeEaTimeLocal} - {appCloseRequestTimeLocal.Value:HH:mm:ss.fff}) {result}";
+        return $"(close_ea_raw - app_close_raw / {closeEaTimeLocal} - {appCloseRequestRawMs.Value}) {result}";
     }
 
     private static string FormatTradeOpenSlippageDebug(TradeSharedRecord record, PendingOpenRequest? openRequest, int point, double? slippage)
@@ -1686,29 +1704,15 @@ public sealed class DashboardViewModel : ObservableObject
 
     private static long? ComputeExecutionMilliseconds(
         ulong eaTimeLocalMs,
-        DateTimeOffset appRequestTimeLocal,
-        out DateTimeOffset? eaFullLocal)
+        long appRequestRawMs)
     {
-        eaFullLocal = null;
         if (eaTimeLocalMs == 0)
         {
             return null;
         }
 
-        const double oneDayMs = 24d * 60d * 60d * 1000d;
-        var rawMs = eaTimeLocalMs > long.MaxValue ? long.MaxValue : (long)eaTimeLocalMs;
-        var todMs = rawMs % (long)oneDayMs;
-        if (todMs < 0)
-        {
-            todMs += (long)oneDayMs;
-        }
-
-        var tod = TimeSpan.FromMilliseconds(todMs);
-        var baseDate = appRequestTimeLocal.Date;
-
-        var sameDayLocal = new DateTimeOffset(baseDate + tod, appRequestTimeLocal.Offset);
-        eaFullLocal = sameDayLocal;
-        return (long)Math.Round((sameDayLocal - appRequestTimeLocal).TotalMilliseconds, MidpointRounding.AwayFromZero);
+        var eaRawMs = eaTimeLocalMs > long.MaxValue ? long.MaxValue : (long)eaTimeLocalMs;
+        return eaRawMs - appRequestRawMs;
     }
 
     private static bool IsNullOrMatch(string? pending, string? actual)
