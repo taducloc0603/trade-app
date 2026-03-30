@@ -407,16 +407,16 @@ public sealed class DashboardViewModel : ObservableObject
             {
                 if (trigger.PrimarySide == GapSignalSide.Buy)
                 {
-                    await AutoBuyAsync();
+                    await AutoBuyAsync(trigger);
                 }
                 else
                 {
-                    await AutoSellAsync();
+                    await AutoSellAsync(trigger);
                 }
             }
             else if (trigger.Action == GapSignalAction.Close)
             {
-                await AutoCloseOrderAsync();
+                await AutoCloseOrderAsync(trigger);
             }
         }
         catch (Exception ex)
@@ -429,39 +429,36 @@ public sealed class DashboardViewModel : ObservableObject
         }
     }
 
-    private async Task AutoBuyAsync()
+    private async Task AutoBuyAsync(GapSignalTriggerResult trigger)
     {
-        var snapshot = _runtimeConfigState.CurrentDashboardMetrics;
-        EnqueueOpenExpected(TradeTab.LeftPanel.TargetMapName, snapshot, isExchangeA: true, tradeType: 0);
-        EnqueueOpenExpected(TradeTab.RightPanel.TargetMapName, snapshot, isExchangeA: false, tradeType: 1);
+        EnqueueOpenExpectedFromTrigger(TradeTab.LeftPanel.TargetMapName, trigger, isExchangeA: true, tradeType: 0);
+        EnqueueOpenExpectedFromTrigger(TradeTab.RightPanel.TargetMapName, trigger, isExchangeA: false, tradeType: 1);
         var result = await _mt5ManualTradeService.ExecuteBuyAsync(
             _runtimeConfigState.CurrentChartHwndA,
             _runtimeConfigState.CurrentChartHwndB);
 
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
-            AppendAutoTradeLogs(result, snapshot, "OPEN_AUTO");
+            AppendAutoTradeLogs(result, trigger, "OPEN_AUTO");
         });
     }
 
-    private async Task AutoSellAsync()
+    private async Task AutoSellAsync(GapSignalTriggerResult trigger)
     {
-        var snapshot = _runtimeConfigState.CurrentDashboardMetrics;
-        EnqueueOpenExpected(TradeTab.LeftPanel.TargetMapName, snapshot, isExchangeA: true, tradeType: 1);
-        EnqueueOpenExpected(TradeTab.RightPanel.TargetMapName, snapshot, isExchangeA: false, tradeType: 0);
+        EnqueueOpenExpectedFromTrigger(TradeTab.LeftPanel.TargetMapName, trigger, isExchangeA: true, tradeType: 1);
+        EnqueueOpenExpectedFromTrigger(TradeTab.RightPanel.TargetMapName, trigger, isExchangeA: false, tradeType: 0);
         var result = await _mt5ManualTradeService.ExecuteSellAsync(
             _runtimeConfigState.CurrentChartHwndA,
             _runtimeConfigState.CurrentChartHwndB);
 
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
-            AppendAutoTradeLogs(result, snapshot, "OPEN_AUTO");
+            AppendAutoTradeLogs(result, trigger, "OPEN_AUTO");
         });
     }
 
-    private async Task AutoCloseOrderAsync()
+    private async Task AutoCloseOrderAsync(GapSignalTriggerResult trigger)
     {
-        var snapshot = _runtimeConfigState.CurrentDashboardMetrics;
         var selectA = SelectCloseCandidateForExchange(
             exchangeLabel: "A",
             tradeMapName: TradeTab.LeftPanel.TargetMapName,
@@ -472,8 +469,8 @@ public sealed class DashboardViewModel : ObservableObject
             tradeMapName: TradeTab.RightPanel.TargetMapName,
             tradeHwnd: _runtimeConfigState.CurrentTradeHwndB);
 
-        CaptureCloseExpected(selectA, snapshot, isExchangeA: true);
-        CaptureCloseExpected(selectB, snapshot, isExchangeA: false);
+        CaptureCloseExpectedFromTrigger(selectA, trigger, isExchangeA: true);
+        CaptureCloseExpectedFromTrigger(selectB, trigger, isExchangeA: false);
 
         var result = await _mt5ManualTradeService.ExecuteCloseAsync(
             selectA.Request,
@@ -481,12 +478,12 @@ public sealed class DashboardViewModel : ObservableObject
 
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
-            AppendAutoTradeLogs(result, snapshot, "CLOSE_AUTO");
+            AppendAutoTradeLogs(result, trigger, "CLOSE_AUTO");
             AppendCloseSelectionDiagnostics(selectA, selectB);
         });
     }
 
-    private void AppendAutoTradeLogs(ManualTradeResult result, DashboardMetrics? snapshot, string label)
+    private void AppendAutoTradeLogs(ManualTradeResult result, GapSignalTriggerResult trigger, string label)
     {
         var now = DateTime.Now;
         var lines = new List<string>
@@ -498,7 +495,7 @@ public sealed class DashboardViewModel : ObservableObject
         foreach (var leg in result.Legs)
         {
             var status = leg.Success ? "OK" : "FAILED";
-            var price = ResolveManualLogPrice(snapshot, leg.Exchange, leg.Action);
+            var price = ResolveAutoLogPrice(trigger, leg.Exchange, leg.Action);
             var priceText = price.HasValue
                 ? $" @{price.Value.ToString("0.#####", CultureInfo.InvariantCulture)}"
                 : string.Empty;
@@ -516,6 +513,101 @@ public sealed class DashboardViewModel : ObservableObject
         {
             SignalLogItems.Insert(0, lines[i]);
         }
+    }
+
+    private void EnqueueOpenExpectedFromTrigger(string tradeMapName, GapSignalTriggerResult trigger, bool isExchangeA, int tradeType)
+    {
+        var expectedPrice = ResolveExpectedPriceFromTrigger(trigger, isExchangeA, tradeType);
+        if (!expectedPrice.HasValue)
+        {
+            return;
+        }
+
+        var key = tradeMapName ?? string.Empty;
+        if (!_pendingOpenExpectedByMap.TryGetValue(key, out var pendingList))
+        {
+            pendingList = [];
+            _pendingOpenExpectedByMap[key] = pendingList;
+        }
+
+        pendingList.Add(new ExpectedOpenCapture(tradeType, expectedPrice.Value, GetCurrentMonotonicMilliseconds()));
+    }
+
+    private void CaptureCloseExpectedFromTrigger(CloseSelectionResult selection, GapSignalTriggerResult trigger, bool isExchangeA)
+    {
+        if (selection.Request is null || !selection.TradeType.HasValue)
+        {
+            return;
+        }
+
+        var originalTradeType = selection.TradeType.Value;
+        var closeTradeType = originalTradeType == 0 ? 1 : 0;
+        var expectedPrice = ResolveExpectedPriceFromTrigger(trigger, isExchangeA, closeTradeType);
+        if (!expectedPrice.HasValue)
+        {
+            return;
+        }
+
+        _closeExpectedByTicket[selection.Request.Ticket] = new ExpectedCloseCapture(
+            originalTradeType,
+            expectedPrice.Value,
+            GetCurrentMonotonicMilliseconds());
+    }
+
+    private static double? ResolveExpectedPriceFromTrigger(GapSignalTriggerResult trigger, bool isExchangeA, int tradeType)
+    {
+        var isBuy = tradeType == 0;
+
+        if (isExchangeA)
+        {
+            if (isBuy)
+            {
+                return trigger.LastAAsk.HasValue ? (double)trigger.LastAAsk.Value : null;
+            }
+
+            return trigger.LastABid.HasValue ? (double)trigger.LastABid.Value : null;
+        }
+
+        if (isBuy)
+        {
+            return trigger.LastBAsk.HasValue ? (double)trigger.LastBAsk.Value : null;
+        }
+
+        return trigger.LastBBid.HasValue ? (double)trigger.LastBBid.Value : null;
+    }
+
+    private static decimal? ResolveAutoLogPrice(GapSignalTriggerResult trigger, string exchange, string action)
+    {
+        var isExchangeA = string.Equals(exchange, "A", StringComparison.OrdinalIgnoreCase);
+        var isBuy = string.Equals(action, "BUY", StringComparison.OrdinalIgnoreCase);
+        var isSell = string.Equals(action, "SELL", StringComparison.OrdinalIgnoreCase);
+
+        if (isExchangeA)
+        {
+            if (isBuy)
+            {
+                return trigger.LastAAsk;
+            }
+
+            if (isSell)
+            {
+                return trigger.LastABid;
+            }
+        }
+        else
+        {
+            if (isBuy)
+            {
+                return trigger.LastBAsk;
+            }
+
+            if (isSell)
+            {
+                return trigger.LastBBid;
+            }
+        }
+
+        return null;
     }
 
     private CloseSelectionResult SelectCloseCandidateForExchange(string exchangeLabel, string tradeMapName, string tradeHwnd)

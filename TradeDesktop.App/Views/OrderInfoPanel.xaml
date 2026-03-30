@@ -326,6 +326,8 @@
                             </Style>
                         </Border.Style>
 
+                        <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                                      VerticalScrollBarVisibility="Auto">
                         <Grid>
                             <DataGrid ItemsSource="{Binding HistoryRows}"
                                       AutoGenerateColumns="False"
@@ -347,8 +349,8 @@
                                       FontSize="11"
                                       MinHeight="48"
                                       ScrollViewer.CanContentScroll="False"
-                                      ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                                      ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                      ScrollViewer.VerticalScrollBarVisibility="Disabled">
                                 <DataGrid.ColumnHeaderStyle>
                                     <Style TargetType="DataGridColumnHeader">
                                         <Setter Property="FontWeight" Value="SemiBold" />
@@ -381,6 +383,7 @@
                                 </DataGrid.Columns>
                             </DataGrid>
                         </Grid>
+                        </ScrollViewer>
                     </Border>
 
                     <Border Grid.Row="0"
@@ -401,6 +404,8 @@
                             </Style>
                         </Border.Style>
 
+                        <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                                      VerticalScrollBarVisibility="Auto">
                         <DataGrid ItemsSource="{Binding TradeRows}"
                                   AutoGenerateColumns="False"
                                   IsReadOnly="True"
@@ -421,8 +426,8 @@
                                   FontSize="11"
                                   MinHeight="48"
                                   ScrollViewer.CanContentScroll="False"
-                                  ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                                  ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                  ScrollViewer.VerticalScrollBarVisibility="Disabled">
                             <DataGrid.ColumnHeaderStyle>
                                 <Style TargetType="DataGridColumnHeader">
                                     <Setter Property="FontWeight" Value="SemiBold" />
@@ -449,6 +454,7 @@
                                 <DataGridTextColumn Header="Time" Binding="{Binding Time}" Width="180" />
                             </DataGrid.Columns>
                         </DataGrid>
+                        </ScrollViewer>
                     </Border>
                 </Grid>
             </Border>
