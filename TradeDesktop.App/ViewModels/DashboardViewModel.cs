@@ -351,11 +351,13 @@ public sealed class DashboardViewModel : ObservableObject
     private async Task BuyAsync()
     {
         var snapshot = _runtimeConfigState.CurrentDashboardMetrics;
-        EnqueueOpenExpected(TradeTab.LeftPanel.TargetMapName, snapshot, isExchangeA: true, tradeType: 0);
-        EnqueueOpenExpected(TradeTab.RightPanel.TargetMapName, snapshot, isExchangeA: false, tradeType: 1);
         var result = await _mt5ManualTradeService.ExecuteBuyAsync(
             _runtimeConfigState.CurrentChartHwndA,
             _runtimeConfigState.CurrentChartHwndB);
+
+        var sentAt = GetCurrentMonotonicMilliseconds();
+        EnqueueOpenExpected(TradeTab.LeftPanel.TargetMapName, snapshot, isExchangeA: true, tradeType: 0, sentAt);
+        EnqueueOpenExpected(TradeTab.RightPanel.TargetMapName, snapshot, isExchangeA: false, tradeType: 1, sentAt);
 
         AppendManualTradeLogs(result, snapshot);
         ShowManualTradeFeedback("BUY", result);
@@ -364,11 +366,13 @@ public sealed class DashboardViewModel : ObservableObject
     private async Task SellAsync()
     {
         var snapshot = _runtimeConfigState.CurrentDashboardMetrics;
-        EnqueueOpenExpected(TradeTab.LeftPanel.TargetMapName, snapshot, isExchangeA: true, tradeType: 1);
-        EnqueueOpenExpected(TradeTab.RightPanel.TargetMapName, snapshot, isExchangeA: false, tradeType: 0);
         var result = await _mt5ManualTradeService.ExecuteSellAsync(
             _runtimeConfigState.CurrentChartHwndA,
             _runtimeConfigState.CurrentChartHwndB);
+
+        var sentAt = GetCurrentMonotonicMilliseconds();
+        EnqueueOpenExpected(TradeTab.LeftPanel.TargetMapName, snapshot, isExchangeA: true, tradeType: 1, sentAt);
+        EnqueueOpenExpected(TradeTab.RightPanel.TargetMapName, snapshot, isExchangeA: false, tradeType: 0, sentAt);
 
         AppendManualTradeLogs(result, snapshot);
         ShowManualTradeFeedback("SELL", result);
@@ -387,12 +391,13 @@ public sealed class DashboardViewModel : ObservableObject
             tradeMapName: TradeTab.RightPanel.TargetMapName,
             tradeHwnd: _runtimeConfigState.CurrentTradeHwndB);
 
-        CaptureCloseExpected(selectA, snapshot, isExchangeA: true);
-        CaptureCloseExpected(selectB, snapshot, isExchangeA: false);
-
         var result = await _mt5ManualTradeService.ExecuteCloseAsync(
             selectA.Request,
             selectB.Request);
+
+        var sentAt = GetCurrentMonotonicMilliseconds();
+        CaptureCloseExpected(selectA, snapshot, isExchangeA: true, sentAt);
+        CaptureCloseExpected(selectB, snapshot, isExchangeA: false, sentAt);
 
         AppendManualTradeLogs(result, snapshot);
         AppendCloseSelectionDiagnostics(selectA, selectB);
@@ -431,11 +436,13 @@ public sealed class DashboardViewModel : ObservableObject
 
     private async Task AutoBuyAsync(GapSignalTriggerResult trigger)
     {
-        EnqueueOpenExpectedFromTrigger(TradeTab.LeftPanel.TargetMapName, trigger, isExchangeA: true, tradeType: 0);
-        EnqueueOpenExpectedFromTrigger(TradeTab.RightPanel.TargetMapName, trigger, isExchangeA: false, tradeType: 1);
         var result = await _mt5ManualTradeService.ExecuteBuyAsync(
             _runtimeConfigState.CurrentChartHwndA,
             _runtimeConfigState.CurrentChartHwndB);
+
+        var sentAt = GetCurrentMonotonicMilliseconds();
+        EnqueueOpenExpectedFromTrigger(TradeTab.LeftPanel.TargetMapName, trigger, isExchangeA: true, tradeType: 0, sentAt);
+        EnqueueOpenExpectedFromTrigger(TradeTab.RightPanel.TargetMapName, trigger, isExchangeA: false, tradeType: 1, sentAt);
 
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
@@ -445,11 +452,13 @@ public sealed class DashboardViewModel : ObservableObject
 
     private async Task AutoSellAsync(GapSignalTriggerResult trigger)
     {
-        EnqueueOpenExpectedFromTrigger(TradeTab.LeftPanel.TargetMapName, trigger, isExchangeA: true, tradeType: 1);
-        EnqueueOpenExpectedFromTrigger(TradeTab.RightPanel.TargetMapName, trigger, isExchangeA: false, tradeType: 0);
         var result = await _mt5ManualTradeService.ExecuteSellAsync(
             _runtimeConfigState.CurrentChartHwndA,
             _runtimeConfigState.CurrentChartHwndB);
+
+        var sentAt = GetCurrentMonotonicMilliseconds();
+        EnqueueOpenExpectedFromTrigger(TradeTab.LeftPanel.TargetMapName, trigger, isExchangeA: true, tradeType: 1, sentAt);
+        EnqueueOpenExpectedFromTrigger(TradeTab.RightPanel.TargetMapName, trigger, isExchangeA: false, tradeType: 0, sentAt);
 
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
@@ -469,12 +478,13 @@ public sealed class DashboardViewModel : ObservableObject
             tradeMapName: TradeTab.RightPanel.TargetMapName,
             tradeHwnd: _runtimeConfigState.CurrentTradeHwndB);
 
-        CaptureCloseExpectedFromTrigger(selectA, trigger, isExchangeA: true);
-        CaptureCloseExpectedFromTrigger(selectB, trigger, isExchangeA: false);
-
         var result = await _mt5ManualTradeService.ExecuteCloseAsync(
             selectA.Request,
             selectB.Request);
+
+        var sentAt = GetCurrentMonotonicMilliseconds();
+        CaptureCloseExpectedFromTrigger(selectA, trigger, isExchangeA: true, sentAt);
+        CaptureCloseExpectedFromTrigger(selectB, trigger, isExchangeA: false, sentAt);
 
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
@@ -515,7 +525,7 @@ public sealed class DashboardViewModel : ObservableObject
         }
     }
 
-    private void EnqueueOpenExpectedFromTrigger(string tradeMapName, GapSignalTriggerResult trigger, bool isExchangeA, int tradeType)
+    private void EnqueueOpenExpectedFromTrigger(string tradeMapName, GapSignalTriggerResult trigger, bool isExchangeA, int tradeType, long sentAtMs)
     {
         var expectedPrice = ResolveExpectedPriceFromTrigger(trigger, isExchangeA, tradeType);
         if (!expectedPrice.HasValue)
@@ -530,10 +540,10 @@ public sealed class DashboardViewModel : ObservableObject
             _pendingOpenExpectedByMap[key] = pendingList;
         }
 
-        pendingList.Add(new ExpectedOpenCapture(tradeType, expectedPrice.Value, GetCurrentMonotonicMilliseconds()));
+        pendingList.Add(new ExpectedOpenCapture(tradeType, expectedPrice.Value, sentAtMs));
     }
 
-    private void CaptureCloseExpectedFromTrigger(CloseSelectionResult selection, GapSignalTriggerResult trigger, bool isExchangeA)
+    private void CaptureCloseExpectedFromTrigger(CloseSelectionResult selection, GapSignalTriggerResult trigger, bool isExchangeA, long sentAtMs)
     {
         if (selection.Request is null || !selection.TradeType.HasValue)
         {
@@ -551,7 +561,7 @@ public sealed class DashboardViewModel : ObservableObject
         _closeExpectedByTicket[selection.Request.Ticket] = new ExpectedCloseCapture(
             originalTradeType,
             expectedPrice.Value,
-            GetCurrentMonotonicMilliseconds());
+            sentAtMs);
     }
 
     private static double? ResolveExpectedPriceFromTrigger(GapSignalTriggerResult trigger, bool isExchangeA, int tradeType)
@@ -684,7 +694,7 @@ public sealed class DashboardViewModel : ObservableObject
         int? TradeType,
         string? DiagnosticMessage);
 
-    private void EnqueueOpenExpected(string tradeMapName, DashboardMetrics? snapshot, bool isExchangeA, int tradeType)
+    private void EnqueueOpenExpected(string tradeMapName, DashboardMetrics? snapshot, bool isExchangeA, int tradeType, long sentAtMs)
     {
         var expectedPrice = ResolveExpectedOpenPrice(snapshot, isExchangeA, tradeType);
         if (!expectedPrice.HasValue)
@@ -699,10 +709,10 @@ public sealed class DashboardViewModel : ObservableObject
             _pendingOpenExpectedByMap[key] = pendingList;
         }
 
-        pendingList.Add(new ExpectedOpenCapture(tradeType, expectedPrice.Value, GetCurrentMonotonicMilliseconds()));
+        pendingList.Add(new ExpectedOpenCapture(tradeType, expectedPrice.Value, sentAtMs));
     }
 
-    private void CaptureCloseExpected(CloseSelectionResult selection, DashboardMetrics? snapshot, bool isExchangeA)
+    private void CaptureCloseExpected(CloseSelectionResult selection, DashboardMetrics? snapshot, bool isExchangeA, long sentAtMs)
     {
         if (selection.Request is null || !selection.TradeType.HasValue)
         {
@@ -718,7 +728,7 @@ public sealed class DashboardViewModel : ObservableObject
         _closeExpectedByTicket[selection.Request.Ticket] = new ExpectedCloseCapture(
             selection.TradeType.Value,
             expectedPrice.Value,
-            GetCurrentMonotonicMilliseconds());
+            sentAtMs);
     }
 
     private void AppendManualTradeLogs(ManualTradeResult result, DashboardMetrics? snapshot)
