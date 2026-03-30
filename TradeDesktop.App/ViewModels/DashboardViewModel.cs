@@ -40,6 +40,8 @@ public sealed class DashboardViewModel : ObservableObject
     private readonly Dictionary<ulong, double> _openSlippageByTicket = [];
     private readonly Dictionary<ulong, long> _openExecutionMsByTicket = [];
     private readonly Dictionary<ulong, long> _closeExecutionMsByTicket = [];
+    private int _manualSlot;
+    private int _autoSlot;
     private SharedMapReadResult<TradeSharedRecord>? _latestTradeLeftResult;
     private SharedMapReadResult<TradeSharedRecord>? _latestTradeRightResult;
 
@@ -53,7 +55,9 @@ public sealed class DashboardViewModel : ObservableObject
         double? ExpectedPrice,
         DateTimeOffset AppOpenRequestTimeLocal,
         long AppOpenRequestUnixMs,
-        long AppOpenRequestRawMs);
+        long AppOpenRequestRawMs,
+        int SlotNumber = 0,
+        string ExchangeLabel = "");
 
     private sealed record PendingCloseRequest(
         string TradeMapName,
@@ -64,7 +68,9 @@ public sealed class DashboardViewModel : ObservableObject
         double? ExpectedPrice,
         DateTimeOffset AppCloseRequestTimeLocal,
         long AppCloseRequestUnixMs,
-        long AppCloseRequestRawMs);
+        long AppCloseRequestRawMs,
+        int SlotNumber = 0,
+        string ExchangeLabel = "");
 
     private string _runtimeSummary = string.Empty;
     private string _dbInlineData = string.Empty;
@@ -372,16 +378,27 @@ public sealed class DashboardViewModel : ObservableObject
         var snapshot = _runtimeConfigState.CurrentDashboardMetrics;
         var appOpenRequestTimeLocal = DateTimeOffset.Now;
         var appOpenRequestRawMs = Environment.TickCount64;
+        var slot = _manualSlot;
 
         // Capture pending request BEFORE executing click to avoid race with shared-memory polling.
-        CapturePendingOpenRequest(TradeTab.LeftPanel.TargetMapName, snapshot, isExchangeA: true, tradeType: 0, appOpenRequestTimeLocal, appOpenRequestRawMs);
-        CapturePendingOpenRequest(TradeTab.RightPanel.TargetMapName, snapshot, isExchangeA: false, tradeType: 1, appOpenRequestTimeLocal, appOpenRequestRawMs);
+        CapturePendingOpenRequest(TradeTab.LeftPanel.TargetMapName, snapshot, isExchangeA: true, tradeType: 0, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
+        CapturePendingOpenRequest(TradeTab.RightPanel.TargetMapName, snapshot, isExchangeA: false, tradeType: 1, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
 
         var result = await _mt5ManualTradeService.ExecuteBuyAsync(
             _runtimeConfigState.CurrentChartHwndA,
             _runtimeConfigState.CurrentChartHwndB);
 
-        AppendManualTradeLogs(result, snapshot);
+        // Phase 1 Manual Open log: A buy, B sell
+        var now = DateTime.Now;
+        var gap = _runtimeConfigState.CurrentDashboardMetrics?.GapBuy;
+        var symbolA = snapshot?.ExchangeA.Symbol ?? "-";
+        var symbolB = snapshot?.ExchangeB.Symbol ?? "-";
+        var priceA = SignalLogFormatter.ResolveOpenPrice(snapshot?.ExchangeA.Bid, snapshot?.ExchangeA.Ask, isBuy: true);
+        var priceB = SignalLogFormatter.ResolveOpenPrice(snapshot?.ExchangeB.Bid, snapshot?.ExchangeB.Ask, isBuy: false);
+        SignalLogItems.Insert(0, SignalLogFormatter.FormatManualOpen(now, slot, "B", "SELL", symbolB, priceB, gap));
+        SignalLogItems.Insert(0, SignalLogFormatter.FormatManualOpen(now, slot, "A", "BUY", symbolA, priceA, gap));
+
+        _manualSlot++;
         ShowManualTradeFeedback("BUY", result);
     }
 
@@ -390,22 +407,34 @@ public sealed class DashboardViewModel : ObservableObject
         var snapshot = _runtimeConfigState.CurrentDashboardMetrics;
         var appOpenRequestTimeLocal = DateTimeOffset.Now;
         var appOpenRequestRawMs = Environment.TickCount64;
+        var slot = _manualSlot;
 
         // Capture pending request BEFORE executing click to avoid race with shared-memory polling.
-        CapturePendingOpenRequest(TradeTab.LeftPanel.TargetMapName, snapshot, isExchangeA: true, tradeType: 1, appOpenRequestTimeLocal, appOpenRequestRawMs);
-        CapturePendingOpenRequest(TradeTab.RightPanel.TargetMapName, snapshot, isExchangeA: false, tradeType: 0, appOpenRequestTimeLocal, appOpenRequestRawMs);
+        CapturePendingOpenRequest(TradeTab.LeftPanel.TargetMapName, snapshot, isExchangeA: true, tradeType: 1, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
+        CapturePendingOpenRequest(TradeTab.RightPanel.TargetMapName, snapshot, isExchangeA: false, tradeType: 0, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
 
         var result = await _mt5ManualTradeService.ExecuteSellAsync(
             _runtimeConfigState.CurrentChartHwndA,
             _runtimeConfigState.CurrentChartHwndB);
 
-        AppendManualTradeLogs(result, snapshot);
+        // Phase 1 Manual Open log: A sell, B buy
+        var now = DateTime.Now;
+        var gap = _runtimeConfigState.CurrentDashboardMetrics?.GapSell;
+        var symbolA = snapshot?.ExchangeA.Symbol ?? "-";
+        var symbolB = snapshot?.ExchangeB.Symbol ?? "-";
+        var priceA = SignalLogFormatter.ResolveOpenPrice(snapshot?.ExchangeA.Bid, snapshot?.ExchangeA.Ask, isBuy: false);
+        var priceB = SignalLogFormatter.ResolveOpenPrice(snapshot?.ExchangeB.Bid, snapshot?.ExchangeB.Ask, isBuy: true);
+        SignalLogItems.Insert(0, SignalLogFormatter.FormatManualOpen(now, slot, "B", "BUY", symbolB, priceB, gap));
+        SignalLogItems.Insert(0, SignalLogFormatter.FormatManualOpen(now, slot, "A", "SELL", symbolA, priceA, gap));
+
+        _manualSlot++;
         ShowManualTradeFeedback("SELL", result);
     }
 
     private async Task CloseOrderAsync()
     {
         var snapshot = _runtimeConfigState.CurrentDashboardMetrics;
+        var slot = Math.Max(0, _manualSlot - 1);
         var selectA = SelectCloseCandidateForExchange(
             exchangeLabel: "A",
             tradeMapName: TradeTab.LeftPanel.TargetMapName,
@@ -420,14 +449,33 @@ public sealed class DashboardViewModel : ObservableObject
         var appCloseRequestRawMs = Environment.TickCount64;
 
         // Capture pending request BEFORE executing close to avoid race with shared-memory polling.
-        CapturePendingCloseRequest(selectA, snapshot, isExchangeA: true, appCloseRequestTimeLocal, appCloseRequestRawMs);
-        CapturePendingCloseRequest(selectB, snapshot, isExchangeA: false, appCloseRequestTimeLocal, appCloseRequestRawMs);
+        CapturePendingCloseRequest(selectA, snapshot, isExchangeA: true, appCloseRequestTimeLocal, appCloseRequestRawMs, slot);
+        CapturePendingCloseRequest(selectB, snapshot, isExchangeA: false, appCloseRequestTimeLocal, appCloseRequestRawMs, slot);
 
         var result = await _mt5ManualTradeService.ExecuteCloseAsync(
             selectA.Request,
             selectB.Request);
 
-        AppendManualTradeLogs(result, snapshot);
+        // Phase 1 Manual Close log
+        var now = DateTime.Now;
+        if (selectA.TradeType.HasValue)
+        {
+            var isBuyA = selectA.TradeType.Value == 0;
+            var typeA = SignalLogFormatter.TradeTypeString(selectA.TradeType.Value);
+            var symbolA = selectA.Symbol ?? "-";
+            var closePriceA = SignalLogFormatter.ResolveClosePrice(snapshot?.ExchangeA.Bid, snapshot?.ExchangeA.Ask, isBuyA);
+            SignalLogItems.Insert(0, SignalLogFormatter.FormatManualClose(now, slot, "A", typeA, symbolA, closePriceA));
+        }
+
+        if (selectB.TradeType.HasValue)
+        {
+            var isBuyB = selectB.TradeType.Value == 0;
+            var typeB = SignalLogFormatter.TradeTypeString(selectB.TradeType.Value);
+            var symbolB = selectB.Symbol ?? "-";
+            var closePriceB = SignalLogFormatter.ResolveClosePrice(snapshot?.ExchangeB.Bid, snapshot?.ExchangeB.Ask, isBuyB);
+            SignalLogItems.Insert(0, SignalLogFormatter.FormatManualClose(now, slot, "B", typeB, symbolB, closePriceB));
+        }
+
         AppendCloseSelectionDiagnostics(selectA, selectB);
         ShowManualTradeFeedback("CLOSE", result);
     }
@@ -466,18 +514,29 @@ public sealed class DashboardViewModel : ObservableObject
     {
         var appOpenRequestTimeLocal = DateTimeOffset.Now;
         var appOpenRequestRawMs = Environment.TickCount64;
+        var slot = _autoSlot;
 
         // Capture pending request BEFORE executing click to avoid race with shared-memory polling.
-        CapturePendingOpenRequestFromTrigger(TradeTab.LeftPanel.TargetMapName, trigger, isExchangeA: true, tradeType: 0, appOpenRequestTimeLocal, appOpenRequestRawMs);
-        CapturePendingOpenRequestFromTrigger(TradeTab.RightPanel.TargetMapName, trigger, isExchangeA: false, tradeType: 1, appOpenRequestTimeLocal, appOpenRequestRawMs);
+        CapturePendingOpenRequestFromTrigger(TradeTab.LeftPanel.TargetMapName, trigger, isExchangeA: true, tradeType: 0, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
+        CapturePendingOpenRequestFromTrigger(TradeTab.RightPanel.TargetMapName, trigger, isExchangeA: false, tradeType: 1, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
 
-        var result = await _mt5ManualTradeService.ExecuteBuyAsync(
+        await _mt5ManualTradeService.ExecuteBuyAsync(
             _runtimeConfigState.CurrentChartHwndA,
             _runtimeConfigState.CurrentChartHwndB);
 
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
-            AppendAutoTradeLogs(result, trigger, "OPEN_AUTO");
+            // Phase 1 Auto Open log: A buy, B sell
+            var now = DateTime.Now;
+            var symbolA = _runtimeConfigState.CurrentDashboardMetrics?.ExchangeA.Symbol ?? "-";
+            var symbolB = _runtimeConfigState.CurrentDashboardMetrics?.ExchangeB.Symbol ?? "-";
+            var priceA = trigger.LastAAsk;
+            var priceB = trigger.LastBBid;
+            var buyGaps = trigger.BuyGaps;
+            var sellGaps = trigger.SellGaps;
+            SignalLogItems.Insert(0, SignalLogFormatter.FormatAutoOpen(now, slot, "B", "SELL", symbolB, priceB, trigger.LastSellGap, sellGaps));
+            SignalLogItems.Insert(0, SignalLogFormatter.FormatAutoOpen(now, slot, "A", "BUY", symbolA, priceA, trigger.LastBuyGap, buyGaps));
+            _autoSlot++;
         });
     }
 
@@ -485,23 +544,35 @@ public sealed class DashboardViewModel : ObservableObject
     {
         var appOpenRequestTimeLocal = DateTimeOffset.Now;
         var appOpenRequestRawMs = Environment.TickCount64;
+        var slot = _autoSlot;
 
         // Capture pending request BEFORE executing click to avoid race with shared-memory polling.
-        CapturePendingOpenRequestFromTrigger(TradeTab.LeftPanel.TargetMapName, trigger, isExchangeA: true, tradeType: 1, appOpenRequestTimeLocal, appOpenRequestRawMs);
-        CapturePendingOpenRequestFromTrigger(TradeTab.RightPanel.TargetMapName, trigger, isExchangeA: false, tradeType: 0, appOpenRequestTimeLocal, appOpenRequestRawMs);
+        CapturePendingOpenRequestFromTrigger(TradeTab.LeftPanel.TargetMapName, trigger, isExchangeA: true, tradeType: 1, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
+        CapturePendingOpenRequestFromTrigger(TradeTab.RightPanel.TargetMapName, trigger, isExchangeA: false, tradeType: 0, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
 
-        var result = await _mt5ManualTradeService.ExecuteSellAsync(
+        await _mt5ManualTradeService.ExecuteSellAsync(
             _runtimeConfigState.CurrentChartHwndA,
             _runtimeConfigState.CurrentChartHwndB);
 
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
-            AppendAutoTradeLogs(result, trigger, "OPEN_AUTO");
+            // Phase 1 Auto Open log: A sell, B buy
+            var now = DateTime.Now;
+            var symbolA = _runtimeConfigState.CurrentDashboardMetrics?.ExchangeA.Symbol ?? "-";
+            var symbolB = _runtimeConfigState.CurrentDashboardMetrics?.ExchangeB.Symbol ?? "-";
+            var priceA = trigger.LastABid;
+            var priceB = trigger.LastBAsk;
+            var buyGaps = trigger.BuyGaps;
+            var sellGaps = trigger.SellGaps;
+            SignalLogItems.Insert(0, SignalLogFormatter.FormatAutoOpen(now, slot, "B", "BUY", symbolB, priceB, trigger.LastBuyGap, buyGaps));
+            SignalLogItems.Insert(0, SignalLogFormatter.FormatAutoOpen(now, slot, "A", "SELL", symbolA, priceA, trigger.LastSellGap, sellGaps));
+            _autoSlot++;
         });
     }
 
     private async Task AutoCloseOrderAsync(GapSignalTriggerResult trigger)
     {
+        var slot = Math.Max(0, _autoSlot - 1);
         var selectA = SelectCloseCandidateForExchange(
             exchangeLabel: "A",
             tradeMapName: TradeTab.LeftPanel.TargetMapName,
@@ -516,50 +587,47 @@ public sealed class DashboardViewModel : ObservableObject
         var appCloseRequestRawMs = Environment.TickCount64;
 
         // Capture pending request BEFORE executing close to avoid race with shared-memory polling.
-        CapturePendingCloseRequestFromTrigger(selectA, trigger, isExchangeA: true, appCloseRequestTimeLocal, appCloseRequestRawMs);
-        CapturePendingCloseRequestFromTrigger(selectB, trigger, isExchangeA: false, appCloseRequestTimeLocal, appCloseRequestRawMs);
+        CapturePendingCloseRequestFromTrigger(selectA, trigger, isExchangeA: true, appCloseRequestTimeLocal, appCloseRequestRawMs, slot);
+        CapturePendingCloseRequestFromTrigger(selectB, trigger, isExchangeA: false, appCloseRequestTimeLocal, appCloseRequestRawMs, slot);
 
-        var result = await _mt5ManualTradeService.ExecuteCloseAsync(
+        await _mt5ManualTradeService.ExecuteCloseAsync(
             selectA.Request,
             selectB.Request);
 
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
-            AppendAutoTradeLogs(result, trigger, "CLOSE_AUTO");
+            // Phase 1 Auto Close log
+            var now = DateTime.Now;
+            var allGaps = trigger.TriggerType is GapSignalTriggerType.CloseByGapBuy
+                ? trigger.BuyGaps
+                : trigger.SellGaps;
+
+            if (selectA.TradeType.HasValue)
+            {
+                var isBuyA = selectA.TradeType.Value == 0;
+                var typeA = SignalLogFormatter.TradeTypeString(selectA.TradeType.Value);
+                var symbolA = selectA.Symbol ?? "-";
+                var closePriceA = SignalLogFormatter.ResolveClosePrice(
+                    _runtimeConfigState.CurrentDashboardMetrics?.ExchangeA.Bid,
+                    _runtimeConfigState.CurrentDashboardMetrics?.ExchangeA.Ask,
+                    isBuyA);
+                SignalLogItems.Insert(0, SignalLogFormatter.FormatAutoClose(now, slot, "A", typeA, symbolA, closePriceA, allGaps));
+            }
+
+            if (selectB.TradeType.HasValue)
+            {
+                var isBuyB = selectB.TradeType.Value == 0;
+                var typeB = SignalLogFormatter.TradeTypeString(selectB.TradeType.Value);
+                var symbolB = selectB.Symbol ?? "-";
+                var closePriceB = SignalLogFormatter.ResolveClosePrice(
+                    _runtimeConfigState.CurrentDashboardMetrics?.ExchangeB.Bid,
+                    _runtimeConfigState.CurrentDashboardMetrics?.ExchangeB.Ask,
+                    isBuyB);
+                SignalLogItems.Insert(0, SignalLogFormatter.FormatAutoClose(now, slot, "B", typeB, symbolB, closePriceB, allGaps));
+            }
+
             AppendCloseSelectionDiagnostics(selectA, selectB);
         });
-    }
-
-    private void AppendAutoTradeLogs(ManualTradeResult result, GapSignalTriggerResult trigger, string label)
-    {
-        var now = DateTime.Now;
-        var lines = new List<string>
-        {
-            $"[{label}] Auto",
-            "    = Auto trigger from signal engine"
-        };
-
-        foreach (var leg in result.Legs)
-        {
-            var status = leg.Success ? "OK" : "FAILED";
-            var price = ResolveAutoLogPrice(trigger, leg.Exchange, leg.Action);
-            var priceText = price.HasValue
-                ? $" @{price.Value.ToString("0.#####", CultureInfo.InvariantCulture)}"
-                : string.Empty;
-
-            lines.Add($"    - [{now:HH:mm:ss.fff}] {leg.Action} {leg.Exchange}{priceText} {status} ({leg.Detail})");
-        }
-
-        if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
-        {
-            lines.Add($"    = ERROR: {result.ErrorMessage}");
-        }
-
-        LastSignalText = lines[0];
-        for (var i = lines.Count - 1; i >= 0; i--)
-        {
-            SignalLogItems.Insert(0, lines[i]);
-        }
     }
 
     private void CapturePendingOpenRequestFromTrigger(
@@ -568,7 +636,8 @@ public sealed class DashboardViewModel : ObservableObject
         bool isExchangeA,
         int tradeType,
         DateTimeOffset appOpenRequestTimeLocal,
-        long appOpenRequestRawMs)
+        long appOpenRequestRawMs,
+        int slotNumber = 0)
     {
         var expectedPrice = ResolveExpectedPriceFromTrigger(trigger, isExchangeA, tradeType);
         RegisterPendingOpenRequest(
@@ -578,7 +647,9 @@ public sealed class DashboardViewModel : ObservableObject
             tradeType: tradeType,
             expectedPrice: expectedPrice,
             appOpenRequestTimeLocal: appOpenRequestTimeLocal,
-            appOpenRequestRawMs: appOpenRequestRawMs);
+            appOpenRequestRawMs: appOpenRequestRawMs,
+            slotNumber: slotNumber,
+            exchangeLabel: isExchangeA ? "A" : "B");
     }
 
     private void CapturePendingCloseRequestFromTrigger(
@@ -586,7 +657,8 @@ public sealed class DashboardViewModel : ObservableObject
         GapSignalTriggerResult trigger,
         bool isExchangeA,
         DateTimeOffset appCloseRequestTimeLocal,
-        long appCloseRequestRawMs)
+        long appCloseRequestRawMs,
+        int slotNumber = 0)
     {
         if (selection.Request is null || !selection.TradeType.HasValue)
         {
@@ -604,63 +676,32 @@ public sealed class DashboardViewModel : ObservableObject
             appCloseRequestTimeLocal: appCloseRequestTimeLocal,
             appCloseRequestRawMs: appCloseRequestRawMs,
             symbol: selection.Symbol,
-            volume: selection.Volume);
+            volume: selection.Volume,
+            slotNumber: slotNumber,
+            exchangeLabel: isExchangeA ? "A" : "B");
     }
 
     private static double? ResolveExpectedPriceFromTrigger(GapSignalTriggerResult trigger, bool isExchangeA, int tradeType)
     {
         var isBuy = tradeType == 0;
 
+        // Standard forex: Buy at Ask, Sell at Bid
         if (isExchangeA)
         {
             if (isBuy)
             {
-                return trigger.LastABid.HasValue ? (double)trigger.LastABid.Value : null;
+                return trigger.LastAAsk.HasValue ? (double)trigger.LastAAsk.Value : null;
             }
 
-            return trigger.LastAAsk.HasValue ? (double)trigger.LastAAsk.Value : null;
+            return trigger.LastABid.HasValue ? (double)trigger.LastABid.Value : null;
         }
 
         if (isBuy)
         {
-            return trigger.LastBBid.HasValue ? (double)trigger.LastBBid.Value : null;
+            return trigger.LastBAsk.HasValue ? (double)trigger.LastBAsk.Value : null;
         }
 
-        return trigger.LastBAsk.HasValue ? (double)trigger.LastBAsk.Value : null;
-    }
-
-    private static decimal? ResolveAutoLogPrice(GapSignalTriggerResult trigger, string exchange, string action)
-    {
-        var isExchangeA = string.Equals(exchange, "A", StringComparison.OrdinalIgnoreCase);
-        var isBuy = string.Equals(action, "BUY", StringComparison.OrdinalIgnoreCase);
-        var isSell = string.Equals(action, "SELL", StringComparison.OrdinalIgnoreCase);
-
-        if (isExchangeA)
-        {
-            if (isBuy)
-            {
-                return trigger.LastABid;
-            }
-
-            if (isSell)
-            {
-                return trigger.LastAAsk;
-            }
-        }
-        else
-        {
-            if (isBuy)
-            {
-                return trigger.LastBBid;
-            }
-
-            if (isSell)
-            {
-                return trigger.LastBAsk;
-            }
-        }
-
-        return null;
+        return trigger.LastBBid.HasValue ? (double)trigger.LastBBid.Value : null;
     }
 
     private CloseSelectionResult SelectCloseCandidateForExchange(string exchangeLabel, string tradeMapName, string tradeHwnd)
@@ -758,7 +799,8 @@ public sealed class DashboardViewModel : ObservableObject
         bool isExchangeA,
         int tradeType,
         DateTimeOffset appOpenRequestTimeLocal,
-        long appOpenRequestRawMs)
+        long appOpenRequestRawMs,
+        int slotNumber = 0)
     {
         var expectedPrice = ResolveExpectedOpenPrice(snapshot, isExchangeA, tradeType);
         RegisterPendingOpenRequest(
@@ -768,7 +810,9 @@ public sealed class DashboardViewModel : ObservableObject
             tradeType: tradeType,
             expectedPrice: expectedPrice,
             appOpenRequestTimeLocal: appOpenRequestTimeLocal,
-            appOpenRequestRawMs: appOpenRequestRawMs);
+            appOpenRequestRawMs: appOpenRequestRawMs,
+            slotNumber: slotNumber,
+            exchangeLabel: isExchangeA ? "A" : "B");
     }
 
     private void CapturePendingCloseRequest(
@@ -776,7 +820,8 @@ public sealed class DashboardViewModel : ObservableObject
         DashboardMetrics? snapshot,
         bool isExchangeA,
         DateTimeOffset appCloseRequestTimeLocal,
-        long appCloseRequestRawMs)
+        long appCloseRequestRawMs,
+        int slotNumber = 0)
     {
         if (selection.Request is null || !selection.TradeType.HasValue)
         {
@@ -793,7 +838,9 @@ public sealed class DashboardViewModel : ObservableObject
             appCloseRequestTimeLocal: appCloseRequestTimeLocal,
             appCloseRequestRawMs: appCloseRequestRawMs,
             symbol: selection.Symbol,
-            volume: selection.Volume);
+            volume: selection.Volume,
+            slotNumber: slotNumber,
+            exchangeLabel: isExchangeA ? "A" : "B");
     }
 
     private void RegisterPendingOpenRequest(
@@ -803,7 +850,9 @@ public sealed class DashboardViewModel : ObservableObject
         int tradeType,
         double? expectedPrice,
         DateTimeOffset appOpenRequestTimeLocal,
-        long appOpenRequestRawMs)
+        long appOpenRequestRawMs,
+        int slotNumber = 0,
+        string exchangeLabel = "")
     {
         var key = NormalizeMapName(tradeMapName);
         if (!_pendingOpenRequestsByMap.TryGetValue(key, out var pendingList))
@@ -820,10 +869,12 @@ public sealed class DashboardViewModel : ObservableObject
             ExpectedPrice: expectedPrice,
             AppOpenRequestTimeLocal: appOpenRequestTimeLocal,
             AppOpenRequestUnixMs: appOpenRequestTimeLocal.ToUnixTimeMilliseconds(),
-            AppOpenRequestRawMs: appOpenRequestRawMs);
+            AppOpenRequestRawMs: appOpenRequestRawMs,
+            SlotNumber: slotNumber,
+            ExchangeLabel: exchangeLabel);
 
         pendingList.Add(pending);
-        Debug.WriteLine($"[ExecOpen][Capture] map={key}, type={tradeType}, app_open_request_time={pending.AppOpenRequestTimeLocal:O}, app_open_request_raw_ms={pending.AppOpenRequestRawMs}");
+        Debug.WriteLine($"[ExecOpen][Capture] map={key}, type={tradeType}, slot={slotNumber}, label={exchangeLabel}, app_open_request_time={pending.AppOpenRequestTimeLocal:O}, app_open_request_raw_ms={pending.AppOpenRequestRawMs}");
     }
 
     private void RegisterPendingCloseRequest(
@@ -834,7 +885,9 @@ public sealed class DashboardViewModel : ObservableObject
         DateTimeOffset appCloseRequestTimeLocal,
         long appCloseRequestRawMs,
         string? symbol,
-        double? volume)
+        double? volume,
+        int slotNumber = 0,
+        string exchangeLabel = "")
     {
         var key = NormalizeMapName(tradeMapName);
         if (!_pendingCloseRequestsByMap.TryGetValue(key, out var pendingList))
@@ -852,10 +905,12 @@ public sealed class DashboardViewModel : ObservableObject
             ExpectedPrice: expectedPrice,
             AppCloseRequestTimeLocal: appCloseRequestTimeLocal,
             AppCloseRequestUnixMs: appCloseRequestTimeLocal.ToUnixTimeMilliseconds(),
-            AppCloseRequestRawMs: appCloseRequestRawMs);
+            AppCloseRequestRawMs: appCloseRequestRawMs,
+            SlotNumber: slotNumber,
+            ExchangeLabel: exchangeLabel);
 
         pendingList.Add(pending);
-        Debug.WriteLine($"[ExecClose][Capture] map={key}, ticket={(ticket.HasValue ? ticket.Value.ToString(CultureInfo.InvariantCulture) : "-")}, type={tradeType}, app_close_request_time={pending.AppCloseRequestTimeLocal:O}, app_close_request_raw_ms={pending.AppCloseRequestRawMs}");
+        Debug.WriteLine($"[ExecClose][Capture] map={key}, ticket={(ticket.HasValue ? ticket.Value.ToString(CultureInfo.InvariantCulture) : "-")}, type={tradeType}, slot={slotNumber}, label={exchangeLabel}, app_close_request_time={pending.AppCloseRequestTimeLocal:O}, app_close_request_raw_ms={pending.AppCloseRequestRawMs}");
     }
 
     private static string ResolveTradeMapNameFromCloseSelection(CloseSelectionResult selection)
@@ -872,79 +927,6 @@ public sealed class DashboardViewModel : ObservableObject
     private static string NormalizeMapName(string? mapName)
         => string.IsNullOrWhiteSpace(mapName) ? string.Empty : mapName.Trim();
 
-    private void AppendManualTradeLogs(ManualTradeResult result, DashboardMetrics? snapshot)
-    {
-        var now = DateTime.Now;
-        var lines = new List<string>
-        {
-            $"[{result.Label}] Manual",
-            "    = Manual trigger from UI buttons"
-        };
-
-        foreach (var leg in result.Legs)
-        {
-            var status = leg.Success ? "OK" : "FAILED";
-            var price = ResolveManualLogPrice(snapshot, leg.Exchange, leg.Action);
-            var priceText = price.HasValue
-                ? $" @{price.Value.ToString("0.#####", CultureInfo.InvariantCulture)}"
-                : string.Empty;
-
-            lines.Add($"    - [{now:HH:mm:ss.fff}] {leg.Action} {leg.Exchange}{priceText} {status} ({leg.Detail})");
-        }
-
-        if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
-        {
-            lines.Add($"    = ERROR: {result.ErrorMessage}");
-        }
-
-        LastSignalText = lines[0];
-        for (var i = lines.Count - 1; i >= 0; i--)
-        {
-            SignalLogItems.Insert(0, lines[i]);
-        }
-    }
-
-    private static decimal? ResolveManualLogPrice(DashboardMetrics? snapshot, string exchange, string action)
-    {
-        if (snapshot is null)
-        {
-            return null;
-        }
-
-        var isExchangeA = string.Equals(exchange, "A", StringComparison.OrdinalIgnoreCase);
-        var isExchangeB = string.Equals(exchange, "B", StringComparison.OrdinalIgnoreCase);
-        var isBuy = string.Equals(action, "BUY", StringComparison.OrdinalIgnoreCase);
-        var isSell = string.Equals(action, "SELL", StringComparison.OrdinalIgnoreCase);
-
-        if (isExchangeA)
-        {
-            if (isBuy)
-            {
-                return snapshot.ExchangeA.Bid;
-            }
-
-            if (isSell)
-            {
-                return snapshot.ExchangeA.Ask;
-            }
-        }
-
-        if (isExchangeB)
-        {
-            if (isBuy)
-            {
-                return snapshot.ExchangeB.Bid;
-            }
-
-            if (isSell)
-            {
-                return snapshot.ExchangeB.Ask;
-            }
-        }
-
-        return null;
-    }
-
     private static double? ResolveExpectedOpenPrice(DashboardMetrics? snapshot, bool isExchangeA, int tradeType)
     {
         if (snapshot is null)
@@ -955,12 +937,13 @@ public sealed class DashboardViewModel : ObservableObject
         var exchange = isExchangeA ? snapshot.ExchangeA : snapshot.ExchangeB;
         var isBuy = tradeType == 0;
 
+        // Standard forex: Buy at Ask, Sell at Bid
         if (isBuy)
         {
-            return exchange.Bid.HasValue ? (double)exchange.Bid.Value : null;
+            return exchange.Ask.HasValue ? (double)exchange.Ask.Value : null;
         }
 
-        return exchange.Ask.HasValue ? (double)exchange.Ask.Value : null;
+        return exchange.Bid.HasValue ? (double)exchange.Bid.Value : null;
     }
 
     private static string? ResolveExpectedOpenSymbol(DashboardMetrics? snapshot, bool isExchangeA)
@@ -1061,6 +1044,8 @@ public sealed class DashboardViewModel : ObservableObject
     private void ResetTradingLogicState()
     {
         _tradingFlowEngine.Reset();
+        _manualSlot = 0;
+        _autoSlot = 0;
         OnPropertyChanged(nameof(CurrentPositionText));
         OnPropertyChanged(nameof(CurrentPhaseText));
     }
@@ -1388,6 +1373,19 @@ public sealed class DashboardViewModel : ObservableObject
                 $"[ExecOpen][Match] key={matchKey}, ticket={newRecord.Ticket}, app_open_request_time={pendingRequest.AppOpenRequestTimeLocal:O}, " +
                 $"open_ea_time_local={newRecord.OpenEaTimeLocal}, app_open_request_raw_ms={pendingRequest.AppOpenRequestRawMs}, " +
                 $"open_execution={(openExecutionMs.HasValue ? openExecutionMs.Value.ToString(CultureInfo.InvariantCulture) : "--")}");
+
+            // Phase 2: Open Confirm signal log
+            var openSlippage = CalculateTradeOpenSlippage(newRecord, _runtimeConfigState.CurrentPoint);
+            var openTypeText = SignalLogFormatter.TradeTypeString(newRecord.TradeType);
+            SignalLogItems.Insert(0, SignalLogFormatter.FormatOpenConfirm(
+                DateTime.Now,
+                pendingRequest.SlotNumber,
+                pendingRequest.ExchangeLabel,
+                openTypeText,
+                newRecord.Symbol,
+                newRecord.Price,
+                openSlippage,
+                openExecutionMs));
         }
 
         _knownTradeTicketsByMap[key] = currentTickets;
@@ -1439,6 +1437,19 @@ public sealed class DashboardViewModel : ObservableObject
                 $"[ExecClose][Match] key={matchKey}, ticket={record.Ticket}, app_close_request_time={pendingRequest.AppCloseRequestTimeLocal:O}, " +
                 $"close_ea_time_local={record.CloseEaTimeLocal}, app_close_request_raw_ms={pendingRequest.AppCloseRequestRawMs}, " +
                 $"close_execution={(closeExecutionMs.HasValue ? closeExecutionMs.Value.ToString(CultureInfo.InvariantCulture) : "--")}");
+
+            // Phase 2: Close Confirm signal log
+            var closeSlippage = CalculateHistoryCloseSlippage(record, _runtimeConfigState.CurrentPoint);
+            var closeTypeText = SignalLogFormatter.TradeTypeString(record.TradeType);
+            SignalLogItems.Insert(0, SignalLogFormatter.FormatCloseConfirm(
+                DateTime.Now,
+                pendingRequest.SlotNumber,
+                pendingRequest.ExchangeLabel,
+                closeTypeText,
+                record.Symbol,
+                record.ClosePrice,
+                closeSlippage,
+                closeExecutionMs));
         }
 
         _knownHistoryTicketsByMap[key] = currentTickets;
