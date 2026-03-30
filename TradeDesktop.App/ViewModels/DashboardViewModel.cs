@@ -615,18 +615,18 @@ public sealed class DashboardViewModel : ObservableObject
         {
             if (isBuy)
             {
-                return trigger.LastAAsk.HasValue ? (double)trigger.LastAAsk.Value : null;
+                return trigger.LastABid.HasValue ? (double)trigger.LastABid.Value : null;
             }
 
-            return trigger.LastABid.HasValue ? (double)trigger.LastABid.Value : null;
+            return trigger.LastAAsk.HasValue ? (double)trigger.LastAAsk.Value : null;
         }
 
         if (isBuy)
         {
-            return trigger.LastBAsk.HasValue ? (double)trigger.LastBAsk.Value : null;
+            return trigger.LastBBid.HasValue ? (double)trigger.LastBBid.Value : null;
         }
 
-        return trigger.LastBBid.HasValue ? (double)trigger.LastBBid.Value : null;
+        return trigger.LastBAsk.HasValue ? (double)trigger.LastBAsk.Value : null;
     }
 
     private static decimal? ResolveAutoLogPrice(GapSignalTriggerResult trigger, string exchange, string action)
@@ -639,24 +639,24 @@ public sealed class DashboardViewModel : ObservableObject
         {
             if (isBuy)
             {
-                return trigger.LastAAsk;
+                return trigger.LastABid;
             }
 
             if (isSell)
             {
-                return trigger.LastABid;
+                return trigger.LastAAsk;
             }
         }
         else
         {
             if (isBuy)
             {
-                return trigger.LastBAsk;
+                return trigger.LastBBid;
             }
 
             if (isSell)
             {
-                return trigger.LastBBid;
+                return trigger.LastBAsk;
             }
         }
 
@@ -957,10 +957,10 @@ public sealed class DashboardViewModel : ObservableObject
 
         if (isBuy)
         {
-            return exchange.Ask.HasValue ? (double)exchange.Ask.Value : null;
+            return exchange.Bid.HasValue ? (double)exchange.Bid.Value : null;
         }
 
-        return exchange.Bid.HasValue ? (double)exchange.Bid.Value : null;
+        return exchange.Ask.HasValue ? (double)exchange.Ask.Value : null;
     }
 
     private static string? ResolveExpectedOpenSymbol(DashboardMetrics? snapshot, bool isExchangeA)
@@ -1582,7 +1582,7 @@ public sealed class DashboardViewModel : ObservableObject
         if (selected is null)
         {
             var fallbackCandidates = pendingList
-                .Where(x => Math.Abs(x.AppOpenRequestUnixMs - DateTimeOffset.Now.ToUnixTimeMilliseconds()) <= 10_000)
+                .Where(x => Math.Abs(x.AppOpenRequestUnixMs - DateTimeOffset.Now.ToUnixTimeMilliseconds()) <= 30_000)
                 .ToList();
 
             selected = fallbackCandidates
@@ -1727,9 +1727,7 @@ public sealed class DashboardViewModel : ObservableObject
         }
 
         var pointValue = Math.Max(1, point);
-        var slippage = record.TradeType == 0
-            ? (expected.ExpectedPrice.Value - record.Price) * pointValue
-            : (record.Price - expected.ExpectedPrice.Value) * pointValue;
+        var slippage = (expected.ExpectedPrice.Value - record.Price) * pointValue;
 
         _openSlippageByTicket[record.Ticket] = slippage;
         return slippage;
