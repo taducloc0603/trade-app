@@ -399,6 +399,125 @@ public sealed class DashboardViewModel : ObservableObject
         ShowManualTradeFeedback("CLOSE", result);
     }
 
+    private async Task DispatchSignalTradeAsync(GapSignalTriggerResult trigger)
+    {
+        try
+        {
+            if (trigger.Action == GapSignalAction.Open)
+            {
+                if (trigger.PrimarySide == GapSignalSide.Buy)
+                {
+                    await AutoBuyAsync();
+                }
+                else
+                {
+                    await AutoSellAsync();
+                }
+            }
+            else if (trigger.Action == GapSignalAction.Close)
+            {
+                await AutoCloseOrderAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Windows.Application.Current.Dispatcher.Invoke(() =>
+            {
+                SignalLogItems.Insert(0,
+                    $"    - [{DateTime.Now:HH:mm:ss.fff}] Auto trade error: {ex.Message}");
+            });
+        }
+    }
+
+    private async Task AutoBuyAsync()
+    {
+        var snapshot = _runtimeConfigState.CurrentDashboardMetrics;
+        EnqueueOpenExpected(TradeTab.LeftPanel.TargetMapName, snapshot, isExchangeA: true, tradeType: 0);
+        EnqueueOpenExpected(TradeTab.RightPanel.TargetMapName, snapshot, isExchangeA: false, tradeType: 1);
+        var result = await _mt5ManualTradeService.ExecuteBuyAsync(
+            _runtimeConfigState.CurrentChartHwndA,
+            _runtimeConfigState.CurrentChartHwndB);
+
+        System.Windows.Application.Current.Dispatcher.Invoke(() =>
+        {
+            AppendAutoTradeLogs(result, snapshot, "OPEN_AUTO");
+        });
+    }
+
+    private async Task AutoSellAsync()
+    {
+        var snapshot = _runtimeConfigState.CurrentDashboardMetrics;
+        EnqueueOpenExpected(TradeTab.LeftPanel.TargetMapName, snapshot, isExchangeA: true, tradeType: 1);
+        EnqueueOpenExpected(TradeTab.RightPanel.TargetMapName, snapshot, isExchangeA: false, tradeType: 0);
+        var result = await _mt5ManualTradeService.ExecuteSellAsync(
+            _runtimeConfigState.CurrentChartHwndA,
+            _runtimeConfigState.CurrentChartHwndB);
+
+        System.Windows.Application.Current.Dispatcher.Invoke(() =>
+        {
+            AppendAutoTradeLogs(result, snapshot, "OPEN_AUTO");
+        });
+    }
+
+    private async Task AutoCloseOrderAsync()
+    {
+        var snapshot = _runtimeConfigState.CurrentDashboardMetrics;
+        var selectA = SelectCloseCandidateForExchange(
+            exchangeLabel: "A",
+            tradeMapName: TradeTab.LeftPanel.TargetMapName,
+            tradeHwnd: _runtimeConfigState.CurrentTradeHwndA);
+
+        var selectB = SelectCloseCandidateForExchange(
+            exchangeLabel: "B",
+            tradeMapName: TradeTab.RightPanel.TargetMapName,
+            tradeHwnd: _runtimeConfigState.CurrentTradeHwndB);
+
+        CaptureCloseExpected(selectA, snapshot, isExchangeA: true);
+        CaptureCloseExpected(selectB, snapshot, isExchangeA: false);
+
+        var result = await _mt5ManualTradeService.ExecuteCloseAsync(
+            selectA.Request,
+            selectB.Request);
+
+        System.Windows.Application.Current.Dispatcher.Invoke(() =>
+        {
+            AppendAutoTradeLogs(result, snapshot, "CLOSE_AUTO");
+            AppendCloseSelectionDiagnostics(selectA, selectB);
+        });
+    }
+
+    private void AppendAutoTradeLogs(ManualTradeResult result, DashboardMetrics? snapshot, string label)
+    {
+        var now = DateTime.Now;
+        var lines = new List<string>
+        {
+            $"[{label}] Auto",
+            "    = Auto trigger from signal engine"
+        };
+
+        foreach (var leg in result.Legs)
+        {
+            var status = leg.Success ? "OK" : "FAILED";
+            var price = ResolveManualLogPrice(snapshot, leg.Exchange, leg.Action);
+            var priceText = price.HasValue
+                ? $" @{price.Value.ToString("0.#####", CultureInfo.InvariantCulture)}"
+                : string.Empty;
+
+            lines.Add($"    - [{now:HH:mm:ss.fff}] {leg.Action} {leg.Exchange}{priceText} {status} ({leg.Detail})");
+        }
+
+        if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
+        {
+            lines.Add($"    = ERROR: {result.ErrorMessage}");
+        }
+
+        LastSignalText = lines[0];
+        for (var i = lines.Count - 1; i >= 0; i--)
+        {
+            SignalLogItems.Insert(0, lines[i]);
+        }
+    }
+
     private CloseSelectionResult SelectCloseCandidateForExchange(string exchangeLabel, string tradeMapName, string tradeHwnd)
     {
         var result = _tradesSharedMemoryReader.ReadTrades(tradeMapName);
@@ -1484,6 +1603,9 @@ public sealed class DashboardViewModel : ObservableObject
                 var waitText = $"[{triggeredAtLocal:HH:mm:ss.fff}] Random waiting time {waitSeconds}s";
                 SignalLogItems.Insert(0, waitText);
             }
+
+            // Auto-execute trade from signal trigger
+            _ = DispatchSignalTradeAsync(trigger);
         });
     }
 

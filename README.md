@@ -1,181 +1,236 @@
 # TradeDesktop - WPF Trading Dashboard (.NET 8)
 
-README này giải thích chi tiết codebase hiện tại để bạn có thể nắm nhanh kiến trúc, luồng dữ liệu, và cách mở rộng dự án.
+README này tập trung vào **công thức** và **business logic giao dịch** của dự án, đồng thời liệt kê nhanh các file quan trọng để dễ onboarding.
 
 ---
 
-## 1) Tổng quan dự án
+## 1) Tổng quan ngắn
 
-`TradeDesktop` là ứng dụng desktop Windows dùng **WPF + MVVM** trên **.NET 8**.  
-Hiện tại app đã có màn hình dashboard cơ bản để hiển thị market data realtime (mock), tính tín hiệu giao dịch đơn giản và hiển thị lý do của tín hiệu.
+`TradeDesktop` là ứng dụng WPF (.NET 8) đọc dữ liệu từ shared memory (hoặc mock), tính toán chênh lệch giữa 2 sàn (A/B), xác nhận tín hiệu theo thời gian, và phát sinh lệnh `OPEN/CLOSE` theo flow.
 
-### Các chức năng đã có
-
-- Nút **Start/Stop** stream dữ liệu.
-- Hiển thị: `Connection`, `Bid`, `Ask`, `Spread`, `Timestamp`, `Signal`, `Reason`.
-- Dữ liệu thị trường mock phát mỗi 1 giây.
-- Tính signal dạng `Buy / Sell / Hold`.
-- Có unit test cơ bản cho signal engine.
-
----
-
-## 2) Cấu trúc solution
+Kiến trúc theo layer:
 
 ```text
 TradeDesktop.sln
-├─ TradeDesktop.App/             # Presentation (WPF + MVVM)
-├─ TradeDesktop.Application/     # Use-case + abstraction/interfaces
+├─ TradeDesktop.App/             # UI (WPF + ViewModel)
+├─ TradeDesktop.Application/     # Business logic + use-case + abstraction
 ├─ TradeDesktop.Domain/          # Domain models thuần
-├─ TradeDesktop.Infrastructure/  # Implement cụ thể (mock data, signal engine)
-└─ TradeDesktop.Tests/           # Unit tests (xUnit)
+├─ TradeDesktop.Infrastructure/  # Kết nối data source, repository, signal infra
+└─ TradeDesktop.Tests/           # Unit tests cho logic chính
 ```
 
-### Ý nghĩa từng layer
+---
 
-1. **Domain**
-   - Chứa model cốt lõi, không phụ thuộc framework/UI.
-   - Ví dụ:
-     - `MarketData` (Bid/Ask/Timestamp/IsConnected + Spread)
-     - `SignalType` (`Hold`, `Buy`, `Sell`)
-     - `SignalResult` (signal + reason)
+## 2) Công thức cốt lõi (quan trọng nhất)
 
-2. **Application**
-   - Chứa interface và use-case/service trung gian.
-   - Không chứa chi tiết hạ tầng cụ thể.
-   - Ví dụ:
-     - `IMarketDataReader`, `ISharedMemoryReader`, `ISignalEngine`
-     - `IDashboardService`/`DashboardService`
+### 2.1 Công thức Gap
 
-3. **Infrastructure**
-   - Chứa implementation thực tế cho interface ở Application.
-   - Hiện tại gồm:
-     - `MockSharedMemoryMarketDataReader`: giả lập luồng giá mỗi 1 giây.
-     - `SimpleSignalEngine`: luật signal đơn giản theo spread và ngưỡng giá.
+Được tính trong `TradeDesktop.Application/Services/GapCalculator.cs`:
 
-4. **App (WPF)**
-   - UI + ViewModel + command.
-   - Dùng DI qua `Host.CreateDefaultBuilder()` để resolve dependency.
+- `GapBuy = (B.Bid - A.Ask) * Point`
+- `GapSell = (B.Ask - A.Bid) * Point`
+
+Trong code, kết quả được ép về `int`:
+
+- `gapBuy = (int)((sanB.Bid - sanA.Ask) * pointMultiplier)`
+- `gapSell = (int)((sanB.Ask - sanA.Bid) * pointMultiplier)`
+
+> `Point` lấy từ runtime config; nếu cấu hình không hợp lệ (`<=0`) thì fallback về `1`.
+
+### 2.2 Ý nghĩa nghiệp vụ
+
+- `GapBuy` lớn dương: thiên hướng mở theo nhánh **GapBuy**.
+- `GapSell` lớn âm: thiên hướng mở theo nhánh **GapSell** (vì rule dùng ngưỡng âm).
+- Hệ thống luôn xử lý theo **cửa sổ xác nhận theo thời gian**, không bắn lệnh chỉ với 1 tick đơn lẻ.
 
 ---
 
-## 3) Giải thích source code theo file chính
+## 3) Business logic giao dịch
 
-## `TradeDesktop.App`
+## 3.1 Open Signal (xác nhận mở lệnh)
 
-- **`App.xaml.cs`**
-  - Khởi tạo DI container bằng `Host.CreateDefaultBuilder()`.
-  - Gọi `AddApplication()` và `AddInfrastructure()` để đăng ký service.
-  - Register `DashboardViewModel` và `MainWindow` dạng singleton.
-  - On startup: start host rồi show `MainWindow`.
-  - On exit: stop và dispose host.
+Code chính: `TradeDesktop.Application/Services/GapSignalConfirmationEngine.cs`
 
-- **`MainWindow.xaml`**
-  - View dashboard hiển thị dữ liệu thị trường và tín hiệu.
-  - Binding đến các property của `DashboardViewModel`.
-  - Nút `Start`/`Stop` binding tới `StartCommand`/`StopCommand`.
+Hệ thống chuẩn hoá config trước khi dùng:
 
-- **`MainWindow.xaml.cs`**
-  - Constructor nhận `DashboardViewModel` qua DI.
-  - Set `DataContext = viewModel`.
+- `ConfirmGapPts = Abs(config.ConfirmGapPts)`
+- `OpenPts = Abs(config.OpenPts)`
+- `HoldConfirmMs = Max(0, config.HoldConfirmMs)`
 
-- **`ViewModels/ObservableObject.cs`**
-  - Base class triển khai `INotifyPropertyChanged`.
-  - Có `SetProperty` để update property + bắn event UI.
+### A) OpenByGapBuy
 
-- **`ViewModels/DashboardViewModel.cs`**
-  - Là trung tâm của UI logic.
-  - Inject:
-    - `IMarketDataReader`: nguồn dữ liệu thị trường.
-    - `IDashboardService`: dịch vụ tính signal.
-  - Đăng ký event `_marketDataReader.MarketDataReceived += OnMarketDataReceived`.
-  - `StartAsync()` / `StopAsync()` điều khiển stream.
-  - `OnMarketDataReceived(...)`:
-    - Marshal về UI thread qua `Application.Current.Dispatcher.Invoke(...)`.
-    - Cập nhật Bid/Ask/Spread/Timestamp/Connection.
-    - Gọi service tính signal và cập nhật `Signal`, `Reason`.
+Điều kiện:
 
-- **`Commands/AsyncRelayCommand.cs`**
-  - Command bất đồng bộ cho WPF.
-  - Chặn chạy song song bằng cờ `_isRunning`.
-  - Hỗ trợ điều kiện `CanExecute` + `RaiseCanExecuteChanged`.
+1. Tick hiện tại có `GapBuy` và `GapBuy >= ConfirmGapPts`.
+2. Bắt đầu gom dữ liệu trong cửa sổ thời gian.
+3. Sau khi đủ `HoldConfirmMs`, **toàn bộ** gap trong cửa sổ phải thoả `>= ConfirmGapPts`.
+4. Tick cuối cùng trong cửa sổ phải thoả `>= OpenPts`.
+5. Khi thoả hết điều kiện -> trigger `OpenByGapBuy`.
 
-## `TradeDesktop.Application`
+### B) OpenByGapSell
 
-- **`Abstractions/IMarketDataReader.cs`**
-  - Contract cho reader dữ liệu thị trường:
-    - Event `MarketDataReceived`
-    - `IsRunning`
-    - `StartAsync()` / `StopAsync()`
+Điều kiện đối xứng theo ngưỡng âm:
 
-- **`Abstractions/ISharedMemoryReader.cs`**
-  - Kế thừa `IMarketDataReader`.
-  - Dùng để tách rõ loại nguồn dữ liệu (shared memory).
+1. Tick hiện tại có `GapSell` và `GapSell <= -ConfirmGapPts`.
+2. Giữ điều kiện liên tục đủ `HoldConfirmMs`.
+3. Toàn bộ cửa sổ phải thoả `<= -ConfirmGapPts`.
+4. Tick cuối cùng phải thoả `<= -OpenPts`.
+5. Khi thoả -> trigger `OpenByGapSell`.
 
-- **`Abstractions/ISignalEngine.cs`**
-  - Contract tính signal từ `MarketData`.
+> Nếu bất kỳ điều kiện nào fail trong cửa sổ, state của nhánh đó bị reset.
 
-- **`Services/DashboardService.cs`**
-  - `IDashboardService` có 1 hàm `EvaluateSignal(...)`.
-  - Implementation chỉ delegate cho `ISignalEngine.Calculate(...)`.
-  - Vai trò: tạo điểm mở rộng use-case dashboard.
+## 3.2 Close Signal (xác nhận đóng lệnh)
 
-- **`DependencyInjection.cs`**
-  - Extension method `AddApplication(...)` để đăng ký service Application.
+Code chính: `TradeDesktop.Application/Services/CloseSignalEngine.cs`
 
-## `TradeDesktop.Infrastructure`
+Chuẩn hoá config close:
 
-- **`MarketData/MockSharedMemoryMarketDataReader.cs`**
-  - Reader giả lập dữ liệu:
-    - Tạo tick mỗi giây bằng `PeriodicTimer`.
-    - Sinh giá quanh `_lastMidPrice` với random drift/spread.
-    - Tạo `MarketData` với `Timestamp = DateTime.UtcNow` và `IsConnected = true`.
-  - Có lock `_syncRoot` để đảm bảo start/stop thread-safe.
+- `CloseConfirmGapPts = Abs(config.CloseConfirmGapPts)`
+- `ClosePts = Abs(config.ClosePts)`
+- `CloseHoldConfirmMs = Max(0, config.CloseHoldConfirmMs)`
 
-- **`Signals/SimpleSignalEngine.cs`**
-  - Luật signal hiện tại:
-    1. Không connected -> `Hold` (`No market connection`)
-    2. `Spread > 0.03` -> `Hold` (`Spread too wide`)
-    3. `Bid >= 100.10` -> `Sell`
-    4. `Ask <= 99.90` -> `Buy`
-    5. Còn lại -> `Hold` (`No edge in current range`)
+Rule theo mode đã mở:
 
-- **`DependencyInjection.cs`**
-  - Mapping interface -> implementation:
-    - `ISharedMemoryReader` -> `MockSharedMemoryMarketDataReader`
-    - `IMarketDataReader` -> cùng instance của `ISharedMemoryReader`
-    - `ISignalEngine` -> `SimpleSignalEngine`
+- Nếu đang mở theo `GapBuy` (`TradingOpenMode.GapBuy`)  
+  -> close theo nhánh `GapSell` với điều kiện âm (`<= -CloseConfirmGapPts`, tick cuối `<= -ClosePts`).
 
-## `TradeDesktop.Domain`
+- Nếu đang mở theo `GapSell` (`TradingOpenMode.GapSell`)  
+  -> close theo nhánh `GapBuy` với điều kiện dương (`>= CloseConfirmGapPts`, tick cuối `>= ClosePts`).
 
-- **`MarketData.cs`**: record immutable cho dữ liệu giá, có computed property `Spread = Ask - Bid`.
-- **`SignalType.cs`**: enum `Hold/Buy/Sell`.
-- **`SignalResult.cs`**: record chứa kết quả signal + lý do.
+## 3.3 Flow trạng thái giao dịch (state machine)
 
-## `TradeDesktop.Tests`
+Code chính: `TradeDesktop.Application/Services/TradingFlowEngine.cs`
 
-- **`SimpleSignalEngineTests.cs`** (xUnit)
-  - Test case đang có:
-    - Disconnected -> `Hold`
-    - Bid cao hơn ngưỡng -> `Sell`
+Các trạng thái:
+
+- `WaitingOpen`
+- `WaitingCloseFromGapBuy`
+- `WaitingCloseFromGapSell`
+
+Luồng:
+
+1. `WaitingOpen`: kiểm tra open signal.
+2. Khi open thành công:
+   - Ghi `OpenedAtUtc`
+   - Random `CurrentHoldingSeconds` trong `[StartTimeHold..EndTimeHold]`
+   - Chuyển sang `WaitingCloseFromGapBuy` hoặc `WaitingCloseFromGapSell`
+3. Ở trạng thái close: chỉ bắt đầu kiểm tra close sau khi đã giữ lệnh đủ `CurrentHoldingSeconds`.
+4. Khi close thành công:
+   - Ghi `ClosedAtUtc`
+   - Random `CurrentWaitSeconds` trong `[StartWaitTime..EndWaitTime]`
+   - Trả về `WaitingOpen`
+5. Trong `WaitingOpen`, nếu chưa qua đủ `CurrentWaitSeconds` kể từ `ClosedAtUtc` thì chưa được mở lệnh mới.
+
+> Ý nghĩa nghiệp vụ: chống vào/ra lệnh quá dày, mô phỏng nhịp giao dịch thực tế.
 
 ---
 
-## 4) Luồng chạy end-to-end
+## 4) Mapping công thức sang log tín hiệu
 
-1. App start -> DI container build.
-2. `MainWindow` mở với `DashboardViewModel` làm DataContext.
-3. User bấm **Start** -> `IMarketDataReader.StartAsync()`.
-4. Mock reader phát tick mỗi giây qua event `MarketDataReceived`.
-5. ViewModel nhận event, cập nhật UI fields.
-6. ViewModel gọi `IDashboardService.EvaluateSignal(marketData)`.
-7. Signal trả về và hiển thị `Signal` + `Reason`.
-8. User bấm **Stop** -> reader dừng, trạng thái chuyển `Disconnected`.
+Hai file chính:
+
+- `TradeDesktop.Application/Services/TradeInstructionFactory.cs`
+- `TradeDesktop.Application/Services/TradeSignalLogBuilder.cs`
+
+Khi trigger xảy ra:
+
+1. Tạo `TradeSignalInstruction` gồm:
+   - loại trigger (`OpenByGapBuy`, `CloseByGapSell`, ...)
+   - danh sách gap dùng để confirm
+   - biểu thức giá nguồn để giải thích tín hiệu
+2. Build log theo format:
+   - Header: `[OPEN BY GAP_BUY] GAP ...`
+   - Explain line: `= (B.Bid - A.Ask) * Point(x)` hoặc `= (B.Ask - A.Bid) * Point(x)`
+   - 2 dòng leg cho sàn A và B (OPEN/CLOSE, BUY/SELL, giá)
+
+=> Giúp trace rõ “vì sao hệ thống bắn tín hiệu”.
 
 ---
 
-## 5) Build / Run / Test
+## 5) Danh sách file quan trọng và chức năng
 
-> Lưu ý: WPF app chạy trên Windows. Unit test có thể chạy độc lập.
+## 5.1 App (UI)
+
+- `TradeDesktop.App/ViewModels/DashboardViewModel.cs`  
+  Trung tâm UI/business orchestration: nhận snapshot, bind số liệu, gọi `TradingFlowEngine`, dựng log tín hiệu, hiển thị trạng thái giao dịch.
+
+- `TradeDesktop.App/MainWindow.xaml`  
+  Dashboard hiển thị dữ liệu 2 sàn, gap, trạng thái trading logic, signal log.
+
+- `TradeDesktop.App/Commands/AsyncRelayCommand.cs`  
+  Command async cho WPF, có chặn chạy song song.
+
+## 5.2 Application (business layer)
+
+- `TradeDesktop.Application/Services/GapCalculator.cs`  
+  Tính `GapBuy/GapSell` theo công thức cốt lõi.
+
+- `TradeDesktop.Application/Services/GapSignalConfirmationEngine.cs`  
+  Engine xác nhận mở lệnh theo cửa sổ thời gian và ngưỡng confirm/open.
+
+- `TradeDesktop.Application/Services/CloseSignalEngine.cs`  
+  Engine xác nhận đóng lệnh theo mode đang mở và ngưỡng close.
+
+- `TradeDesktop.Application/Services/TradingFlowEngine.cs`  
+  State machine điều phối OPEN/CLOSE + random hold/wait.
+
+- `TradeDesktop.Application/Services/TradeInstructionFactory.cs`  
+  Chuyển `GapSignalTriggerResult` thành instruction chi tiết 2 leg A/B.
+
+- `TradeDesktop.Application/Services/TradeSignalLogBuilder.cs`  
+  Render instruction thành log text phục vụ vận hành/debug.
+
+- `TradeDesktop.Application/Models/GapSignalModels.cs`  
+  Định nghĩa enum/record cho snapshot, config, trigger, instruction.
+
+- `TradeDesktop.Application/Services/DashboardMetricsMapper.cs`  
+  Map raw shared memory snapshot -> `DashboardMetrics` và tính gap.
+
+- `TradeDesktop.Application/Services/ConfigService.cs`  
+  Load/save runtime config theo machine host name; chuẩn hoá giá trị config.
+
+## 5.3 Domain
+
+- `TradeDesktop.Domain/Models/DashboardMetrics.cs`  
+  Model aggregate dữ liệu hiển thị dashboard.
+
+- `TradeDesktop.Domain/Models/MarketData.cs`, `SignalResult.cs`, `SignalType.cs`  
+  Model tín hiệu cơ bản (phần nền cũ/simple signal).
+
+## 5.4 Infrastructure
+
+- `TradeDesktop.Infrastructure/MarketData/SharedMemoryMarketDataReader.cs`  
+  Reader dữ liệu shared memory thực tế.
+
+- `TradeDesktop.Infrastructure/MarketData/MockSharedMemoryMarketDataReader.cs`  
+  Reader mock phục vụ test/dev.
+
+- `TradeDesktop.Infrastructure/Supabase/SupabaseConfigRepository.cs`  
+  Truy xuất config từ Supabase theo host name.
+
+## 5.5 Tests (nên đọc đầu tiên khi cần hiểu rule)
+
+- `TradeDesktop.Tests/GapCalculatorTests.cs`
+- `TradeDesktop.Tests/GapSignalConfirmationEngineTests.cs`
+- `TradeDesktop.Tests/CloseSignalEngineTests.cs`
+- `TradeDesktop.Tests/TradingFlowEngineTests.cs`
+- `TradeDesktop.Tests/TradeSignalLogBuilderTests.cs`
+
+---
+
+## 6) Những thứ quan trọng cần nhớ
+
+1. **Point multiplier** tác động trực tiếp độ lớn gap -> sai point là sai toàn bộ tín hiệu.
+2. **Confirm theo cửa sổ thời gian** là lõi anti-noise; không nên bỏ nếu chưa có bộ lọc khác thay thế.
+3. **Open và Close dùng ngưỡng độc lập** (`OpenPts/ConfirmGapPts` khác `ClosePts/CloseConfirmGapPts`).
+4. **TradingFlowEngine có hold + wait random** để tránh spam giao dịch liên tục.
+5. **Config theo machine host name**: sai hostname sẽ không load đúng config runtime.
+6. Khi debug tín hiệu, luôn đối chiếu theo thứ tự:  
+   `Snapshot giá -> Gap -> Confirm window -> Trigger -> Instruction -> Log line`.
+
+---
+
+## 7) Build / Run / Test
 
 ```bash
 dotnet restore TradeDesktop.sln
@@ -188,90 +243,3 @@ Chạy app:
 ```bash
 dotnet run --project TradeDesktop.App/TradeDesktop.App.csproj
 ```
-
----
-
-## 5.1) Chạy trên Windows **không cần cài gì thêm**
-
-Nếu bạn chỉ muốn tải về và chạy ngay trên máy Windows (không cài .NET, không cài Visual Studio), thì nên dùng **file build sẵn (.exe)** từ GitHub Release.
-
-### Cách làm nhanh nhất
-
-1. Vào trang **Releases** của repo.
-2. Tải file:
-   - `TradeDesktop.App-latest.exe` (luôn là bản mới nhất), hoặc
-   - `TradeDesktop.App-<version>.exe` (bản theo version cụ thể).
-3. Double-click file `.exe` để chạy.
-
-> Vì app publish dạng self-contained/single-file nên người dùng cuối không cần cài .NET runtime.
-
-### Lưu ý quan trọng
-
-- Nếu bạn tải **source code từ git** (zip/clone) thì đó chỉ là mã nguồn, **không chạy trực tiếp được** nếu không build.
-- Muốn “không cài gì trên máy Windows”, bạn cần tải đúng **file `.exe` đã được build sẵn** từ Release.
-- Nếu Windows SmartScreen cảnh báo, chọn **More info -> Run anyway** (khi bạn tin tưởng nguồn file).
-
-## 5.2) Trường hợp cần chạy từ source code (có cài môi trường)
-
-Nếu bạn muốn tự build từ source thì mới cần cài .NET SDK/Visual Studio.
-
----
-
-## 5.3) Troubleshoot lỗi "double-click exe nhưng không thấy app"
-
-Nếu app thoát im lặng trên Windows sau khi build/publish, hãy kiểm tra theo thứ tự sau:
-
-1. **Mở log startup**
-   - App hiện đã ghi log tại:
-   - `%LOCALAPPDATA%\TradeDesktop\logs\startup.log`
-   - Nếu startup lỗi, app sẽ hiển thị popup kèm đường dẫn file log.
-
-2. **Publish đúng runtime Windows**
-
-```bash
-dotnet publish TradeDesktop.App/TradeDesktop.App.csproj \
-  -c Release \
-  -r win-x64 \
-  --self-contained true \
-  -p:PublishSingleFile=true \
-  -p:IncludeNativeLibrariesForSelfExtract=true
-```
-
-3. **Nếu vẫn lỗi, thử bản không single-file để khoanh vùng**
-
-```bash
-dotnet publish TradeDesktop.App/TradeDesktop.App.csproj \
-  -c Release \
-  -r win-x64 \
-  --self-contained true \
-  -p:PublishSingleFile=false
-```
-
-4. **Kiểm tra Event Viewer trên Windows**
-   - Mở: `Event Viewer -> Windows Logs -> Application`
-   - Tìm lỗi nguồn `.NET Runtime` hoặc `Application Error` tại thời điểm chạy app.
-
-5. **Các nguyên nhân hay gặp**
-   - Build/publish sai kiến trúc (x64/x86/arm64).
-   - Dependency khởi tạo sớm bị exception (shared memory/config/network) làm app thoát trước khi render UI.
-   - Thiếu file/phần native khi publish.
-
----
-
-## 6) CI/CD và `.env`
-
-- Bạn đã có `.github/workflows/build.yml` để build/release.
-- File `.env` đã được tạo để gom các key cấu hình build như:
-  - `APP_NAME`, `MAJOR`, `MINOR`, `PATCH`, `VERSION`, `VERSIONED_EXE`, `LATEST_EXE`, `TAG`, `RUNTIME`, `DOTNET_VERSION`.
-
-> Ghi chú: workflow đã được chỉnh publish đúng đường dẫn `TradeDesktop.App/TradeDesktop.App.csproj` và đã thêm `permissions: contents: write` để tạo release thành công.
-
----
-
-## 7) Hướng mở rộng tiếp theo (gợi ý)
-
-1. Thay mock reader bằng reader thật từ shared memory.
-2. Bổ sung logging + error handling chi tiết hơn ở reader/viewmodel.
-3. Mở rộng signal engine (EMA, RSI, breakout, risk filters...).
-4. Thêm nhiều unit test theo từng rule signal.
-5. Tách config ngưỡng signal ra file cấu hình để dễ chỉnh runtime.

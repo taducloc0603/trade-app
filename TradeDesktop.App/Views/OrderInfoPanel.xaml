@@ -345,6 +345,7 @@
                                       Foreground="#101828"
                                       FontFamily="Consolas"
                                       FontSize="11"
+                                      MinHeight="48"
                                       ScrollViewer.CanContentScroll="False"
                                       ScrollViewer.HorizontalScrollBarVisibility="Auto"
                                       ScrollViewer.VerticalScrollBarVisibility="Auto">
@@ -418,6 +419,7 @@
                                   Foreground="#101828"
                                   FontFamily="Consolas"
                                   FontSize="11"
+                                  MinHeight="48"
                                   ScrollViewer.CanContentScroll="False"
                                   ScrollViewer.HorizontalScrollBarVisibility="Auto"
                                   ScrollViewer.VerticalScrollBarVisibility="Auto">
