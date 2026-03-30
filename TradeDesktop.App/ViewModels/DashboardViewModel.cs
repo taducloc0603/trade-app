@@ -1534,24 +1534,36 @@ public sealed class DashboardViewModel : ObservableObject
 
     private static string FormatOpenExecutionDebug(ulong openEaTimeLocal, long? appOpenRequestRawMs, long? openExecutionMs)
     {
-        var result = FormatExecutionMs(openExecutionMs);
-        if (!appOpenRequestRawMs.HasValue || !openExecutionMs.HasValue)
-        {
-            return result;
-        }
+        var openEaText = openEaTimeLocal == 0
+            ? "MISSING"
+            : openEaTimeLocal.ToString(CultureInfo.InvariantCulture);
 
-        return $"(open_ea_time_local - app_open_raw / {openEaTimeLocal} - {appOpenRequestRawMs.Value}) {result}";
+        var appOpenText = appOpenRequestRawMs.HasValue
+            ? appOpenRequestRawMs.Value.ToString(CultureInfo.InvariantCulture)
+            : "MISSING";
+
+        var result = openExecutionMs.HasValue
+            ? $"{openExecutionMs.Value.ToString(CultureInfo.InvariantCulture)} ms"
+            : "MISSING_RESULT";
+
+        return $"((open_ea_time_local - app_open_raw | {openEaText} - {appOpenText}) {result})";
     }
 
     private static string FormatCloseExecutionDebug(ulong closeEaTimeLocal, long? appCloseRequestRawMs, long? closeExecutionMs)
     {
-        var result = FormatExecutionMs(closeExecutionMs);
-        if (!appCloseRequestRawMs.HasValue || !closeExecutionMs.HasValue)
-        {
-            return result;
-        }
+        var closeEaText = closeEaTimeLocal == 0
+            ? "MISSING"
+            : closeEaTimeLocal.ToString(CultureInfo.InvariantCulture);
 
-        return $"(close_ea_time_local - app_close_raw / {closeEaTimeLocal} - {appCloseRequestRawMs.Value}) {result}";
+        var appCloseText = appCloseRequestRawMs.HasValue
+            ? appCloseRequestRawMs.Value.ToString(CultureInfo.InvariantCulture)
+            : "MISSING";
+
+        var result = closeExecutionMs.HasValue
+            ? $"{closeExecutionMs.Value.ToString(CultureInfo.InvariantCulture)} ms"
+            : "MISSING_RESULT";
+
+        return $"((close_ea_time_local - app_close_raw | {closeEaText} - {appCloseText}) {result})";
     }
 
     private static string FormatTradeOpenSlippageDebug(TradeSharedRecord record, PendingOpenRequest? openRequest, int point, double? slippage)
