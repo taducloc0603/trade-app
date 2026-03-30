@@ -1444,6 +1444,8 @@ public sealed class DashboardViewModel : ObservableObject
         {
             _openExecutionMsByTicket.TryGetValue(record.Ticket, out var openExecutionMsValue);
             var openExecutionMs = _openExecutionMsByTicket.ContainsKey(record.Ticket) ? openExecutionMsValue : (long?)null;
+            _openRequestByTicket.TryGetValue(record.Ticket, out var openRequest);
+            var tradeOpenSlippage = CalculateTradeOpenSlippage(record, point);
 
             return new TradeRowViewModel(
                 timestamp: FormatRawTimestamp(timestamp),
@@ -1455,12 +1457,12 @@ public sealed class DashboardViewModel : ObservableObject
                 price: FormatPrice(record.Price),
                 sl: FormatPrice(record.Sl),
                 tp: FormatPrice(record.Tp),
-                slippage: FormatOptionalProfit(CalculateTradeOpenSlippage(record, point)),
+                slippage: FormatTradeOpenSlippageDebug(record, openRequest, point, tradeOpenSlippage),
                 profit: FormatProfit(CalculateTradeProfit(record, snapshot, isExchangeA, point)),
                 feeSpread: FormatProfit(record.Profit),
                 time: FormatTradeTime(record.TimeMsc),
                 openEaTimeLocal: FormatEaLocalTime(record.OpenEaTimeLocal),
-                openExecution: FormatExecutionMs(openExecutionMs));
+                openExecution: FormatOpenExecutionDebug(record.OpenEaTimeLocal, openRequest?.AppOpenRequestTimeLocal, openExecutionMs));
         });
 
     private IEnumerable<HistoryRowViewModel> BuildHistoryRows(
@@ -1474,6 +1476,8 @@ public sealed class DashboardViewModel : ObservableObject
             _closeExecutionMsByTicket.TryGetValue(record.Ticket, out var closeExecutionMsValue);
             var openExecutionMs = _openExecutionMsByTicket.ContainsKey(record.Ticket) ? openExecutionMsValue : (long?)null;
             var closeExecutionMs = _closeExecutionMsByTicket.ContainsKey(record.Ticket) ? closeExecutionMsValue : (long?)null;
+            _closeRequestByTicket.TryGetValue(record.Ticket, out var closeRequest);
+            var historyCloseSlippage = CalculateHistoryCloseSlippage(record, point);
 
             return new HistoryRowViewModel(
                 timestamp: FormatRawTimestamp(timestamp),
@@ -1485,7 +1489,7 @@ public sealed class DashboardViewModel : ObservableObject
                 openPrice: FormatRawDouble(record.OpenPrice),
                 closePrice: FormatRawDouble(record.ClosePrice),
                 openSlippage: FormatOptionalProfit(CalculateHistoryOpenSlippage(record, point)),
-                closeSlippage: FormatOptionalProfit(CalculateHistoryCloseSlippage(record, point)),
+                closeSlippage: FormatHistoryCloseSlippageDebug(record, closeRequest, point, historyCloseSlippage),
                 profit: FormatRawDouble(CalculateHistoryProfit(record)),
                 feeSpread: FormatRawDouble(record.Profit),
                 commission: FormatRawDouble(record.Commission),
@@ -1495,8 +1499,64 @@ public sealed class DashboardViewModel : ObservableObject
                 closeTime: FormatTradeTime(record.CloseTimeMsc),
                 closeEaTimeLocal: FormatEaLocalTime(record.CloseEaTimeLocal),
                 openExecution: FormatExecutionMs(openExecutionMs),
-                closeExecution: FormatExecutionMs(closeExecutionMs));
+                closeExecution: FormatCloseExecutionDebug(record.CloseEaTimeLocal, closeRequest?.AppCloseRequestTimeLocal, closeExecutionMs));
         });
+
+    private static string FormatOpenExecutionDebug(ulong openEaTimeLocal, DateTimeOffset? appOpenRequestTimeLocal, long? openExecutionMs)
+    {
+        var result = FormatExecutionMs(openExecutionMs);
+        if (!appOpenRequestTimeLocal.HasValue || !openExecutionMs.HasValue)
+        {
+            return result;
+        }
+
+        return $"(open_ea_time_local - app_open_request_time / {openEaTimeLocal} - {appOpenRequestTimeLocal.Value:HH:mm:ss.fff}) {result}";
+    }
+
+    private static string FormatCloseExecutionDebug(ulong closeEaTimeLocal, DateTimeOffset? appCloseRequestTimeLocal, long? closeExecutionMs)
+    {
+        var result = FormatExecutionMs(closeExecutionMs);
+        if (!appCloseRequestTimeLocal.HasValue || !closeExecutionMs.HasValue)
+        {
+            return result;
+        }
+
+        return $"(close_ea_time_local - app_close_request_time / {closeEaTimeLocal} - {appCloseRequestTimeLocal.Value:HH:mm:ss.fff}) {result}";
+    }
+
+    private static string FormatTradeOpenSlippageDebug(TradeSharedRecord record, PendingOpenRequest? openRequest, int point, double? slippage)
+    {
+        var result = FormatOptionalProfit(slippage);
+        if (openRequest is null || !slippage.HasValue)
+        {
+            return result;
+        }
+
+        var pointValue = Math.Max(1, point).ToString(CultureInfo.InvariantCulture);
+        var expected = openRequest.ExpectedPrice.ToString("0.#####", CultureInfo.InvariantCulture);
+        var openPrice = record.Price.ToString("0.#####", CultureInfo.InvariantCulture);
+
+        return record.TradeType == 0
+            ? $"((expected_open_price - open_price) * point / ({expected} - {openPrice}) * {pointValue}) {result}"
+            : $"((open_price - expected_open_price) * point / ({openPrice} - {expected}) * {pointValue}) {result}";
+    }
+
+    private static string FormatHistoryCloseSlippageDebug(HistorySharedRecord record, PendingCloseRequest? closeRequest, int point, double? slippage)
+    {
+        var result = FormatOptionalProfit(slippage);
+        if (closeRequest is null || !slippage.HasValue)
+        {
+            return result;
+        }
+
+        var pointValue = Math.Max(1, point).ToString(CultureInfo.InvariantCulture);
+        var expected = closeRequest.ExpectedPrice.ToString("0.#####", CultureInfo.InvariantCulture);
+        var closePrice = record.ClosePrice.ToString("0.#####", CultureInfo.InvariantCulture);
+
+        return record.TradeType == 0
+            ? $"((close_price - expected_close_price) * point / ({closePrice} - {expected}) * {pointValue}) {result}"
+            : $"((expected_close_price - close_price) * point / ({expected} - {closePrice}) * {pointValue}) {result}";
+    }
 
     private bool TryConsumePendingOpenRequest(
         string tradeMapName,
