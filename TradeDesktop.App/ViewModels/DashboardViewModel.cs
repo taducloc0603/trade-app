@@ -372,12 +372,14 @@ public sealed class DashboardViewModel : ObservableObject
         var snapshot = _runtimeConfigState.CurrentDashboardMetrics;
         var appOpenRequestTimeLocal = DateTimeOffset.Now;
         var appOpenRequestRawMs = Environment.TickCount64;
+
+        // Capture pending request BEFORE executing click to avoid race with shared-memory polling.
+        CapturePendingOpenRequest(TradeTab.LeftPanel.TargetMapName, snapshot, isExchangeA: true, tradeType: 0, appOpenRequestTimeLocal, appOpenRequestRawMs);
+        CapturePendingOpenRequest(TradeTab.RightPanel.TargetMapName, snapshot, isExchangeA: false, tradeType: 1, appOpenRequestTimeLocal, appOpenRequestRawMs);
+
         var result = await _mt5ManualTradeService.ExecuteBuyAsync(
             _runtimeConfigState.CurrentChartHwndA,
             _runtimeConfigState.CurrentChartHwndB);
-
-        CapturePendingOpenRequest(TradeTab.LeftPanel.TargetMapName, snapshot, isExchangeA: true, tradeType: 0, appOpenRequestTimeLocal, appOpenRequestRawMs);
-        CapturePendingOpenRequest(TradeTab.RightPanel.TargetMapName, snapshot, isExchangeA: false, tradeType: 1, appOpenRequestTimeLocal, appOpenRequestRawMs);
 
         AppendManualTradeLogs(result, snapshot);
         ShowManualTradeFeedback("BUY", result);
@@ -388,12 +390,14 @@ public sealed class DashboardViewModel : ObservableObject
         var snapshot = _runtimeConfigState.CurrentDashboardMetrics;
         var appOpenRequestTimeLocal = DateTimeOffset.Now;
         var appOpenRequestRawMs = Environment.TickCount64;
+
+        // Capture pending request BEFORE executing click to avoid race with shared-memory polling.
+        CapturePendingOpenRequest(TradeTab.LeftPanel.TargetMapName, snapshot, isExchangeA: true, tradeType: 1, appOpenRequestTimeLocal, appOpenRequestRawMs);
+        CapturePendingOpenRequest(TradeTab.RightPanel.TargetMapName, snapshot, isExchangeA: false, tradeType: 0, appOpenRequestTimeLocal, appOpenRequestRawMs);
+
         var result = await _mt5ManualTradeService.ExecuteSellAsync(
             _runtimeConfigState.CurrentChartHwndA,
             _runtimeConfigState.CurrentChartHwndB);
-
-        CapturePendingOpenRequest(TradeTab.LeftPanel.TargetMapName, snapshot, isExchangeA: true, tradeType: 1, appOpenRequestTimeLocal, appOpenRequestRawMs);
-        CapturePendingOpenRequest(TradeTab.RightPanel.TargetMapName, snapshot, isExchangeA: false, tradeType: 0, appOpenRequestTimeLocal, appOpenRequestRawMs);
 
         AppendManualTradeLogs(result, snapshot);
         ShowManualTradeFeedback("SELL", result);
@@ -414,12 +418,14 @@ public sealed class DashboardViewModel : ObservableObject
 
         var appCloseRequestTimeLocal = DateTimeOffset.Now;
         var appCloseRequestRawMs = Environment.TickCount64;
+
+        // Capture pending request BEFORE executing close to avoid race with shared-memory polling.
+        CapturePendingCloseRequest(selectA, snapshot, isExchangeA: true, appCloseRequestTimeLocal, appCloseRequestRawMs);
+        CapturePendingCloseRequest(selectB, snapshot, isExchangeA: false, appCloseRequestTimeLocal, appCloseRequestRawMs);
+
         var result = await _mt5ManualTradeService.ExecuteCloseAsync(
             selectA.Request,
             selectB.Request);
-
-        CapturePendingCloseRequest(selectA, snapshot, isExchangeA: true, appCloseRequestTimeLocal, appCloseRequestRawMs);
-        CapturePendingCloseRequest(selectB, snapshot, isExchangeA: false, appCloseRequestTimeLocal, appCloseRequestRawMs);
 
         AppendManualTradeLogs(result, snapshot);
         AppendCloseSelectionDiagnostics(selectA, selectB);
@@ -460,12 +466,14 @@ public sealed class DashboardViewModel : ObservableObject
     {
         var appOpenRequestTimeLocal = DateTimeOffset.Now;
         var appOpenRequestRawMs = Environment.TickCount64;
+
+        // Capture pending request BEFORE executing click to avoid race with shared-memory polling.
+        CapturePendingOpenRequestFromTrigger(TradeTab.LeftPanel.TargetMapName, trigger, isExchangeA: true, tradeType: 0, appOpenRequestTimeLocal, appOpenRequestRawMs);
+        CapturePendingOpenRequestFromTrigger(TradeTab.RightPanel.TargetMapName, trigger, isExchangeA: false, tradeType: 1, appOpenRequestTimeLocal, appOpenRequestRawMs);
+
         var result = await _mt5ManualTradeService.ExecuteBuyAsync(
             _runtimeConfigState.CurrentChartHwndA,
             _runtimeConfigState.CurrentChartHwndB);
-
-        CapturePendingOpenRequestFromTrigger(TradeTab.LeftPanel.TargetMapName, trigger, isExchangeA: true, tradeType: 0, appOpenRequestTimeLocal, appOpenRequestRawMs);
-        CapturePendingOpenRequestFromTrigger(TradeTab.RightPanel.TargetMapName, trigger, isExchangeA: false, tradeType: 1, appOpenRequestTimeLocal, appOpenRequestRawMs);
 
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
@@ -477,12 +485,14 @@ public sealed class DashboardViewModel : ObservableObject
     {
         var appOpenRequestTimeLocal = DateTimeOffset.Now;
         var appOpenRequestRawMs = Environment.TickCount64;
+
+        // Capture pending request BEFORE executing click to avoid race with shared-memory polling.
+        CapturePendingOpenRequestFromTrigger(TradeTab.LeftPanel.TargetMapName, trigger, isExchangeA: true, tradeType: 1, appOpenRequestTimeLocal, appOpenRequestRawMs);
+        CapturePendingOpenRequestFromTrigger(TradeTab.RightPanel.TargetMapName, trigger, isExchangeA: false, tradeType: 0, appOpenRequestTimeLocal, appOpenRequestRawMs);
+
         var result = await _mt5ManualTradeService.ExecuteSellAsync(
             _runtimeConfigState.CurrentChartHwndA,
             _runtimeConfigState.CurrentChartHwndB);
-
-        CapturePendingOpenRequestFromTrigger(TradeTab.LeftPanel.TargetMapName, trigger, isExchangeA: true, tradeType: 1, appOpenRequestTimeLocal, appOpenRequestRawMs);
-        CapturePendingOpenRequestFromTrigger(TradeTab.RightPanel.TargetMapName, trigger, isExchangeA: false, tradeType: 0, appOpenRequestTimeLocal, appOpenRequestRawMs);
 
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
@@ -504,12 +514,14 @@ public sealed class DashboardViewModel : ObservableObject
 
         var appCloseRequestTimeLocal = DateTimeOffset.Now;
         var appCloseRequestRawMs = Environment.TickCount64;
+
+        // Capture pending request BEFORE executing close to avoid race with shared-memory polling.
+        CapturePendingCloseRequestFromTrigger(selectA, trigger, isExchangeA: true, appCloseRequestTimeLocal, appCloseRequestRawMs);
+        CapturePendingCloseRequestFromTrigger(selectB, trigger, isExchangeA: false, appCloseRequestTimeLocal, appCloseRequestRawMs);
+
         var result = await _mt5ManualTradeService.ExecuteCloseAsync(
             selectA.Request,
             selectB.Request);
-
-        CapturePendingCloseRequestFromTrigger(selectA, trigger, isExchangeA: true, appCloseRequestTimeLocal, appCloseRequestRawMs);
-        CapturePendingCloseRequestFromTrigger(selectB, trigger, isExchangeA: false, appCloseRequestTimeLocal, appCloseRequestRawMs);
 
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
