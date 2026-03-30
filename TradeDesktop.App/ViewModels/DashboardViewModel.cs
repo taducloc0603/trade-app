@@ -1515,70 +1515,22 @@ public sealed class DashboardViewModel : ObservableObject
 
     private static string FormatOpenExecutionDebug(ulong openEaTimeLocal, long? appOpenRequestRawMs, long? openExecutionMs)
     {
-        var openEaText = openEaTimeLocal == 0
-            ? "MISSING"
-            : openEaTimeLocal.ToString(CultureInfo.InvariantCulture);
-
-        var appOpenText = appOpenRequestRawMs.HasValue
-            ? appOpenRequestRawMs.Value.ToString(CultureInfo.InvariantCulture)
-            : "MISSING";
-
-        var result = openExecutionMs.HasValue
-            ? $"{openExecutionMs.Value.ToString(CultureInfo.InvariantCulture)} ms"
-            : "MISSING_RESULT";
-
-        return $"((open_ea_time_local - app_open_raw | {openEaText} - {appOpenText}) {result})";
+        return FormatExecutionMs(openExecutionMs);
     }
 
     private static string FormatCloseExecutionDebug(ulong closeEaTimeLocal, long? appCloseRequestRawMs, long? closeExecutionMs)
     {
-        var closeEaText = closeEaTimeLocal == 0
-            ? "MISSING"
-            : closeEaTimeLocal.ToString(CultureInfo.InvariantCulture);
-
-        var appCloseText = appCloseRequestRawMs.HasValue
-            ? appCloseRequestRawMs.Value.ToString(CultureInfo.InvariantCulture)
-            : "MISSING";
-
-        var result = closeExecutionMs.HasValue
-            ? $"{closeExecutionMs.Value.ToString(CultureInfo.InvariantCulture)} ms"
-            : "MISSING_RESULT";
-
-        return $"((close_ea_time_local - app_close_raw | {closeEaText} - {appCloseText}) {result})";
+        return FormatExecutionMs(closeExecutionMs);
     }
 
     private static string FormatTradeOpenSlippageDebug(TradeSharedRecord record, PendingOpenRequest? openRequest, int point, double? slippage)
     {
-        var pointValue = Math.Max(1, point).ToString(CultureInfo.InvariantCulture);
-        var expectedValue = openRequest?.ExpectedPrice;
-        var expected = expectedValue.HasValue
-            ? expectedValue.Value.ToString("0.#####", CultureInfo.InvariantCulture)
-            : "MISSING";
-        var openPrice = record.Price.ToString("0.#####", CultureInfo.InvariantCulture);
-        var result = slippage.HasValue
-            ? slippage.Value.ToString("0.00", CultureInfo.InvariantCulture)
-            : "MISSING_RESULT";
-
-        return record.TradeType == 0
-            ? $"(((expected_open_price - open_price) * point | ({expected} - {openPrice}) * {pointValue}) {result})"
-            : $"(((open_price - expected_open_price) * point | ({openPrice} - {expected}) * {pointValue}) {result})";
+        return FormatOptionalProfit(slippage);
     }
 
     private static string FormatHistoryCloseSlippageDebug(HistorySharedRecord record, PendingCloseRequest? closeRequest, int point, double? slippage)
     {
-        var pointValue = Math.Max(1, point).ToString(CultureInfo.InvariantCulture);
-        var expectedValue = closeRequest?.ExpectedPrice;
-        var expected = expectedValue.HasValue
-            ? expectedValue.Value.ToString("0.#####", CultureInfo.InvariantCulture)
-            : "MISSING";
-        var closePrice = record.ClosePrice.ToString("0.#####", CultureInfo.InvariantCulture);
-        var result = slippage.HasValue
-            ? slippage.Value.ToString("0.00", CultureInfo.InvariantCulture)
-            : "MISSING_RESULT";
-
-        return record.TradeType == 0
-            ? $"(((close_price - expected_close_price) * point | ({closePrice} - {expected}) * {pointValue}) {result})"
-            : $"(((expected_close_price - close_price) * point | ({expected} - {closePrice}) * {pointValue}) {result})";
+        return FormatOptionalProfit(slippage);
     }
 
     private bool TryConsumePendingOpenRequest(
@@ -1602,20 +1554,13 @@ public sealed class DashboardViewModel : ObservableObject
             return false;
         }
 
-        var candidates = pendingList
+        var strictCandidates = pendingList
             .Where(x => x.TradeType == tradeRecord.TradeType)
             .Where(x => IsNullOrMatch(x.Symbol, tradeRecord.Symbol))
             .Where(x => IsNullOrVolumeMatch(x.Volume, tradeRecord.Lot))
             .ToList();
 
-        if (candidates.Count == 0)
-        {
-            Debug.WriteLine(
-                $"[ExecOpen][Reject] map={tradeMapName}, ticket={tradeRecord.Ticket}, symbol={tradeRecord.Symbol}, type={tradeRecord.TradeType}, volume={tradeRecord.Lot.ToString(CultureInfo.InvariantCulture)}, reason=no_matching_pending_by_keys");
-            return false;
-        }
-
-        var selected = candidates
+        var selected = strictCandidates
             .OrderBy(x => Math.Abs(tradeRecord.TimeMsc > long.MaxValue
                 ? long.MaxValue - x.AppOpenRequestUnixMs
                 : (long)tradeRecord.TimeMsc - x.AppOpenRequestUnixMs))
@@ -1623,6 +1568,38 @@ public sealed class DashboardViewModel : ObservableObject
 
         if (selected is null)
         {
+            var typeOnlyCandidates = pendingList
+                .Where(x => x.TradeType == tradeRecord.TradeType)
+                .ToList();
+
+            selected = typeOnlyCandidates
+                .OrderBy(x => Math.Abs(tradeRecord.TimeMsc > long.MaxValue
+                    ? long.MaxValue - x.AppOpenRequestUnixMs
+                    : (long)tradeRecord.TimeMsc - x.AppOpenRequestUnixMs))
+                .FirstOrDefault();
+        }
+
+        if (selected is null)
+        {
+            var fallbackCandidates = pendingList
+                .Where(x => Math.Abs(x.AppOpenRequestUnixMs - DateTimeOffset.Now.ToUnixTimeMilliseconds()) <= 10_000)
+                .ToList();
+
+            selected = fallbackCandidates
+                .OrderBy(x => Math.Abs(tradeRecord.TimeMsc > long.MaxValue
+                    ? long.MaxValue - x.AppOpenRequestUnixMs
+                    : (long)tradeRecord.TimeMsc - x.AppOpenRequestUnixMs))
+                .FirstOrDefault();
+        }
+
+        if (selected is null)
+        {
+            var pendingDump = string.Join(" | ", pendingList.Select(x =>
+                $"type={x.TradeType},symbol={x.Symbol ?? "-"},vol={(x.Volume.HasValue ? x.Volume.Value.ToString(CultureInfo.InvariantCulture) : "-")},app_open_raw={x.AppOpenRequestRawMs}"));
+
+            Debug.WriteLine(
+                $"[ExecOpen][Reject] map={tradeMapName}, ticket={tradeRecord.Ticket}, symbol={tradeRecord.Symbol}, type={tradeRecord.TradeType}, volume={tradeRecord.Lot.ToString(CultureInfo.InvariantCulture)}, reason=no_matching_pending_by_keys");
+            Debug.WriteLine($"[ExecOpen][Reject][PendingDump] map={tradeMapName}, pending={pendingDump}");
             return false;
         }
 
@@ -1633,7 +1610,7 @@ public sealed class DashboardViewModel : ObservableObject
         }
 
         pendingRequest = selected;
-        matchKey = $"map={tradeMapName};symbol={tradeRecord.Symbol};type={tradeRecord.TradeType};volume={tradeRecord.Lot.ToString(CultureInfo.InvariantCulture)};mode=fallback";
+        matchKey = $"map={tradeMapName};symbol={tradeRecord.Symbol};type={tradeRecord.TradeType};volume={tradeRecord.Lot.ToString(CultureInfo.InvariantCulture)};mode=best_effort";
         return true;
     }
 
@@ -1731,13 +1708,13 @@ public sealed class DashboardViewModel : ObservableObject
     private static void PruneStalePendingOpenRequests(List<PendingOpenRequest> pendingList)
     {
         var now = DateTimeOffset.Now;
-        pendingList.RemoveAll(x => now - x.AppOpenRequestTimeLocal > TimeSpan.FromMinutes(5));
+        pendingList.RemoveAll(x => now - x.AppOpenRequestTimeLocal > TimeSpan.FromSeconds(30));
     }
 
     private static void PruneStalePendingCloseRequests(List<PendingCloseRequest> pendingList)
     {
         var now = DateTimeOffset.Now;
-        pendingList.RemoveAll(x => now - x.AppCloseRequestTimeLocal > TimeSpan.FromMinutes(5));
+        pendingList.RemoveAll(x => now - x.AppCloseRequestTimeLocal > TimeSpan.FromSeconds(30));
     }
 
     private double? CalculateTradeOpenSlippage(TradeSharedRecord record, int point)
@@ -1848,7 +1825,7 @@ public sealed class DashboardViewModel : ObservableObject
     private static string FormatExecutionMs(long? value)
         => value.HasValue
             ? $"{value.Value.ToString(CultureInfo.InvariantCulture)} ms"
-            : "--";
+            : "-";
 
     private static string FormatTradeTime(ulong timeMsc)
     {
