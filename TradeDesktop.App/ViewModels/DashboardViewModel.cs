@@ -1512,6 +1512,13 @@ public sealed class DashboardViewModel : ObservableObject
             return false;
         }
 
+        PruneStalePendingOpenRequests(pendingList);
+        if (pendingList.Count == 0)
+        {
+            _pendingOpenRequestsByMap.Remove(tradeMapName);
+            return false;
+        }
+
         var candidates = pendingList
             .Where(x => x.TradeType == tradeRecord.TradeType)
             .Where(x => IsNullOrMatch(x.Symbol, tradeRecord.Symbol))
@@ -1520,14 +1527,9 @@ public sealed class DashboardViewModel : ObservableObject
 
         if (candidates.Count == 0)
         {
-            candidates = pendingList
-                .Where(x => x.TradeType == tradeRecord.TradeType)
-                .ToList();
-        }
-
-        if (candidates.Count == 0)
-        {
-            candidates = [.. pendingList];
+            Debug.WriteLine(
+                $"[ExecOpen][Reject] map={tradeMapName}, ticket={tradeRecord.Ticket}, symbol={tradeRecord.Symbol}, type={tradeRecord.TradeType}, volume={tradeRecord.Lot.ToString(CultureInfo.InvariantCulture)}, reason=no_matching_pending_by_keys");
+            return false;
         }
 
         var selected = candidates
@@ -1566,6 +1568,13 @@ public sealed class DashboardViewModel : ObservableObject
             return false;
         }
 
+        PruneStalePendingCloseRequests(pendingList);
+        if (pendingList.Count == 0)
+        {
+            _pendingCloseRequestsByMap.Remove(tradeMapName);
+            return false;
+        }
+
         var ticketMatch = pendingList.FirstOrDefault(x => x.Ticket.HasValue && x.Ticket.Value == historyRecord.Ticket);
         if (ticketMatch is not null)
         {
@@ -1588,14 +1597,9 @@ public sealed class DashboardViewModel : ObservableObject
 
         if (candidates.Count == 0)
         {
-            candidates = pendingList
-                .Where(x => x.TradeType == historyRecord.TradeType)
-                .ToList();
-        }
-
-        if (candidates.Count == 0)
-        {
-            candidates = [.. pendingList];
+            Debug.WriteLine(
+                $"[ExecClose][Reject] map={tradeMapName}, ticket={historyRecord.Ticket}, symbol={historyRecord.Symbol}, type={historyRecord.TradeType}, volume={historyRecord.Volume.ToString(CultureInfo.InvariantCulture)}, reason=no_matching_pending_by_keys");
+            return false;
         }
 
         var selected = candidates
@@ -1657,11 +1661,23 @@ public sealed class DashboardViewModel : ObservableObject
 
     private static bool IsNullOrMatch(string? pending, string? actual)
         => string.IsNullOrWhiteSpace(pending)
-           || string.IsNullOrWhiteSpace(actual)
-           || string.Equals(pending.Trim(), actual.Trim(), StringComparison.OrdinalIgnoreCase);
+           || (!string.IsNullOrWhiteSpace(actual)
+               && string.Equals(pending.Trim(), actual.Trim(), StringComparison.OrdinalIgnoreCase));
 
     private static bool IsNullOrVolumeMatch(double? pendingVolume, double actualVolume)
         => !pendingVolume.HasValue || Math.Abs(pendingVolume.Value - actualVolume) < 0.0000001d;
+
+    private static void PruneStalePendingOpenRequests(List<PendingOpenRequest> pendingList)
+    {
+        var now = DateTimeOffset.Now;
+        pendingList.RemoveAll(x => now - x.AppOpenRequestTimeLocal > TimeSpan.FromMinutes(5));
+    }
+
+    private static void PruneStalePendingCloseRequests(List<PendingCloseRequest> pendingList)
+    {
+        var now = DateTimeOffset.Now;
+        pendingList.RemoveAll(x => now - x.AppCloseRequestTimeLocal > TimeSpan.FromMinutes(5));
+    }
 
     private double? CalculateTradeOpenSlippage(TradeSharedRecord record, int point)
     {
