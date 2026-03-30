@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Windows.Media;
 using Microsoft.Extensions.DependencyInjection;
 using TradeDesktop.App.Commands;
@@ -32,20 +33,36 @@ public sealed class DashboardViewModel : ObservableObject
     private readonly Dictionary<string, ulong> _lastHistoryTimestampByMap = new(StringComparer.Ordinal);
     private readonly Dictionary<string, HashSet<ulong>> _knownTradeTicketsByMap = new(StringComparer.Ordinal);
     private readonly Dictionary<string, HashSet<ulong>> _knownHistoryTicketsByMap = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, List<ExpectedOpenCapture>> _pendingOpenExpectedByMap = new(StringComparer.Ordinal);
-    private readonly Dictionary<ulong, ExpectedOpenCapture> _openExpectedByTicket = [];
+    private readonly Dictionary<string, List<PendingOpenRequest>> _pendingOpenRequestsByMap = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, List<PendingCloseRequest>> _pendingCloseRequestsByMap = new(StringComparer.Ordinal);
+    private readonly Dictionary<ulong, PendingOpenRequest> _openRequestByTicket = [];
+    private readonly Dictionary<ulong, PendingCloseRequest> _closeRequestByTicket = [];
     private readonly Dictionary<ulong, double> _openSlippageByTicket = [];
-    private readonly Dictionary<ulong, long> _openRequestedAtMonotonicMsByTicket = [];
     private readonly Dictionary<ulong, long> _openExecutionMsByTicket = [];
-    private readonly Dictionary<ulong, ExpectedCloseCapture> _closeExpectedByTicket = [];
     private readonly Dictionary<ulong, long> _closeExecutionMsByTicket = [];
     private SharedMapReadResult<TradeSharedRecord>? _latestTradeLeftResult;
     private SharedMapReadResult<TradeSharedRecord>? _latestTradeRightResult;
 
     private static readonly TimeSpan OrderInfoPollInterval = TimeSpan.FromSeconds(1);
 
-    private sealed record ExpectedOpenCapture(int TradeType, double ExpectedPrice, long AppRequestedAtMonotonicMs);
-    private sealed record ExpectedCloseCapture(int TradeType, double ExpectedPrice, long AppRequestedAtMonotonicMs);
+    private sealed record PendingOpenRequest(
+        string TradeMapName,
+        string? Symbol,
+        int TradeType,
+        double? Volume,
+        double ExpectedPrice,
+        DateTimeOffset AppOpenRequestTimeLocal,
+        long AppOpenRequestUnixMs);
+
+    private sealed record PendingCloseRequest(
+        string TradeMapName,
+        ulong? Ticket,
+        string? Symbol,
+        int TradeType,
+        double? Volume,
+        double ExpectedPrice,
+        DateTimeOffset AppCloseRequestTimeLocal,
+        long AppCloseRequestUnixMs);
 
     private string _runtimeSummary = string.Empty;
     private string _dbInlineData = string.Empty;
@@ -351,13 +368,13 @@ public sealed class DashboardViewModel : ObservableObject
     private async Task BuyAsync()
     {
         var snapshot = _runtimeConfigState.CurrentDashboardMetrics;
+        var appOpenRequestTimeLocal = DateTimeOffset.Now;
         var result = await _mt5ManualTradeService.ExecuteBuyAsync(
             _runtimeConfigState.CurrentChartHwndA,
             _runtimeConfigState.CurrentChartHwndB);
 
-        var sentAt = GetCurrentMonotonicMilliseconds();
-        EnqueueOpenExpected(TradeTab.LeftPanel.TargetMapName, snapshot, isExchangeA: true, tradeType: 0, sentAt);
-        EnqueueOpenExpected(TradeTab.RightPanel.TargetMapName, snapshot, isExchangeA: false, tradeType: 1, sentAt);
+        CapturePendingOpenRequest(TradeTab.LeftPanel.TargetMapName, snapshot, isExchangeA: true, tradeType: 0, appOpenRequestTimeLocal);
+        CapturePendingOpenRequest(TradeTab.RightPanel.TargetMapName, snapshot, isExchangeA: false, tradeType: 1, appOpenRequestTimeLocal);
 
         AppendManualTradeLogs(result, snapshot);
         ShowManualTradeFeedback("BUY", result);
@@ -366,13 +383,13 @@ public sealed class DashboardViewModel : ObservableObject
     private async Task SellAsync()
     {
         var snapshot = _runtimeConfigState.CurrentDashboardMetrics;
+        var appOpenRequestTimeLocal = DateTimeOffset.Now;
         var result = await _mt5ManualTradeService.ExecuteSellAsync(
             _runtimeConfigState.CurrentChartHwndA,
             _runtimeConfigState.CurrentChartHwndB);
 
-        var sentAt = GetCurrentMonotonicMilliseconds();
-        EnqueueOpenExpected(TradeTab.LeftPanel.TargetMapName, snapshot, isExchangeA: true, tradeType: 1, sentAt);
-        EnqueueOpenExpected(TradeTab.RightPanel.TargetMapName, snapshot, isExchangeA: false, tradeType: 0, sentAt);
+        CapturePendingOpenRequest(TradeTab.LeftPanel.TargetMapName, snapshot, isExchangeA: true, tradeType: 1, appOpenRequestTimeLocal);
+        CapturePendingOpenRequest(TradeTab.RightPanel.TargetMapName, snapshot, isExchangeA: false, tradeType: 0, appOpenRequestTimeLocal);
 
         AppendManualTradeLogs(result, snapshot);
         ShowManualTradeFeedback("SELL", result);
@@ -391,13 +408,13 @@ public sealed class DashboardViewModel : ObservableObject
             tradeMapName: TradeTab.RightPanel.TargetMapName,
             tradeHwnd: _runtimeConfigState.CurrentTradeHwndB);
 
+        var appCloseRequestTimeLocal = DateTimeOffset.Now;
         var result = await _mt5ManualTradeService.ExecuteCloseAsync(
             selectA.Request,
             selectB.Request);
 
-        var sentAt = GetCurrentMonotonicMilliseconds();
-        CaptureCloseExpected(selectA, snapshot, isExchangeA: true, sentAt);
-        CaptureCloseExpected(selectB, snapshot, isExchangeA: false, sentAt);
+        CapturePendingCloseRequest(selectA, snapshot, isExchangeA: true, appCloseRequestTimeLocal);
+        CapturePendingCloseRequest(selectB, snapshot, isExchangeA: false, appCloseRequestTimeLocal);
 
         AppendManualTradeLogs(result, snapshot);
         AppendCloseSelectionDiagnostics(selectA, selectB);
@@ -436,13 +453,13 @@ public sealed class DashboardViewModel : ObservableObject
 
     private async Task AutoBuyAsync(GapSignalTriggerResult trigger)
     {
+        var appOpenRequestTimeLocal = DateTimeOffset.Now;
         var result = await _mt5ManualTradeService.ExecuteBuyAsync(
             _runtimeConfigState.CurrentChartHwndA,
             _runtimeConfigState.CurrentChartHwndB);
 
-        var sentAt = GetCurrentMonotonicMilliseconds();
-        EnqueueOpenExpectedFromTrigger(TradeTab.LeftPanel.TargetMapName, trigger, isExchangeA: true, tradeType: 0, sentAt);
-        EnqueueOpenExpectedFromTrigger(TradeTab.RightPanel.TargetMapName, trigger, isExchangeA: false, tradeType: 1, sentAt);
+        CapturePendingOpenRequestFromTrigger(TradeTab.LeftPanel.TargetMapName, trigger, isExchangeA: true, tradeType: 0, appOpenRequestTimeLocal);
+        CapturePendingOpenRequestFromTrigger(TradeTab.RightPanel.TargetMapName, trigger, isExchangeA: false, tradeType: 1, appOpenRequestTimeLocal);
 
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
@@ -452,13 +469,13 @@ public sealed class DashboardViewModel : ObservableObject
 
     private async Task AutoSellAsync(GapSignalTriggerResult trigger)
     {
+        var appOpenRequestTimeLocal = DateTimeOffset.Now;
         var result = await _mt5ManualTradeService.ExecuteSellAsync(
             _runtimeConfigState.CurrentChartHwndA,
             _runtimeConfigState.CurrentChartHwndB);
 
-        var sentAt = GetCurrentMonotonicMilliseconds();
-        EnqueueOpenExpectedFromTrigger(TradeTab.LeftPanel.TargetMapName, trigger, isExchangeA: true, tradeType: 1, sentAt);
-        EnqueueOpenExpectedFromTrigger(TradeTab.RightPanel.TargetMapName, trigger, isExchangeA: false, tradeType: 0, sentAt);
+        CapturePendingOpenRequestFromTrigger(TradeTab.LeftPanel.TargetMapName, trigger, isExchangeA: true, tradeType: 1, appOpenRequestTimeLocal);
+        CapturePendingOpenRequestFromTrigger(TradeTab.RightPanel.TargetMapName, trigger, isExchangeA: false, tradeType: 0, appOpenRequestTimeLocal);
 
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
@@ -478,13 +495,13 @@ public sealed class DashboardViewModel : ObservableObject
             tradeMapName: TradeTab.RightPanel.TargetMapName,
             tradeHwnd: _runtimeConfigState.CurrentTradeHwndB);
 
+        var appCloseRequestTimeLocal = DateTimeOffset.Now;
         var result = await _mt5ManualTradeService.ExecuteCloseAsync(
             selectA.Request,
             selectB.Request);
 
-        var sentAt = GetCurrentMonotonicMilliseconds();
-        CaptureCloseExpectedFromTrigger(selectA, trigger, isExchangeA: true, sentAt);
-        CaptureCloseExpectedFromTrigger(selectB, trigger, isExchangeA: false, sentAt);
+        CapturePendingCloseRequestFromTrigger(selectA, trigger, isExchangeA: true, appCloseRequestTimeLocal);
+        CapturePendingCloseRequestFromTrigger(selectB, trigger, isExchangeA: false, appCloseRequestTimeLocal);
 
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
@@ -525,7 +542,12 @@ public sealed class DashboardViewModel : ObservableObject
         }
     }
 
-    private void EnqueueOpenExpectedFromTrigger(string tradeMapName, GapSignalTriggerResult trigger, bool isExchangeA, int tradeType, long sentAtMs)
+    private void CapturePendingOpenRequestFromTrigger(
+        string tradeMapName,
+        GapSignalTriggerResult trigger,
+        bool isExchangeA,
+        int tradeType,
+        DateTimeOffset appOpenRequestTimeLocal)
     {
         var expectedPrice = ResolveExpectedPriceFromTrigger(trigger, isExchangeA, tradeType);
         if (!expectedPrice.HasValue)
@@ -533,17 +555,20 @@ public sealed class DashboardViewModel : ObservableObject
             return;
         }
 
-        var key = tradeMapName ?? string.Empty;
-        if (!_pendingOpenExpectedByMap.TryGetValue(key, out var pendingList))
-        {
-            pendingList = [];
-            _pendingOpenExpectedByMap[key] = pendingList;
-        }
-
-        pendingList.Add(new ExpectedOpenCapture(tradeType, expectedPrice.Value, sentAtMs));
+        RegisterPendingOpenRequest(
+            tradeMapName: tradeMapName,
+            symbol: null,
+            volume: null,
+            tradeType: tradeType,
+            expectedPrice: expectedPrice.Value,
+            appOpenRequestTimeLocal: appOpenRequestTimeLocal);
     }
 
-    private void CaptureCloseExpectedFromTrigger(CloseSelectionResult selection, GapSignalTriggerResult trigger, bool isExchangeA, long sentAtMs)
+    private void CapturePendingCloseRequestFromTrigger(
+        CloseSelectionResult selection,
+        GapSignalTriggerResult trigger,
+        bool isExchangeA,
+        DateTimeOffset appCloseRequestTimeLocal)
     {
         if (selection.Request is null || !selection.TradeType.HasValue)
         {
@@ -558,10 +583,14 @@ public sealed class DashboardViewModel : ObservableObject
             return;
         }
 
-        _closeExpectedByTicket[selection.Request.Ticket] = new ExpectedCloseCapture(
-            originalTradeType,
-            expectedPrice.Value,
-            sentAtMs);
+        RegisterPendingCloseRequest(
+            tradeMapName: ResolveTradeMapNameFromCloseSelection(selection),
+            ticket: selection.Request.Ticket,
+            tradeType: originalTradeType,
+            expectedPrice: expectedPrice.Value,
+            appCloseRequestTimeLocal: appCloseRequestTimeLocal,
+            symbol: selection.Symbol,
+            volume: selection.Volume);
     }
 
     private static double? ResolveExpectedPriceFromTrigger(GapSignalTriggerResult trigger, bool isExchangeA, int tradeType)
@@ -630,6 +659,9 @@ public sealed class DashboardViewModel : ObservableObject
                 Request: null,
                 Status: CloseSelectionStatus.MapNotFound,
                 TradeType: null,
+                TradeMapName: tradeMapName,
+                Symbol: null,
+                Volume: null,
                 DiagnosticMessage: $"Close {exchangeLabel} skipped: map not found ({tradeMapName})");
         }
 
@@ -639,6 +671,9 @@ public sealed class DashboardViewModel : ObservableObject
                 Request: null,
                 Status: CloseSelectionStatus.ParseError,
                 TradeType: null,
+                TradeMapName: tradeMapName,
+                Symbol: null,
+                Volume: null,
                 DiagnosticMessage: $"Close {exchangeLabel} skipped: parse error ({result.ErrorMessage ?? "unknown"})");
         }
 
@@ -648,6 +683,9 @@ public sealed class DashboardViewModel : ObservableObject
                 Request: null,
                 Status: CloseSelectionStatus.NoOpenTrade,
                 TradeType: null,
+                TradeMapName: tradeMapName,
+                Symbol: null,
+                Volume: null,
                 DiagnosticMessage: null);
         }
 
@@ -656,6 +694,9 @@ public sealed class DashboardViewModel : ObservableObject
             Request: new ManualCloseRequest(exchangeLabel, tradeHwnd, firstTrade.Ticket),
             Status: CloseSelectionStatus.Candidate,
             TradeType: firstTrade.TradeType,
+            TradeMapName: tradeMapName,
+            Symbol: firstTrade.Symbol,
+            Volume: firstTrade.Lot,
             DiagnosticMessage: null);
     }
 
@@ -692,9 +733,17 @@ public sealed class DashboardViewModel : ObservableObject
         ManualCloseRequest? Request,
         CloseSelectionStatus Status,
         int? TradeType,
+        string? TradeMapName,
+        string? Symbol,
+        double? Volume,
         string? DiagnosticMessage);
 
-    private void EnqueueOpenExpected(string tradeMapName, DashboardMetrics? snapshot, bool isExchangeA, int tradeType, long sentAtMs)
+    private void CapturePendingOpenRequest(
+        string tradeMapName,
+        DashboardMetrics? snapshot,
+        bool isExchangeA,
+        int tradeType,
+        DateTimeOffset appOpenRequestTimeLocal)
     {
         var expectedPrice = ResolveExpectedOpenPrice(snapshot, isExchangeA, tradeType);
         if (!expectedPrice.HasValue)
@@ -702,17 +751,20 @@ public sealed class DashboardViewModel : ObservableObject
             return;
         }
 
-        var key = tradeMapName ?? string.Empty;
-        if (!_pendingOpenExpectedByMap.TryGetValue(key, out var pendingList))
-        {
-            pendingList = [];
-            _pendingOpenExpectedByMap[key] = pendingList;
-        }
-
-        pendingList.Add(new ExpectedOpenCapture(tradeType, expectedPrice.Value, sentAtMs));
+        RegisterPendingOpenRequest(
+            tradeMapName: tradeMapName,
+            symbol: ResolveExpectedOpenSymbol(snapshot, isExchangeA),
+            volume: null,
+            tradeType: tradeType,
+            expectedPrice: expectedPrice.Value,
+            appOpenRequestTimeLocal: appOpenRequestTimeLocal);
     }
 
-    private void CaptureCloseExpected(CloseSelectionResult selection, DashboardMetrics? snapshot, bool isExchangeA, long sentAtMs)
+    private void CapturePendingCloseRequest(
+        CloseSelectionResult selection,
+        DashboardMetrics? snapshot,
+        bool isExchangeA,
+        DateTimeOffset appCloseRequestTimeLocal)
     {
         if (selection.Request is null || !selection.TradeType.HasValue)
         {
@@ -725,11 +777,87 @@ public sealed class DashboardViewModel : ObservableObject
             return;
         }
 
-        _closeExpectedByTicket[selection.Request.Ticket] = new ExpectedCloseCapture(
-            selection.TradeType.Value,
-            expectedPrice.Value,
-            sentAtMs);
+        RegisterPendingCloseRequest(
+            tradeMapName: ResolveTradeMapNameFromCloseSelection(selection),
+            ticket: selection.Request.Ticket,
+            tradeType: selection.TradeType.Value,
+            expectedPrice: expectedPrice.Value,
+            appCloseRequestTimeLocal: appCloseRequestTimeLocal,
+            symbol: selection.Symbol,
+            volume: selection.Volume);
     }
+
+    private void RegisterPendingOpenRequest(
+        string tradeMapName,
+        string? symbol,
+        double? volume,
+        int tradeType,
+        double expectedPrice,
+        DateTimeOffset appOpenRequestTimeLocal)
+    {
+        var key = NormalizeMapName(tradeMapName);
+        if (!_pendingOpenRequestsByMap.TryGetValue(key, out var pendingList))
+        {
+            pendingList = [];
+            _pendingOpenRequestsByMap[key] = pendingList;
+        }
+
+        var pending = new PendingOpenRequest(
+            TradeMapName: key,
+            Symbol: symbol,
+            TradeType: tradeType,
+            Volume: volume,
+            ExpectedPrice: expectedPrice,
+            AppOpenRequestTimeLocal: appOpenRequestTimeLocal,
+            AppOpenRequestUnixMs: appOpenRequestTimeLocal.ToUnixTimeMilliseconds());
+
+        pendingList.Add(pending);
+        Debug.WriteLine($"[ExecOpen][Capture] map={key}, type={tradeType}, app_open_request_time={pending.AppOpenRequestTimeLocal:O}");
+    }
+
+    private void RegisterPendingCloseRequest(
+        string tradeMapName,
+        ulong? ticket,
+        int tradeType,
+        double expectedPrice,
+        DateTimeOffset appCloseRequestTimeLocal,
+        string? symbol,
+        double? volume)
+    {
+        var key = NormalizeMapName(tradeMapName);
+        if (!_pendingCloseRequestsByMap.TryGetValue(key, out var pendingList))
+        {
+            pendingList = [];
+            _pendingCloseRequestsByMap[key] = pendingList;
+        }
+
+        var pending = new PendingCloseRequest(
+            TradeMapName: key,
+            Ticket: ticket,
+            Symbol: symbol,
+            TradeType: tradeType,
+            Volume: volume,
+            ExpectedPrice: expectedPrice,
+            AppCloseRequestTimeLocal: appCloseRequestTimeLocal,
+            AppCloseRequestUnixMs: appCloseRequestTimeLocal.ToUnixTimeMilliseconds());
+
+        pendingList.Add(pending);
+        Debug.WriteLine($"[ExecClose][Capture] map={key}, ticket={(ticket.HasValue ? ticket.Value.ToString(CultureInfo.InvariantCulture) : "-")}, type={tradeType}, app_close_request_time={pending.AppCloseRequestTimeLocal:O}");
+    }
+
+    private static string ResolveTradeMapNameFromCloseSelection(CloseSelectionResult selection)
+        => NormalizeMapName(selection.TradeMapName);
+
+    private static string ResolveTradeMapNameFromHistoryMap(string historyMapName)
+    {
+        var normalized = NormalizeMapName(historyMapName);
+        return normalized.EndsWith("_History", StringComparison.OrdinalIgnoreCase)
+            ? string.Concat(normalized.AsSpan(0, normalized.Length - "_History".Length), "_Trades")
+            : normalized;
+    }
+
+    private static string NormalizeMapName(string? mapName)
+        => string.IsNullOrWhiteSpace(mapName) ? string.Empty : mapName.Trim();
 
     private void AppendManualTradeLogs(ManualTradeResult result, DashboardMetrics? snapshot)
     {
@@ -820,6 +948,16 @@ public sealed class DashboardViewModel : ObservableObject
         }
 
         return exchange.Bid.HasValue ? (double)exchange.Bid.Value : null;
+    }
+
+    private static string? ResolveExpectedOpenSymbol(DashboardMetrics? snapshot, bool isExchangeA)
+    {
+        if (snapshot is null)
+        {
+            return null;
+        }
+
+        return isExchangeA ? snapshot.ExchangeA.Symbol : snapshot.ExchangeB.Symbol;
     }
 
     private static double? ResolveExpectedClosePrice(DashboardMetrics? snapshot, bool isExchangeA, int originalTradeType)
@@ -1203,7 +1341,7 @@ public sealed class DashboardViewModel : ObservableObject
 
     private void RegisterOpenExpectedForNewTickets(string tradeMapName, IReadOnlyList<TradeSharedRecord> records)
     {
-        var key = tradeMapName ?? string.Empty;
+        var key = NormalizeMapName(tradeMapName);
         if (!_knownTradeTicketsByMap.TryGetValue(key, out var knownTickets))
         {
             knownTickets = [];
@@ -1213,27 +1351,23 @@ public sealed class DashboardViewModel : ObservableObject
         var currentTickets = records.Select(r => r.Ticket).ToHashSet();
         var newRecords = records.Where(r => !knownTickets.Contains(r.Ticket)).OrderBy(r => r.TimeMsc).ToList();
 
-        if (_pendingOpenExpectedByMap.TryGetValue(key, out var pendingList) && pendingList.Count > 0)
+        foreach (var newRecord in newRecords)
         {
-            foreach (var newRecord in newRecords)
+            if (!TryConsumePendingOpenRequest(key, newRecord, out var pendingRequest, out var matchKey))
             {
-                var pendingIndex = pendingList.FindIndex(p => p.TradeType == newRecord.TradeType);
-                if (pendingIndex < 0)
-                {
-                    pendingIndex = 0;
-                }
-
-                var capture = pendingList[pendingIndex];
-                pendingList.RemoveAt(pendingIndex);
-                _openExpectedByTicket[newRecord.Ticket] = capture;
-                _openRequestedAtMonotonicMsByTicket[newRecord.Ticket] = capture.AppRequestedAtMonotonicMs;
-                TryCacheOpenExecution(newRecord.Ticket, newRecord.OpenEaTimeLocal, capture.AppRequestedAtMonotonicMs);
+                continue;
             }
 
-            if (pendingList.Count == 0)
+            _openRequestByTicket[newRecord.Ticket] = pendingRequest;
+            var openExecutionMs = ComputeExecutionMilliseconds(newRecord.OpenEaTimeLocal, pendingRequest.AppOpenRequestUnixMs);
+            if (openExecutionMs.HasValue)
             {
-                _pendingOpenExpectedByMap.Remove(key);
+                _openExecutionMsByTicket[newRecord.Ticket] = openExecutionMs.Value;
             }
+
+            Debug.WriteLine(
+                $"[ExecOpen][Match] key={matchKey}, ticket={newRecord.Ticket}, app_open_request_time={pendingRequest.AppOpenRequestTimeLocal:O}, " +
+                $"open_ea_time_local={newRecord.OpenEaTimeLocal}, open_execution={(openExecutionMs.HasValue ? openExecutionMs.Value.ToString(CultureInfo.InvariantCulture) : "--")}");
         }
 
         _knownTradeTicketsByMap[key] = currentTickets;
@@ -1241,7 +1375,9 @@ public sealed class DashboardViewModel : ObservableObject
 
     private void RegisterCloseExecutionForNewHistoryTickets(string historyMapName, IReadOnlyList<HistorySharedRecord> records)
     {
-        var key = historyMapName ?? string.Empty;
+        var key = NormalizeMapName(historyMapName);
+        var tradeMapName = ResolveTradeMapNameFromHistoryMap(historyMapName);
+
         if (!_knownHistoryTicketsByMap.TryGetValue(key, out var knownTickets))
         {
             knownTickets = [];
@@ -1261,12 +1397,21 @@ public sealed class DashboardViewModel : ObservableObject
                 continue;
             }
 
-            if (!_closeExpectedByTicket.TryGetValue(record.Ticket, out var closeExpected) || closeExpected.TradeType != record.TradeType)
+            if (!TryConsumePendingCloseRequest(tradeMapName, record, out var pendingRequest, out var matchKey))
             {
                 continue;
             }
 
-            TryCacheCloseExecution(record.Ticket, record.CloseEaTimeLocal, closeExpected.AppRequestedAtMonotonicMs);
+            _closeRequestByTicket[record.Ticket] = pendingRequest;
+            var closeExecutionMs = ComputeExecutionMilliseconds(record.CloseEaTimeLocal, pendingRequest.AppCloseRequestUnixMs);
+            if (closeExecutionMs.HasValue)
+            {
+                _closeExecutionMsByTicket[record.Ticket] = closeExecutionMs.Value;
+            }
+
+            Debug.WriteLine(
+                $"[ExecClose][Match] key={matchKey}, ticket={record.Ticket}, app_close_request_time={pendingRequest.AppCloseRequestTimeLocal:O}, " +
+                $"close_ea_time_local={record.CloseEaTimeLocal}, close_execution={(closeExecutionMs.HasValue ? closeExecutionMs.Value.ToString(CultureInfo.InvariantCulture) : "--")}");
         }
 
         _knownHistoryTicketsByMap[key] = currentTickets;
@@ -1281,12 +1426,8 @@ public sealed class DashboardViewModel : ObservableObject
         int point)
         => records.Select(record =>
         {
-            if (_openRequestedAtMonotonicMsByTicket.TryGetValue(record.Ticket, out var requestedAtMonotonicMs))
-            {
-                TryCacheOpenExecution(record.Ticket, record.OpenEaTimeLocal, requestedAtMonotonicMs);
-            }
-
-            _openExecutionMsByTicket.TryGetValue(record.Ticket, out var openExecutionMs);
+            _openExecutionMsByTicket.TryGetValue(record.Ticket, out var openExecutionMsValue);
+            var openExecutionMs = _openExecutionMsByTicket.ContainsKey(record.Ticket) ? openExecutionMsValue : (long?)null;
 
             return new TradeRowViewModel(
                 timestamp: FormatRawTimestamp(timestamp),
@@ -1303,7 +1444,7 @@ public sealed class DashboardViewModel : ObservableObject
                 feeSpread: FormatProfit(record.Profit),
                 time: FormatTradeTime(record.TimeMsc),
                 openEaTimeLocal: FormatEaLocalTime(record.OpenEaTimeLocal),
-                openExecution: FormatExecutionMs(_openExecutionMsByTicket.ContainsKey(record.Ticket) ? openExecutionMs : null));
+                openExecution: FormatExecutionMs(openExecutionMs));
         });
 
     private IEnumerable<HistoryRowViewModel> BuildHistoryRows(
@@ -1313,8 +1454,10 @@ public sealed class DashboardViewModel : ObservableObject
         int point)
         => records.Select(record =>
         {
-            _openExecutionMsByTicket.TryGetValue(record.Ticket, out var openExecutionMs);
-            _closeExecutionMsByTicket.TryGetValue(record.Ticket, out var closeExecutionMs);
+            _openExecutionMsByTicket.TryGetValue(record.Ticket, out var openExecutionMsValue);
+            _closeExecutionMsByTicket.TryGetValue(record.Ticket, out var closeExecutionMsValue);
+            var openExecutionMs = _openExecutionMsByTicket.ContainsKey(record.Ticket) ? openExecutionMsValue : (long?)null;
+            var closeExecutionMs = _closeExecutionMsByTicket.ContainsKey(record.Ticket) ? closeExecutionMsValue : (long?)null;
 
             return new HistoryRowViewModel(
                 timestamp: FormatRawTimestamp(timestamp),
@@ -1335,65 +1478,154 @@ public sealed class DashboardViewModel : ObservableObject
                 openTime: FormatTradeTime(record.OpenTimeMsc),
                 closeTime: FormatTradeTime(record.CloseTimeMsc),
                 closeEaTimeLocal: FormatEaLocalTime(record.CloseEaTimeLocal),
-                openExecution: FormatExecutionMs(_openExecutionMsByTicket.ContainsKey(record.Ticket) ? openExecutionMs : null),
-                closeExecution: FormatExecutionMs(_closeExecutionMsByTicket.ContainsKey(record.Ticket) ? closeExecutionMs : null));
+                openExecution: FormatExecutionMs(openExecutionMs),
+                closeExecution: FormatExecutionMs(closeExecutionMs));
         });
 
-    private void TryCacheOpenExecution(ulong ticket, ulong eaTimeLocalMs, long appRequestedAtMonotonicMs)
+    private bool TryConsumePendingOpenRequest(
+        string tradeMapName,
+        TradeSharedRecord tradeRecord,
+        out PendingOpenRequest pendingRequest,
+        out string matchKey)
     {
-        if (_openExecutionMsByTicket.ContainsKey(ticket))
-        {
-            return;
-        }
+        pendingRequest = default!;
+        matchKey = string.Empty;
 
-        if (!TryComputeExecutionMilliseconds(eaTimeLocalMs, appRequestedAtMonotonicMs, out var executionMs))
-        {
-            return;
-        }
-
-        _openExecutionMsByTicket[ticket] = executionMs;
-    }
-
-    private void TryCacheCloseExecution(ulong ticket, ulong eaTimeLocalMs, long appRequestedAtMonotonicMs)
-    {
-        if (_closeExecutionMsByTicket.ContainsKey(ticket))
-        {
-            return;
-        }
-
-        if (!TryComputeExecutionMilliseconds(eaTimeLocalMs, appRequestedAtMonotonicMs, out var executionMs))
-        {
-            return;
-        }
-
-        _closeExecutionMsByTicket[ticket] = executionMs;
-    }
-
-    private static bool TryComputeExecutionMilliseconds(
-        ulong eaTimeLocalMs,
-        long appRequestedAtMonotonicMs,
-        out long executionMs)
-    {
-        executionMs = 0;
-        if (eaTimeLocalMs == 0 || eaTimeLocalMs > long.MaxValue)
+        if (!_pendingOpenRequestsByMap.TryGetValue(tradeMapName, out var pendingList) || pendingList.Count == 0)
         {
             return false;
         }
 
-        var eaTimeLocalMsSigned = (long)eaTimeLocalMs;
-        var diff = eaTimeLocalMsSigned - appRequestedAtMonotonicMs;
-        if (diff < 0)
+        var candidates = pendingList
+            .Where(x => x.TradeType == tradeRecord.TradeType)
+            .Where(x => IsNullOrMatch(x.Symbol, tradeRecord.Symbol))
+            .Where(x => IsNullOrVolumeMatch(x.Volume, tradeRecord.Lot))
+            .ToList();
+
+        if (candidates.Count == 0)
+        {
+            candidates = pendingList
+                .Where(x => x.TradeType == tradeRecord.TradeType)
+                .ToList();
+        }
+
+        if (candidates.Count == 0)
+        {
+            candidates = [.. pendingList];
+        }
+
+        var selected = candidates
+            .OrderBy(x => Math.Abs(tradeRecord.TimeMsc > long.MaxValue
+                ? long.MaxValue - x.AppOpenRequestUnixMs
+                : (long)tradeRecord.TimeMsc - x.AppOpenRequestUnixMs))
+            .FirstOrDefault();
+
+        if (selected is null)
         {
             return false;
         }
 
-        executionMs = diff;
+        pendingList.Remove(selected);
+        if (pendingList.Count == 0)
+        {
+            _pendingOpenRequestsByMap.Remove(tradeMapName);
+        }
+
+        pendingRequest = selected;
+        matchKey = $"map={tradeMapName};symbol={tradeRecord.Symbol};type={tradeRecord.TradeType};volume={tradeRecord.Lot.ToString(CultureInfo.InvariantCulture)};mode=fallback";
         return true;
     }
 
+    private bool TryConsumePendingCloseRequest(
+        string tradeMapName,
+        HistorySharedRecord historyRecord,
+        out PendingCloseRequest pendingRequest,
+        out string matchKey)
+    {
+        pendingRequest = default!;
+        matchKey = string.Empty;
+
+        if (!_pendingCloseRequestsByMap.TryGetValue(tradeMapName, out var pendingList) || pendingList.Count == 0)
+        {
+            return false;
+        }
+
+        var ticketMatch = pendingList.FirstOrDefault(x => x.Ticket.HasValue && x.Ticket.Value == historyRecord.Ticket);
+        if (ticketMatch is not null)
+        {
+            pendingList.Remove(ticketMatch);
+            if (pendingList.Count == 0)
+            {
+                _pendingCloseRequestsByMap.Remove(tradeMapName);
+            }
+
+            pendingRequest = ticketMatch;
+            matchKey = $"ticket={historyRecord.Ticket};map={tradeMapName};mode=ticket";
+            return true;
+        }
+
+        var candidates = pendingList
+            .Where(x => x.TradeType == historyRecord.TradeType)
+            .Where(x => IsNullOrMatch(x.Symbol, historyRecord.Symbol))
+            .Where(x => IsNullOrVolumeMatch(x.Volume, historyRecord.Volume))
+            .ToList();
+
+        if (candidates.Count == 0)
+        {
+            candidates = pendingList
+                .Where(x => x.TradeType == historyRecord.TradeType)
+                .ToList();
+        }
+
+        if (candidates.Count == 0)
+        {
+            candidates = [.. pendingList];
+        }
+
+        var selected = candidates
+            .OrderBy(x => Math.Abs(historyRecord.CloseTimeMsc > long.MaxValue
+                ? long.MaxValue - x.AppCloseRequestUnixMs
+                : (long)historyRecord.CloseTimeMsc - x.AppCloseRequestUnixMs))
+            .FirstOrDefault();
+
+        if (selected is null)
+        {
+            return false;
+        }
+
+        pendingList.Remove(selected);
+        if (pendingList.Count == 0)
+        {
+            _pendingCloseRequestsByMap.Remove(tradeMapName);
+        }
+
+        pendingRequest = selected;
+        matchKey = $"map={tradeMapName};symbol={historyRecord.Symbol};type={historyRecord.TradeType};volume={historyRecord.Volume.ToString(CultureInfo.InvariantCulture)};mode=fallback";
+        return true;
+    }
+
+    private static long? ComputeExecutionMilliseconds(ulong eaTimeLocalMs, long appRequestUnixMs)
+    {
+        if (eaTimeLocalMs == 0)
+        {
+            return null;
+        }
+
+        var ea = eaTimeLocalMs > long.MaxValue ? long.MaxValue : (long)eaTimeLocalMs;
+        return ea - appRequestUnixMs;
+    }
+
+    private static bool IsNullOrMatch(string? pending, string? actual)
+        => string.IsNullOrWhiteSpace(pending)
+           || string.IsNullOrWhiteSpace(actual)
+           || string.Equals(pending.Trim(), actual.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsNullOrVolumeMatch(double? pendingVolume, double actualVolume)
+        => !pendingVolume.HasValue || Math.Abs(pendingVolume.Value - actualVolume) < 0.0000001d;
+
     private double? CalculateTradeOpenSlippage(TradeSharedRecord record, int point)
     {
-        if (!_openExpectedByTicket.TryGetValue(record.Ticket, out var expected) || expected.TradeType != record.TradeType)
+        if (!_openRequestByTicket.TryGetValue(record.Ticket, out var expected) || expected.TradeType != record.TradeType)
         {
             return null;
         }
@@ -1419,7 +1651,7 @@ public sealed class DashboardViewModel : ObservableObject
 
     private double? CalculateHistoryCloseSlippage(HistorySharedRecord record, int point)
     {
-        if (!_closeExpectedByTicket.TryGetValue(record.Ticket, out var expected) || expected.TradeType != record.TradeType)
+        if (!_closeRequestByTicket.TryGetValue(record.Ticket, out var expected) || expected.TradeType != record.TradeType)
         {
             return null;
         }
@@ -1493,12 +1725,11 @@ public sealed class DashboardViewModel : ObservableObject
             : "-";
 
     private static string FormatExecutionMs(long? value)
-        => value.HasValue && value.Value >= 0
-            ? $"{value.Value.ToString(CultureInfo.InvariantCulture)} ms"
-            : "-";
-
-    private static long GetCurrentMonotonicMilliseconds()
-        => Environment.TickCount64;
+        => value.HasValue
+            ? (Math.Abs(value.Value) >= 1000
+                ? $"{(value.Value / 1000d).ToString("0.###", CultureInfo.InvariantCulture)} s"
+                : $"{value.Value.ToString(CultureInfo.InvariantCulture)} ms")
+            : "--";
 
     private static string FormatTradeTime(ulong timeMsc)
     {
