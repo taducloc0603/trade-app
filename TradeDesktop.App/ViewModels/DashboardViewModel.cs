@@ -1646,17 +1646,9 @@ public sealed class DashboardViewModel : ObservableObject
         var tod = TimeSpan.FromMilliseconds(todMs);
         var baseDate = appRequestTimeLocal.Date;
 
-        var candidateSameDay = new DateTimeOffset(baseDate + tod, appRequestTimeLocal.Offset);
-        var candidatePrevDay = candidateSameDay.AddDays(-1);
-        var candidateNextDay = candidateSameDay.AddDays(1);
-
-        var candidates = new[] { candidatePrevDay, candidateSameDay, candidateNextDay };
-        var selected = candidates
-            .OrderBy(x => Math.Abs((x - appRequestTimeLocal).TotalMilliseconds))
-            .First();
-
-        eaFullLocal = selected;
-        return (long)Math.Round((selected - appRequestTimeLocal).TotalMilliseconds, MidpointRounding.AwayFromZero);
+        var sameDayLocal = new DateTimeOffset(baseDate + tod, appRequestTimeLocal.Offset);
+        eaFullLocal = sameDayLocal;
+        return (long)Math.Round((sameDayLocal - appRequestTimeLocal).TotalMilliseconds, MidpointRounding.AwayFromZero);
     }
 
     private static bool IsNullOrMatch(string? pending, string? actual)
@@ -1782,9 +1774,7 @@ public sealed class DashboardViewModel : ObservableObject
 
     private static string FormatExecutionMs(long? value)
         => value.HasValue
-            ? (Math.Abs(value.Value) >= 1000
-                ? $"{(value.Value / 1000d).ToString("0.###", CultureInfo.InvariantCulture)} s"
-                : $"{value.Value.ToString(CultureInfo.InvariantCulture)} ms")
+            ? $"{value.Value.ToString(CultureInfo.InvariantCulture)} ms"
             : "--";
 
     private static string FormatTradeTime(ulong timeMsc)
