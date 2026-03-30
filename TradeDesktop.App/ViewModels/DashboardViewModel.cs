@@ -50,7 +50,7 @@ public sealed class DashboardViewModel : ObservableObject
         string? Symbol,
         int TradeType,
         double? Volume,
-        double ExpectedPrice,
+        double? ExpectedPrice,
         DateTimeOffset AppOpenRequestTimeLocal,
         long AppOpenRequestUnixMs,
         long AppOpenRequestRawMs);
@@ -61,7 +61,7 @@ public sealed class DashboardViewModel : ObservableObject
         string? Symbol,
         int TradeType,
         double? Volume,
-        double ExpectedPrice,
+        double? ExpectedPrice,
         DateTimeOffset AppCloseRequestTimeLocal,
         long AppCloseRequestUnixMs,
         long AppCloseRequestRawMs);
@@ -571,17 +571,12 @@ public sealed class DashboardViewModel : ObservableObject
         long appOpenRequestRawMs)
     {
         var expectedPrice = ResolveExpectedPriceFromTrigger(trigger, isExchangeA, tradeType);
-        if (!expectedPrice.HasValue)
-        {
-            return;
-        }
-
         RegisterPendingOpenRequest(
             tradeMapName: tradeMapName,
             symbol: null,
             volume: null,
             tradeType: tradeType,
-            expectedPrice: expectedPrice.Value,
+            expectedPrice: expectedPrice,
             appOpenRequestTimeLocal: appOpenRequestTimeLocal,
             appOpenRequestRawMs: appOpenRequestRawMs);
     }
@@ -601,16 +596,11 @@ public sealed class DashboardViewModel : ObservableObject
         var originalTradeType = selection.TradeType.Value;
         var closeTradeType = originalTradeType == 0 ? 1 : 0;
         var expectedPrice = ResolveExpectedPriceFromTrigger(trigger, isExchangeA, closeTradeType);
-        if (!expectedPrice.HasValue)
-        {
-            return;
-        }
-
         RegisterPendingCloseRequest(
             tradeMapName: ResolveTradeMapNameFromCloseSelection(selection),
             ticket: selection.Request.Ticket,
             tradeType: originalTradeType,
-            expectedPrice: expectedPrice.Value,
+            expectedPrice: expectedPrice,
             appCloseRequestTimeLocal: appCloseRequestTimeLocal,
             appCloseRequestRawMs: appCloseRequestRawMs,
             symbol: selection.Symbol,
@@ -771,17 +761,12 @@ public sealed class DashboardViewModel : ObservableObject
         long appOpenRequestRawMs)
     {
         var expectedPrice = ResolveExpectedOpenPrice(snapshot, isExchangeA, tradeType);
-        if (!expectedPrice.HasValue)
-        {
-            return;
-        }
-
         RegisterPendingOpenRequest(
             tradeMapName: tradeMapName,
             symbol: ResolveExpectedOpenSymbol(snapshot, isExchangeA),
             volume: null,
             tradeType: tradeType,
-            expectedPrice: expectedPrice.Value,
+            expectedPrice: expectedPrice,
             appOpenRequestTimeLocal: appOpenRequestTimeLocal,
             appOpenRequestRawMs: appOpenRequestRawMs);
     }
@@ -799,16 +784,12 @@ public sealed class DashboardViewModel : ObservableObject
         }
 
         var expectedPrice = ResolveExpectedClosePrice(snapshot, isExchangeA, selection.TradeType.Value);
-        if (!expectedPrice.HasValue)
-        {
-            return;
-        }
 
         RegisterPendingCloseRequest(
             tradeMapName: ResolveTradeMapNameFromCloseSelection(selection),
             ticket: selection.Request.Ticket,
             tradeType: selection.TradeType.Value,
-            expectedPrice: expectedPrice.Value,
+            expectedPrice: expectedPrice,
             appCloseRequestTimeLocal: appCloseRequestTimeLocal,
             appCloseRequestRawMs: appCloseRequestRawMs,
             symbol: selection.Symbol,
@@ -820,7 +801,7 @@ public sealed class DashboardViewModel : ObservableObject
         string? symbol,
         double? volume,
         int tradeType,
-        double expectedPrice,
+        double? expectedPrice,
         DateTimeOffset appOpenRequestTimeLocal,
         long appOpenRequestRawMs)
     {
@@ -849,7 +830,7 @@ public sealed class DashboardViewModel : ObservableObject
         string tradeMapName,
         ulong? ticket,
         int tradeType,
-        double expectedPrice,
+        double? expectedPrice,
         DateTimeOffset appCloseRequestTimeLocal,
         long appCloseRequestRawMs,
         string? symbol,
@@ -1568,36 +1549,36 @@ public sealed class DashboardViewModel : ObservableObject
 
     private static string FormatTradeOpenSlippageDebug(TradeSharedRecord record, PendingOpenRequest? openRequest, int point, double? slippage)
     {
-        var result = FormatOptionalProfit(slippage);
-        if (openRequest is null || !slippage.HasValue)
-        {
-            return result;
-        }
-
         var pointValue = Math.Max(1, point).ToString(CultureInfo.InvariantCulture);
-        var expected = openRequest.ExpectedPrice.ToString("0.#####", CultureInfo.InvariantCulture);
+        var expectedValue = openRequest?.ExpectedPrice;
+        var expected = expectedValue.HasValue
+            ? expectedValue.Value.ToString("0.#####", CultureInfo.InvariantCulture)
+            : "MISSING";
         var openPrice = record.Price.ToString("0.#####", CultureInfo.InvariantCulture);
+        var result = slippage.HasValue
+            ? slippage.Value.ToString("0.00", CultureInfo.InvariantCulture)
+            : "MISSING_RESULT";
 
         return record.TradeType == 0
-            ? $"((expected_open_price - open_price) * point / ({expected} - {openPrice}) * {pointValue}) {result}"
-            : $"((open_price - expected_open_price) * point / ({openPrice} - {expected}) * {pointValue}) {result}";
+            ? $"(((expected_open_price - open_price) * point | ({expected} - {openPrice}) * {pointValue}) {result})"
+            : $"(((open_price - expected_open_price) * point | ({openPrice} - {expected}) * {pointValue}) {result})";
     }
 
     private static string FormatHistoryCloseSlippageDebug(HistorySharedRecord record, PendingCloseRequest? closeRequest, int point, double? slippage)
     {
-        var result = FormatOptionalProfit(slippage);
-        if (closeRequest is null || !slippage.HasValue)
-        {
-            return result;
-        }
-
         var pointValue = Math.Max(1, point).ToString(CultureInfo.InvariantCulture);
-        var expected = closeRequest.ExpectedPrice.ToString("0.#####", CultureInfo.InvariantCulture);
+        var expectedValue = closeRequest?.ExpectedPrice;
+        var expected = expectedValue.HasValue
+            ? expectedValue.Value.ToString("0.#####", CultureInfo.InvariantCulture)
+            : "MISSING";
         var closePrice = record.ClosePrice.ToString("0.#####", CultureInfo.InvariantCulture);
+        var result = slippage.HasValue
+            ? slippage.Value.ToString("0.00", CultureInfo.InvariantCulture)
+            : "MISSING_RESULT";
 
         return record.TradeType == 0
-            ? $"((close_price - expected_close_price) * point / ({closePrice} - {expected}) * {pointValue}) {result}"
-            : $"((expected_close_price - close_price) * point / ({expected} - {closePrice}) * {pointValue}) {result}";
+            ? $"(((close_price - expected_close_price) * point | ({closePrice} - {expected}) * {pointValue}) {result})"
+            : $"(((expected_close_price - close_price) * point | ({expected} - {closePrice}) * {pointValue}) {result})";
     }
 
     private bool TryConsumePendingOpenRequest(
@@ -1761,15 +1742,17 @@ public sealed class DashboardViewModel : ObservableObject
 
     private double? CalculateTradeOpenSlippage(TradeSharedRecord record, int point)
     {
-        if (!_openRequestByTicket.TryGetValue(record.Ticket, out var expected) || expected.TradeType != record.TradeType)
+        if (!_openRequestByTicket.TryGetValue(record.Ticket, out var expected)
+            || expected.TradeType != record.TradeType
+            || !expected.ExpectedPrice.HasValue)
         {
             return null;
         }
 
         var pointValue = Math.Max(1, point);
         var slippage = record.TradeType == 0
-            ? (expected.ExpectedPrice - record.Price) * pointValue
-            : (record.Price - expected.ExpectedPrice) * pointValue;
+            ? (expected.ExpectedPrice.Value - record.Price) * pointValue
+            : (record.Price - expected.ExpectedPrice.Value) * pointValue;
 
         _openSlippageByTicket[record.Ticket] = slippage;
         return slippage;
@@ -1787,15 +1770,17 @@ public sealed class DashboardViewModel : ObservableObject
 
     private double? CalculateHistoryCloseSlippage(HistorySharedRecord record, int point)
     {
-        if (!_closeRequestByTicket.TryGetValue(record.Ticket, out var expected) || expected.TradeType != record.TradeType)
+        if (!_closeRequestByTicket.TryGetValue(record.Ticket, out var expected)
+            || expected.TradeType != record.TradeType
+            || !expected.ExpectedPrice.HasValue)
         {
             return null;
         }
 
         var pointValue = Math.Max(1, point);
         return record.TradeType == 0
-            ? (record.ClosePrice - expected.ExpectedPrice) * pointValue
-            : (expected.ExpectedPrice - record.ClosePrice) * pointValue;
+            ? (record.ClosePrice - expected.ExpectedPrice.Value) * pointValue
+            : (expected.ExpectedPrice.Value - record.ClosePrice) * pointValue;
     }
 
     private static double CalculateTradeProfit(
