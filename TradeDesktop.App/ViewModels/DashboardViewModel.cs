@@ -1740,7 +1740,11 @@ public sealed class DashboardViewModel : ObservableObject
         }
 
         var pointValue = Math.Max(1, point);
-        var slippage = (expected.ExpectedPrice.Value - record.Price) * pointValue;
+        // Open BUY  (tradeType==0): (Expected Ask − Fill Ask) × point
+        // Open SELL (tradeType==1): (Fill Bid − Expected Bid) × point
+        var slippage = record.TradeType == 0
+            ? (expected.ExpectedPrice.Value - record.Price) * pointValue
+            : (record.Price - expected.ExpectedPrice.Value) * pointValue;
 
         _openSlippageByTicket[record.Ticket] = slippage;
         return slippage;
