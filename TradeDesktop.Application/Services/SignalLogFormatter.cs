@@ -24,16 +24,16 @@ public static class SignalLogFormatter
     }
 
     /// <summary>
-    /// Format: "Time> [slot:X]. TYPE SYMBOL at PRICE by Gap=N pt (allGap)."
+    /// Format: "Time> [slot:X]. TYPE SYMBOL at PRICE by Gap BUY/SELL=N pt (allGap)."
     /// </summary>
     public static string FormatAutoOpen(
         DateTime localTime, int slot, string exchangeLabel,
         string tradeType, string symbol, decimal? price,
-        int? lastGap, IReadOnlyList<int>? allGaps)
+        string gapLabel, int? lastGap, IReadOnlyList<int>? allGaps)
     {
         var ts = localTime.ToString(TimestampFormat, CultureInfo.InvariantCulture);
         var lastGapText = lastGap.HasValue ? lastGap.Value.ToString(CultureInfo.InvariantCulture) : "0";
-        return $"{ts}> [{slot}:{exchangeLabel}]. {tradeType.ToUpperInvariant()} {symbol} at {Fp(price)} by Gap={lastGapText} pt ({Fg(allGaps)}).";
+        return $"{ts}> [{slot}:{exchangeLabel}]. {tradeType.ToUpperInvariant()} {symbol} at {Fp(price)} by {gapLabel}={lastGapText} pt ({Fg(allGaps)}).";
     }
 
     /// <summary>
@@ -48,15 +48,15 @@ public static class SignalLogFormatter
     }
 
     /// <summary>
-    /// Format: "Time> [slot:X]. CLOSE TYPE SYMBOL at PRICE. Reason: Close by Gap (allGap)"
+    /// Format: "Time> [slot:X]. CLOSE TYPE SYMBOL at PRICE. Reason: Close by Gap BUY/SELL (allGap)"
     /// </summary>
     public static string FormatAutoClose(
         DateTime localTime, int slot, string exchangeLabel,
         string tradeType, string symbol, decimal? price,
-        IReadOnlyList<int>? allGaps)
+        string gapLabel, IReadOnlyList<int>? allGaps)
     {
         var ts = localTime.ToString(TimestampFormat, CultureInfo.InvariantCulture);
-        return $"{ts}> [{slot}:{exchangeLabel}]. CLOSE {tradeType.ToUpperInvariant()} {symbol} at {Fp(price)}. Reason: Close by Gap ({Fg(allGaps)})";
+        return $"{ts}> [{slot}:{exchangeLabel}]. CLOSE {tradeType.ToUpperInvariant()} {symbol} at {Fp(price)}. Reason: Close by {gapLabel} ({Fg(allGaps)})";
     }
 
     /// <summary>

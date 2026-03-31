@@ -526,16 +526,17 @@ public sealed class DashboardViewModel : ObservableObject
 
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
-            // Phase 1 Auto Open log: A buy, B sell
+            // Phase 1 Auto Open log: A buy, B sell — trigger is OpenByGapBuy
             var now = DateTime.Now;
             var symbolA = _runtimeConfigState.CurrentDashboardMetrics?.ExchangeA.Symbol ?? "-";
             var symbolB = _runtimeConfigState.CurrentDashboardMetrics?.ExchangeB.Symbol ?? "-";
             var priceA = trigger.LastAAsk;
             var priceB = trigger.LastBBid;
-            var buyGaps = trigger.BuyGaps;
-            var sellGaps = trigger.SellGaps;
-            SignalLogItems.Insert(0, SignalLogFormatter.FormatAutoOpen(now, slot, "B", "SELL", symbolB, priceB, trigger.LastSellGap, sellGaps));
-            SignalLogItems.Insert(0, SignalLogFormatter.FormatAutoOpen(now, slot, "A", "BUY", symbolA, priceA, trigger.LastBuyGap, buyGaps));
+            var triggerGapLabel = "Gap BUY";
+            var triggerLastGap = trigger.LastBuyGap;
+            var triggerAllGaps = trigger.BuyGaps;
+            SignalLogItems.Insert(0, SignalLogFormatter.FormatAutoOpen(now, slot, "B", "SELL", symbolB, priceB, triggerGapLabel, triggerLastGap, triggerAllGaps));
+            SignalLogItems.Insert(0, SignalLogFormatter.FormatAutoOpen(now, slot, "A", "BUY", symbolA, priceA, triggerGapLabel, triggerLastGap, triggerAllGaps));
             _autoSlot++;
         });
     }
@@ -556,16 +557,17 @@ public sealed class DashboardViewModel : ObservableObject
 
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
-            // Phase 1 Auto Open log: A sell, B buy
+            // Phase 1 Auto Open log: A sell, B buy — trigger is OpenByGapSell
             var now = DateTime.Now;
             var symbolA = _runtimeConfigState.CurrentDashboardMetrics?.ExchangeA.Symbol ?? "-";
             var symbolB = _runtimeConfigState.CurrentDashboardMetrics?.ExchangeB.Symbol ?? "-";
             var priceA = trigger.LastABid;
             var priceB = trigger.LastBAsk;
-            var buyGaps = trigger.BuyGaps;
-            var sellGaps = trigger.SellGaps;
-            SignalLogItems.Insert(0, SignalLogFormatter.FormatAutoOpen(now, slot, "B", "BUY", symbolB, priceB, trigger.LastBuyGap, buyGaps));
-            SignalLogItems.Insert(0, SignalLogFormatter.FormatAutoOpen(now, slot, "A", "SELL", symbolA, priceA, trigger.LastSellGap, sellGaps));
+            var triggerGapLabel = "Gap SELL";
+            var triggerLastGap = trigger.LastSellGap;
+            var triggerAllGaps = trigger.SellGaps;
+            SignalLogItems.Insert(0, SignalLogFormatter.FormatAutoOpen(now, slot, "B", "BUY", symbolB, priceB, triggerGapLabel, triggerLastGap, triggerAllGaps));
+            SignalLogItems.Insert(0, SignalLogFormatter.FormatAutoOpen(now, slot, "A", "SELL", symbolA, priceA, triggerGapLabel, triggerLastGap, triggerAllGaps));
             _autoSlot++;
         });
     }
@@ -598,9 +600,9 @@ public sealed class DashboardViewModel : ObservableObject
         {
             // Phase 1 Auto Close log
             var now = DateTime.Now;
-            var allGaps = trigger.TriggerType is GapSignalTriggerType.CloseByGapBuy
-                ? trigger.BuyGaps
-                : trigger.SellGaps;
+            var isCloseBuy = trigger.TriggerType is GapSignalTriggerType.CloseByGapBuy;
+            var triggerGapLabel = isCloseBuy ? "Gap BUY" : "Gap SELL";
+            var triggerAllGaps = isCloseBuy ? trigger.BuyGaps : trigger.SellGaps;
 
             if (selectA.TradeType.HasValue)
             {
@@ -611,7 +613,7 @@ public sealed class DashboardViewModel : ObservableObject
                     _runtimeConfigState.CurrentDashboardMetrics?.ExchangeA.Bid,
                     _runtimeConfigState.CurrentDashboardMetrics?.ExchangeA.Ask,
                     isBuyA);
-                SignalLogItems.Insert(0, SignalLogFormatter.FormatAutoClose(now, slot, "A", typeA, symbolA, closePriceA, allGaps));
+                SignalLogItems.Insert(0, SignalLogFormatter.FormatAutoClose(now, slot, "A", typeA, symbolA, closePriceA, triggerGapLabel, triggerAllGaps));
             }
 
             if (selectB.TradeType.HasValue)
@@ -623,7 +625,7 @@ public sealed class DashboardViewModel : ObservableObject
                     _runtimeConfigState.CurrentDashboardMetrics?.ExchangeB.Bid,
                     _runtimeConfigState.CurrentDashboardMetrics?.ExchangeB.Ask,
                     isBuyB);
-                SignalLogItems.Insert(0, SignalLogFormatter.FormatAutoClose(now, slot, "B", typeB, symbolB, closePriceB, allGaps));
+                SignalLogItems.Insert(0, SignalLogFormatter.FormatAutoClose(now, slot, "B", typeB, symbolB, closePriceB, triggerGapLabel, triggerAllGaps));
             }
 
             AppendCloseSelectionDiagnostics(selectA, selectB);
