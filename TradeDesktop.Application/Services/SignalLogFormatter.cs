@@ -84,6 +84,18 @@ public static class SignalLogFormatter
         return $"{ts}> [{slot}:{exchangeLabel}]. CLOSE {Cap(tradeType)} {symbol}. Price {actualPrice.ToString("0.#####", CultureInfo.InvariantCulture)}. Slippage={Fs(slippage)} pt. Execution={Fe(executionMs)} ms.";
     }
 
+    public static string FormatRandomHoldingTime(DateTime localTime, int holdingSeconds)
+    {
+        var ts = localTime.ToString(TimestampFormat, CultureInfo.InvariantCulture);
+        return $"{ts}> Random holding time {holdingSeconds}s";
+    }
+
+    public static string FormatRandomWaitingTime(DateTime localTime, int waitingSeconds)
+    {
+        var ts = localTime.ToString(TimestampFormat, CultureInfo.InvariantCulture);
+        return $"{ts}> Random waiting time {waitingSeconds}s";
+    }
+
     /// <summary>Open Buy → Ask, Open Sell → Bid</summary>
     public static decimal? ResolveOpenPrice(decimal? bid, decimal? ask, bool isBuy)
         => isBuy ? ask : bid;

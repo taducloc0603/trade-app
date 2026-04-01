@@ -37,6 +37,8 @@ public sealed class DashboardViewModel : ObservableObject
     private readonly Dictionary<string, List<PendingCloseRequest>> _pendingCloseRequestsByMap = new(StringComparer.Ordinal);
     private readonly Dictionary<ulong, PendingOpenRequest> _openRequestByTicket = [];
     private readonly Dictionary<ulong, PendingCloseRequest> _closeRequestByTicket = [];
+    private readonly Dictionary<int, OpenConfirmCycleState> _openConfirmBySlot = [];
+    private readonly Dictionary<int, CloseConfirmCycleState> _closeConfirmBySlot = [];
     private readonly Dictionary<ulong, double> _openSlippageByTicket = [];
     private readonly Dictionary<ulong, long> _openExecutionMsByTicket = [];
     private readonly Dictionary<ulong, long> _closeExecutionMsByTicket = [];
@@ -58,6 +60,7 @@ public sealed class DashboardViewModel : ObservableObject
         DateTimeOffset AppOpenRequestTimeLocal,
         long AppOpenRequestUnixMs,
         long AppOpenRequestRawMs,
+        bool IsAutoFlow,
         int SlotNumber = 0,
         string ExchangeLabel = "");
 
@@ -71,8 +74,24 @@ public sealed class DashboardViewModel : ObservableObject
         DateTimeOffset AppCloseRequestTimeLocal,
         long AppCloseRequestUnixMs,
         long AppCloseRequestRawMs,
+        bool IsAutoFlow,
         int SlotNumber = 0,
         string ExchangeLabel = "");
+
+    private sealed class OpenConfirmCycleState
+    {
+        public bool HasA { get; set; }
+        public bool HasB { get; set; }
+        public int HoldingSeconds { get; set; }
+        public bool HoldingLogged { get; set; }
+    }
+
+    private sealed class CloseConfirmCycleState
+    {
+        public bool HasA { get; set; }
+        public bool HasB { get; set; }
+        public bool WaitingStarted { get; set; }
+    }
 
     private string _runtimeSummary = string.Empty;
     private string _dbInlineData = string.Empty;
@@ -522,6 +541,7 @@ public sealed class DashboardViewModel : ObservableObject
         var appOpenRequestTimeLocal = DateTimeOffset.Now;
         var appOpenRequestRawMs = Environment.TickCount64;
         var slot = _autoSlot;
+        _openConfirmBySlot.Remove(slot);
 
         // Capture pending request BEFORE executing click to avoid race with shared-memory polling.
         CapturePendingOpenRequestFromTrigger(TradeTab.LeftPanel.TargetMapName, trigger, isExchangeA: true, tradeType: 0, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
@@ -553,6 +573,7 @@ public sealed class DashboardViewModel : ObservableObject
         var appOpenRequestTimeLocal = DateTimeOffset.Now;
         var appOpenRequestRawMs = Environment.TickCount64;
         var slot = _autoSlot;
+        _openConfirmBySlot.Remove(slot);
 
         // Capture pending request BEFORE executing click to avoid race with shared-memory polling.
         CapturePendingOpenRequestFromTrigger(TradeTab.LeftPanel.TargetMapName, trigger, isExchangeA: true, tradeType: 1, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
@@ -582,6 +603,7 @@ public sealed class DashboardViewModel : ObservableObject
     private async Task AutoCloseOrderAsync(GapSignalTriggerResult trigger)
     {
         var slot = Math.Max(0, _autoSlot - 1);
+        _closeConfirmBySlot.Remove(slot);
         var selectA = SelectCloseCandidateForExchange(
             exchangeLabel: "A",
             tradeMapName: TradeTab.LeftPanel.TargetMapName,
@@ -603,16 +625,21 @@ public sealed class DashboardViewModel : ObservableObject
             selectA.Request,
             selectB.Request);
 
-        var closeCompletedAtUtc = DateTime.UtcNow;
-        var hasSuccessfulCloseLeg = closeResult.Legs.Any(x => x.Success);
-        if (hasSuccessfulCloseLeg)
-        {
-            _tradingFlowEngine.BeginWaitAfterClose(
-                closeCompletedAtUtc,
-                _runtimeConfigState.CurrentStartWaitTime,
-                _runtimeConfigState.CurrentEndWaitTime);
-        }
-        else
+        var hadCloseCandidateA = selectA.Request is not null;
+        var hadCloseCandidateB = selectB.Request is not null;
+        var hadCloseCandidateBoth = hadCloseCandidateA && hadCloseCandidateB;
+
+        var successByExchange = closeResult.Legs
+            .GroupBy(x => x.Exchange, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.Any(x => x.Success), StringComparer.OrdinalIgnoreCase);
+
+        var closeSuccessA = !hadCloseCandidateA
+            || (successByExchange.TryGetValue("A", out var successA) && successA);
+        var closeSuccessB = !hadCloseCandidateB
+            || (successByExchange.TryGetValue("B", out var successB) && successB);
+        var hasCloseSuccessBoth = hadCloseCandidateBoth && closeSuccessA && closeSuccessB;
+
+        if (!hasCloseSuccessBoth)
         {
             _tradingFlowEngine.AbortPendingCloseExecution();
         }
@@ -625,13 +652,9 @@ public sealed class DashboardViewModel : ObservableObject
             var triggerGapLabel = isCloseBuy ? "Gap BUY" : "Gap SELL";
             var triggerLastGap = isCloseBuy ? trigger.LastBuyGap : trigger.LastSellGap;
             var triggerAllGaps = isCloseBuy ? trigger.BuyGaps : trigger.SellGaps;
-            var successByExchange = closeResult.Legs
-                .GroupBy(x => x.Exchange, StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(g => g.Key, g => g.Any(x => x.Success), StringComparer.OrdinalIgnoreCase);
 
             if (selectA.TradeType.HasValue
-                && successByExchange.TryGetValue("A", out var successA)
-                && successA)
+                && closeSuccessA)
             {
                 var isBuyA = selectA.TradeType.Value == 0;
                 var typeA = SignalLogFormatter.TradeTypeString(selectA.TradeType.Value);
@@ -644,8 +667,7 @@ public sealed class DashboardViewModel : ObservableObject
             }
 
             if (selectB.TradeType.HasValue
-                && successByExchange.TryGetValue("B", out var successB)
-                && successB)
+                && closeSuccessB)
             {
                 var isBuyB = selectB.TradeType.Value == 0;
                 var typeB = SignalLogFormatter.TradeTypeString(selectB.TradeType.Value);
@@ -658,18 +680,6 @@ public sealed class DashboardViewModel : ObservableObject
             }
 
             AppendCloseSelectionDiagnostics(selectA, selectB);
-
-            if (hasSuccessfulCloseLeg)
-            {
-                var waitSeconds = _tradingFlowEngine.CurrentWaitSeconds;
-                var waitText = $"[{closeCompletedAtUtc.ToLocalTime():HH:mm:ss.fff}] Random waiting time {waitSeconds}s";
-                SignalLogItems.Insert(0, waitText);
-            }
-            else
-            {
-                SignalLogItems.Insert(0,
-                    $"    - [{DateTime.Now:HH:mm:ss.fff}] Waiting timer not started: auto close did not complete successfully");
-            }
 
             OnPropertyChanged(nameof(CurrentPositionText));
             OnPropertyChanged(nameof(CurrentPhaseText));
@@ -695,6 +705,7 @@ public sealed class DashboardViewModel : ObservableObject
             holdingSeconds: _tradingFlowEngine.CurrentHoldingSeconds,
             appOpenRequestTimeLocal: appOpenRequestTimeLocal,
             appOpenRequestRawMs: appOpenRequestRawMs,
+            isAutoFlow: true,
             slotNumber: slotNumber,
             exchangeLabel: isExchangeA ? "A" : "B");
     }
@@ -724,6 +735,7 @@ public sealed class DashboardViewModel : ObservableObject
             appCloseRequestRawMs: appCloseRequestRawMs,
             symbol: selection.Symbol,
             volume: selection.Volume,
+            isAutoFlow: true,
             slotNumber: slotNumber,
             exchangeLabel: isExchangeA ? "A" : "B");
     }
@@ -859,6 +871,7 @@ public sealed class DashboardViewModel : ObservableObject
             appOpenRequestTimeLocal: appOpenRequestTimeLocal,
             appOpenRequestRawMs: appOpenRequestRawMs,
             holdingSeconds: 0,
+            isAutoFlow: false,
             slotNumber: slotNumber,
             exchangeLabel: isExchangeA ? "A" : "B");
     }
@@ -887,6 +900,7 @@ public sealed class DashboardViewModel : ObservableObject
             appCloseRequestRawMs: appCloseRequestRawMs,
             symbol: selection.Symbol,
             volume: selection.Volume,
+            isAutoFlow: false,
             slotNumber: slotNumber,
             exchangeLabel: isExchangeA ? "A" : "B");
     }
@@ -900,6 +914,7 @@ public sealed class DashboardViewModel : ObservableObject
         DateTimeOffset appOpenRequestTimeLocal,
         long appOpenRequestRawMs,
         int holdingSeconds,
+        bool isAutoFlow,
         int slotNumber = 0,
         string exchangeLabel = "")
     {
@@ -920,6 +935,7 @@ public sealed class DashboardViewModel : ObservableObject
             AppOpenRequestTimeLocal: appOpenRequestTimeLocal,
             AppOpenRequestUnixMs: appOpenRequestTimeLocal.ToUnixTimeMilliseconds(),
             AppOpenRequestRawMs: appOpenRequestRawMs,
+            IsAutoFlow: isAutoFlow,
             SlotNumber: slotNumber,
             ExchangeLabel: exchangeLabel);
 
@@ -936,6 +952,7 @@ public sealed class DashboardViewModel : ObservableObject
         long appCloseRequestRawMs,
         string? symbol,
         double? volume,
+        bool isAutoFlow,
         int slotNumber = 0,
         string exchangeLabel = "")
     {
@@ -956,6 +973,7 @@ public sealed class DashboardViewModel : ObservableObject
             AppCloseRequestTimeLocal: appCloseRequestTimeLocal,
             AppCloseRequestUnixMs: appCloseRequestTimeLocal.ToUnixTimeMilliseconds(),
             AppCloseRequestRawMs: appCloseRequestRawMs,
+            IsAutoFlow: isAutoFlow,
             SlotNumber: slotNumber,
             ExchangeLabel: exchangeLabel);
 
@@ -1437,10 +1455,31 @@ public sealed class DashboardViewModel : ObservableObject
                 openSlippage,
                 openExecutionMs));
 
-            if (pendingRequest.ExchangeLabel == "A" && pendingRequest.HoldingSeconds > 0)
+            if (pendingRequest.IsAutoFlow)
             {
-                SignalLogItems.Insert(0,
-                    $"[{DateTime.Now:HH:mm:ss.fff}] Random holding time {pendingRequest.HoldingSeconds}s");
+                if (!_openConfirmBySlot.TryGetValue(pendingRequest.SlotNumber, out var openCycle))
+                {
+                    openCycle = new OpenConfirmCycleState();
+                    _openConfirmBySlot[pendingRequest.SlotNumber] = openCycle;
+                }
+
+                if (string.Equals(pendingRequest.ExchangeLabel, "A", StringComparison.OrdinalIgnoreCase))
+                {
+                    openCycle.HasA = true;
+                }
+                else if (string.Equals(pendingRequest.ExchangeLabel, "B", StringComparison.OrdinalIgnoreCase))
+                {
+                    openCycle.HasB = true;
+                }
+
+                openCycle.HoldingSeconds = Math.Max(openCycle.HoldingSeconds, pendingRequest.HoldingSeconds);
+
+                if (openCycle.HasA && openCycle.HasB && !openCycle.HoldingLogged && openCycle.HoldingSeconds > 0)
+                {
+                    openCycle.HoldingLogged = true;
+                    SignalLogItems.Insert(0,
+                        SignalLogFormatter.FormatRandomHoldingTime(DateTime.Now, openCycle.HoldingSeconds));
+                }
             }
         }
 
@@ -1506,6 +1545,43 @@ public sealed class DashboardViewModel : ObservableObject
                 record.ClosePrice,
                 closeSlippage,
                 closeExecutionMs));
+
+            if (pendingRequest.IsAutoFlow)
+            {
+                if (!_closeConfirmBySlot.TryGetValue(pendingRequest.SlotNumber, out var closeCycle))
+                {
+                    closeCycle = new CloseConfirmCycleState();
+                    _closeConfirmBySlot[pendingRequest.SlotNumber] = closeCycle;
+                }
+
+                if (string.Equals(pendingRequest.ExchangeLabel, "A", StringComparison.OrdinalIgnoreCase))
+                {
+                    closeCycle.HasA = true;
+                }
+                else if (string.Equals(pendingRequest.ExchangeLabel, "B", StringComparison.OrdinalIgnoreCase))
+                {
+                    closeCycle.HasB = true;
+                }
+
+                if (closeCycle.HasA && closeCycle.HasB && !closeCycle.WaitingStarted)
+                {
+                    closeCycle.WaitingStarted = true;
+                    var closeCompletedAtUtc = DateTime.UtcNow;
+                    _tradingFlowEngine.BeginWaitAfterClose(
+                        closeCompletedAtUtc,
+                        _runtimeConfigState.CurrentStartWaitTime,
+                        _runtimeConfigState.CurrentEndWaitTime);
+
+                    if (_tradingFlowEngine.ClosedAtUtc == closeCompletedAtUtc)
+                    {
+                        var waitSeconds = _tradingFlowEngine.CurrentWaitSeconds;
+                        SignalLogItems.Insert(0,
+                            SignalLogFormatter.FormatRandomWaitingTime(closeCompletedAtUtc.ToLocalTime().DateTime, waitSeconds));
+                        OnPropertyChanged(nameof(CurrentPositionText));
+                        OnPropertyChanged(nameof(CurrentPhaseText));
+                    }
+                }
+            }
         }
 
         _knownHistoryTicketsByMap[key] = currentTickets;
