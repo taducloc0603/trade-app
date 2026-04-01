@@ -16,5 +16,12 @@ public interface ITradingFlowEngine
         GapSignalSnapshot snapshot,
         GapSignalConfirmationConfig config);
 
+    void BeginWaitAfterClose(
+        DateTime closeCompletedAtUtc,
+        int startWaitSeconds,
+        int endWaitSeconds);
+
+    void AbortPendingCloseExecution();
+
     void Reset();
 }

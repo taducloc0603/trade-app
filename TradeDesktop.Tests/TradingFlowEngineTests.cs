@@ -62,6 +62,14 @@ public sealed class TradingFlowEngineTests
         Assert.Equal(GapSignalSide.Buy, close.PrimarySide);
         Assert.Equal(2945.12m, close.LastABid);
         Assert.Equal(2945.34m, close.LastAAsk);
+
+        // After close signal, flow waits for external close execution confirmation.
+        Assert.Equal(TradingFlowPhase.WaitingCloseFromGapBuy, sut.CurrentPhase);
+        Assert.Equal(TradingOpenMode.GapBuy, sut.CurrentOpenMode);
+        Assert.Equal(TradingPositionSide.Buy, sut.CurrentPositionSide);
+
+        sut.BeginWaitAfterClose(close.TriggeredAtUtc, startWaitSeconds: 0, endWaitSeconds: 0);
+
         Assert.Equal(TradingFlowPhase.WaitingOpen, sut.CurrentPhase);
         Assert.Equal(TradingOpenMode.None, sut.CurrentOpenMode);
         Assert.Equal(TradingPositionSide.None, sut.CurrentPositionSide);
@@ -97,6 +105,14 @@ public sealed class TradingFlowEngineTests
         Assert.Equal(GapSignalSide.Sell, close.PrimarySide);
         Assert.Equal(2945.12m, close.LastABid);
         Assert.Equal(2945.34m, close.LastAAsk);
+
+        // After close signal, flow waits for external close execution confirmation.
+        Assert.Equal(TradingFlowPhase.WaitingCloseFromGapSell, sut.CurrentPhase);
+        Assert.Equal(TradingOpenMode.GapSell, sut.CurrentOpenMode);
+        Assert.Equal(TradingPositionSide.Sell, sut.CurrentPositionSide);
+
+        sut.BeginWaitAfterClose(close.TriggeredAtUtc, startWaitSeconds: 0, endWaitSeconds: 0);
+
         Assert.Equal(TradingFlowPhase.WaitingOpen, sut.CurrentPhase);
         Assert.Equal(TradingOpenMode.None, sut.CurrentOpenMode);
         Assert.Equal(TradingPositionSide.None, sut.CurrentPositionSide);
@@ -147,6 +163,12 @@ public sealed class TradingFlowEngineTests
         var close = Process(sut, start.AddMilliseconds(3200), gapBuy: null, gapSell: -8, ConfigWithTimeGuards);
 
         Assert.NotNull(close);
+
+        // Not waiting-open until external close execution confirmation.
+        Assert.Equal(TradingFlowPhase.WaitingCloseFromGapBuy, sut.CurrentPhase);
+
+        sut.BeginWaitAfterClose(close!.TriggeredAtUtc, startWaitSeconds: 0, endWaitSeconds: 0);
+
         Assert.Equal(TradingFlowPhase.WaitingOpen, sut.CurrentPhase);
     }
 
@@ -166,8 +188,18 @@ public sealed class TradingFlowEngineTests
         _ = Process(sut, start.AddMilliseconds(2800), gapBuy: null, gapSell: -6, ConfigWithTimeGuards);
         var close = Process(sut, start.AddMilliseconds(3200), gapBuy: null, gapSell: -8, ConfigWithTimeGuards);
         Assert.NotNull(close);
+
+        // Wait timer starts only after external close execution confirmation.
+        Assert.Equal(0, sut.CurrentWaitSeconds);
+        Assert.Null(sut.ClosedAtUtc);
+        Assert.Equal(TradingFlowPhase.WaitingCloseFromGapBuy, sut.CurrentPhase);
+
+        var closeCompletedAt = start.AddMilliseconds(3300);
+        sut.BeginWaitAfterClose(closeCompletedAt, startWaitSeconds: 3, endWaitSeconds: 3);
+
         Assert.Equal(3, sut.CurrentWaitSeconds);
-        Assert.Equal(close!.TriggeredAtUtc, sut.ClosedAtUtc);
+        Assert.Equal(closeCompletedAt, sut.ClosedAtUtc);
+        Assert.Equal(TradingFlowPhase.WaitingOpen, sut.CurrentPhase);
 
         // Before 3s elapsed, open is blocked.
         Assert.Null(Process(sut, start.AddMilliseconds(4200), gapBuy: 10, gapSell: null, ConfigWithTimeGuards));

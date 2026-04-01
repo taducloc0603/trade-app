@@ -8,6 +8,7 @@ public sealed class TradingFlowEngine(
     ICloseSignalEngine closeSignalEngine) : ITradingFlowEngine
 {
     private readonly Random _random = new();
+    private bool _isCloseExecutionPending;
 
     public TradingFlowPhase CurrentPhase { get; private set; } = TradingFlowPhase.WaitingOpen;
     public TradingOpenMode CurrentOpenMode { get; private set; } = TradingOpenMode.None;
@@ -73,18 +74,52 @@ public sealed class TradingFlowEngine(
             return null;
         }
 
-        CurrentPhase = TradingFlowPhase.WaitingOpen;
-        CurrentOpenMode = TradingOpenMode.None;
-        CurrentPositionSide = TradingPositionSide.None;
-        ClosedAtUtc = closeTrigger.TriggeredAtUtc;
-        CurrentWaitSeconds = NextSecondsInRange(config.StartWaitTime, config.EndWaitTime);
+        _isCloseExecutionPending = true;
+        ClosedAtUtc = null;
+        CurrentWaitSeconds = 0;
         openSignalEngine.Reset();
         closeSignalEngine.Reset();
         return closeTrigger;
     }
 
+    public void BeginWaitAfterClose(
+        DateTime closeCompletedAtUtc,
+        int startWaitSeconds,
+        int endWaitSeconds)
+    {
+        if (!_isCloseExecutionPending)
+        {
+            return;
+        }
+
+        _isCloseExecutionPending = false;
+        CurrentPhase = TradingFlowPhase.WaitingOpen;
+        CurrentOpenMode = TradingOpenMode.None;
+        CurrentPositionSide = TradingPositionSide.None;
+        OpenedAtUtc = null;
+        CurrentHoldingSeconds = 0;
+        ClosedAtUtc = closeCompletedAtUtc;
+        CurrentWaitSeconds = NextSecondsInRange(startWaitSeconds, endWaitSeconds);
+        openSignalEngine.Reset();
+        closeSignalEngine.Reset();
+    }
+
+    public void AbortPendingCloseExecution()
+    {
+        if (!_isCloseExecutionPending)
+        {
+            return;
+        }
+
+        _isCloseExecutionPending = false;
+        ClosedAtUtc = null;
+        CurrentWaitSeconds = 0;
+        closeSignalEngine.Reset();
+    }
+
     public void Reset()
     {
+        _isCloseExecutionPending = false;
         CurrentPhase = TradingFlowPhase.WaitingOpen;
         CurrentOpenMode = TradingOpenMode.None;
         CurrentPositionSide = TradingPositionSide.None;
@@ -109,6 +144,11 @@ public sealed class TradingFlowEngine(
 
     private bool CanCheckClose(DateTime snapshotTimestampUtc)
     {
+        if (_isCloseExecutionPending)
+        {
+            return false;
+        }
+
         if (!OpenedAtUtc.HasValue || CurrentHoldingSeconds <= 0)
         {
             return true;

@@ -503,6 +503,11 @@ public sealed class DashboardViewModel : ObservableObject
         }
         catch (Exception ex)
         {
+            if (trigger.Action == GapSignalAction.Close)
+            {
+                _tradingFlowEngine.AbortPendingCloseExecution();
+            }
+
             System.Windows.Application.Current.Dispatcher.Invoke(() =>
             {
                 SignalLogItems.Insert(0,
@@ -597,6 +602,20 @@ public sealed class DashboardViewModel : ObservableObject
             selectA.Request,
             selectB.Request);
 
+        var closeCompletedAtUtc = DateTime.UtcNow;
+        var hasSuccessfulCloseLeg = closeResult.Legs.Any(x => x.Success);
+        if (hasSuccessfulCloseLeg)
+        {
+            _tradingFlowEngine.BeginWaitAfterClose(
+                closeCompletedAtUtc,
+                _runtimeConfigState.CurrentStartWaitTime,
+                _runtimeConfigState.CurrentEndWaitTime);
+        }
+        else
+        {
+            _tradingFlowEngine.AbortPendingCloseExecution();
+        }
+
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
             // Phase 1 Auto Close log
@@ -638,6 +657,21 @@ public sealed class DashboardViewModel : ObservableObject
             }
 
             AppendCloseSelectionDiagnostics(selectA, selectB);
+
+            if (hasSuccessfulCloseLeg)
+            {
+                var waitSeconds = _tradingFlowEngine.CurrentWaitSeconds;
+                var waitText = $"[{closeCompletedAtUtc.ToLocalTime():HH:mm:ss.fff}] Random waiting time {waitSeconds}s";
+                SignalLogItems.Insert(0, waitText);
+            }
+            else
+            {
+                SignalLogItems.Insert(0,
+                    $"    - [{DateTime.Now:HH:mm:ss.fff}] Waiting timer not started: auto close did not complete successfully");
+            }
+
+            OnPropertyChanged(nameof(CurrentPositionText));
+            OnPropertyChanged(nameof(CurrentPhaseText));
         });
     }
 
@@ -2046,12 +2080,6 @@ public sealed class DashboardViewModel : ObservableObject
                 var holdText = $"[{triggeredAtLocal:HH:mm:ss.fff}] Random holding time {holdingSeconds}s";
                 SignalLogItems.Insert(0, holdText);
             }
-            else
-            {
-                var waitSeconds = _tradingFlowEngine.CurrentWaitSeconds;
-                var waitText = $"[{triggeredAtLocal:HH:mm:ss.fff}] Random waiting time {waitSeconds}s";
-                SignalLogItems.Insert(0, waitText);
-            }
 
             // Guard: kiểm tra điều kiện lọc trước khi vào lệnh
             var holdMs = trigger.Action == GapSignalAction.Open
@@ -2065,6 +2093,11 @@ public sealed class DashboardViewModel : ObservableObject
             var guardResult = SignalEntryGuard.Check(trigger, metrics, guardConfig, _priceHistory, holdMs);
             if (!guardResult.CanTrade)
             {
+                if (trigger.Action == GapSignalAction.Close)
+                {
+                    _tradingFlowEngine.AbortPendingCloseExecution();
+                }
+
                 return;
             }
 
