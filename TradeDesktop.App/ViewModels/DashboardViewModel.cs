@@ -1567,6 +1567,7 @@ public sealed class DashboardViewModel : ObservableObject
                 {
                     closeCycle.WaitingStarted = true;
                     var closeCompletedAtUtc = DateTime.UtcNow;
+                    var closeCompletedAtLocal = closeCompletedAtUtc.ToLocalTime();
                     _tradingFlowEngine.BeginWaitAfterClose(
                         closeCompletedAtUtc,
                         _runtimeConfigState.CurrentStartWaitTime,
@@ -1576,7 +1577,7 @@ public sealed class DashboardViewModel : ObservableObject
                     {
                         var waitSeconds = _tradingFlowEngine.CurrentWaitSeconds;
                         SignalLogItems.Insert(0,
-                            SignalLogFormatter.FormatRandomWaitingTime(closeCompletedAtUtc.ToLocalTime().DateTime, waitSeconds));
+                            SignalLogFormatter.FormatRandomWaitingTime(closeCompletedAtLocal, waitSeconds));
                         OnPropertyChanged(nameof(CurrentPositionText));
                         OnPropertyChanged(nameof(CurrentPhaseText));
                     }
