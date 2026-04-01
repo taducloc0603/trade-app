@@ -54,6 +54,7 @@ public sealed class DashboardViewModel : ObservableObject
         int TradeType,
         double? Volume,
         double? ExpectedPrice,
+        int HoldingSeconds,
         DateTimeOffset AppOpenRequestTimeLocal,
         long AppOpenRequestUnixMs,
         long AppOpenRequestRawMs,
@@ -691,6 +692,7 @@ public sealed class DashboardViewModel : ObservableObject
             volume: null,
             tradeType: tradeType,
             expectedPrice: expectedPrice,
+            holdingSeconds: _tradingFlowEngine.CurrentHoldingSeconds,
             appOpenRequestTimeLocal: appOpenRequestTimeLocal,
             appOpenRequestRawMs: appOpenRequestRawMs,
             slotNumber: slotNumber,
@@ -856,6 +858,7 @@ public sealed class DashboardViewModel : ObservableObject
             expectedPrice: expectedPrice,
             appOpenRequestTimeLocal: appOpenRequestTimeLocal,
             appOpenRequestRawMs: appOpenRequestRawMs,
+            holdingSeconds: 0,
             slotNumber: slotNumber,
             exchangeLabel: isExchangeA ? "A" : "B");
     }
@@ -896,6 +899,7 @@ public sealed class DashboardViewModel : ObservableObject
         double? expectedPrice,
         DateTimeOffset appOpenRequestTimeLocal,
         long appOpenRequestRawMs,
+        int holdingSeconds,
         int slotNumber = 0,
         string exchangeLabel = "")
     {
@@ -912,6 +916,7 @@ public sealed class DashboardViewModel : ObservableObject
             TradeType: tradeType,
             Volume: volume,
             ExpectedPrice: expectedPrice,
+            HoldingSeconds: holdingSeconds,
             AppOpenRequestTimeLocal: appOpenRequestTimeLocal,
             AppOpenRequestUnixMs: appOpenRequestTimeLocal.ToUnixTimeMilliseconds(),
             AppOpenRequestRawMs: appOpenRequestRawMs,
@@ -1431,6 +1436,12 @@ public sealed class DashboardViewModel : ObservableObject
                 newRecord.Price,
                 openSlippage,
                 openExecutionMs));
+
+            if (pendingRequest.ExchangeLabel == "A" && pendingRequest.HoldingSeconds > 0)
+            {
+                SignalLogItems.Insert(0,
+                    $"[{DateTime.Now:HH:mm:ss.fff}] Random holding time {pendingRequest.HoldingSeconds}s");
+            }
         }
 
         _knownTradeTicketsByMap[key] = currentTickets;
@@ -2070,15 +2081,6 @@ public sealed class DashboardViewModel : ObservableObject
             if (trigger is null || !trigger.Triggered)
             {
                 return;
-            }
-
-            var triggeredAtLocal = trigger.TriggeredAtUtc.ToLocalTime();
-
-            if (trigger.Action == GapSignalAction.Open)
-            {
-                var holdingSeconds = _tradingFlowEngine.CurrentHoldingSeconds;
-                var holdText = $"[{triggeredAtLocal:HH:mm:ss.fff}] Random holding time {holdingSeconds}s";
-                SignalLogItems.Insert(0, holdText);
             }
 
             // Guard: kiểm tra điều kiện lọc trước khi vào lệnh
