@@ -2068,13 +2068,8 @@ public sealed class DashboardViewModel : ObservableObject
                 return;
             }
 
-            var instruction = _tradeInstructionFactory.Create(trigger);
-            var signalLines = _tradeSignalLogBuilder.BuildLogLines(instruction);
-            LastSignalText = signalLines.Count > 0 ? signalLines[0] : "-";
-            for (var i = signalLines.Count - 1; i >= 0; i--)
-            {
-                SignalLogItems.Insert(0, signalLines[i]);
-            }
+            // Keep latest signal summary, but do not append legacy multiline signal format into SignalLogItems.
+            LastSignalText = BuildAutoSignalSummary(trigger);
 
             // Auto-execute trade from signal trigger
             _ = DispatchSignalTradeAsync(trigger);
@@ -2154,6 +2149,49 @@ public sealed class DashboardViewModel : ObservableObject
 
         GapBuy = FormatIntegerOrDash(metrics.GapBuy);
         GapSell = FormatIntegerOrDash(metrics.GapSell);
+    }
+
+    private string BuildAutoSignalSummary(GapSignalTriggerResult trigger)
+    {
+        var now = trigger.TriggeredAtUtc.ToLocalTime();
+        var symbolA = _runtimeConfigState.CurrentDashboardMetrics?.ExchangeA.Symbol ?? "-";
+        var isGapBuyFamily = trigger.TriggerType is GapSignalTriggerType.OpenByGapBuy or GapSignalTriggerType.CloseByGapBuy;
+        var gapLabel = isGapBuyFamily ? "Gap BUY" : "Gap SELL";
+        var lastGap = isGapBuyFamily ? trigger.LastBuyGap : trigger.LastSellGap;
+        var allGaps = isGapBuyFamily ? trigger.BuyGaps : trigger.SellGaps;
+
+        if (trigger.Action == GapSignalAction.Open)
+        {
+            var slot = _autoSlot;
+            var isBuy = trigger.PrimarySide == GapSignalSide.Buy;
+            var type = isBuy ? "BUY" : "SELL";
+            var price = isBuy ? trigger.LastAAsk : trigger.LastABid;
+            return SignalLogFormatter.FormatAutoOpen(
+                now,
+                slot,
+                "A",
+                type,
+                symbolA,
+                price,
+                gapLabel,
+                lastGap,
+                allGaps);
+        }
+
+        var closeSlot = Math.Max(0, _autoSlot - 1);
+        var isBuyPosition = trigger.TriggerType == GapSignalTriggerType.CloseByGapSell;
+        var closeType = isBuyPosition ? "BUY" : "SELL";
+        var closePrice = SignalLogFormatter.ResolveClosePrice(trigger.LastABid, trigger.LastAAsk, isBuyPosition);
+        return SignalLogFormatter.FormatAutoClose(
+            now,
+            closeSlot,
+            "A",
+            closeType,
+            symbolA,
+            closePrice,
+            gapLabel,
+            lastGap,
+            allGaps);
     }
 
     private static string FormatNumberOrDash(decimal? value, int decimalPlaces = 5)
