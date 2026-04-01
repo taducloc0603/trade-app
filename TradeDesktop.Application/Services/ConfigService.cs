@@ -44,7 +44,10 @@ public sealed class ConfigService(
             record.StartWaitTime,
             record.EndWaitTime,
             record.Id,
-            record.SansJson);
+            record.SansJson,
+            record.ConfirmLatencyMs,
+            record.MaxGap,
+            record.MaxSpread);
     }
 
     public async Task<ConfigSaveResult> SaveByMachineHostNameAsync(string mapName1, string mapName2, CancellationToken cancellationToken = default)
@@ -99,7 +102,10 @@ public sealed record ConfigLoadResult(
     string MapName2,
     string ConfigId,
     string SansJson,
-    string? Error)
+    string? Error,
+    int ConfirmLatencyMs,
+    int MaxGap,
+    int MaxSpread)
 {
     public static ConfigLoadResult Success(
         string machineHostName,
@@ -117,7 +123,10 @@ public sealed record ConfigLoadResult(
         int startWaitTime,
         int endWaitTime,
         string configId,
-        string sansJson) =>
+        string sansJson,
+        int confirmLatencyMs = 0,
+        int maxGap = 0,
+        int maxSpread = 0) =>
         new(
             true,
             true,
@@ -137,13 +146,16 @@ public sealed record ConfigLoadResult(
             mapName2,
             configId,
             sansJson,
-            null);
+            null,
+            Math.Max(0, confirmLatencyMs),
+            Math.Max(0, maxGap),
+            Math.Max(0, maxSpread));
 
     public static ConfigLoadResult NotFound(string machineHostName) =>
-        new(false, false, machineHostName, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", null);
+        new(false, false, machineHostName, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", null, 0, 0, 0);
 
     public static ConfigLoadResult Failed(string machineHostName, string error) =>
-        new(false, true, machineHostName, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", error);
+        new(false, true, machineHostName, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", error, 0, 0, 0);
 }
 
 public sealed record ConfigSaveResult(bool IsSuccess, string? MachineHostName, string? Error)

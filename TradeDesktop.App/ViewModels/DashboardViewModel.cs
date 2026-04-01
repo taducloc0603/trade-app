@@ -42,6 +42,7 @@ public sealed class DashboardViewModel : ObservableObject
     private readonly Dictionary<ulong, long> _closeExecutionMsByTicket = [];
     private int _manualSlot;
     private int _autoSlot;
+    private readonly Queue<SignalEntryGuard.PriceHistoryEntry> _priceHistory = new();
     private SharedMapReadResult<TradeSharedRecord>? _latestTradeLeftResult;
     private SharedMapReadResult<TradeSharedRecord>? _latestTradeRightResult;
 
@@ -1134,7 +1135,7 @@ public sealed class DashboardViewModel : ObservableObject
             : $"Sàn B ({_runtimeConfigState.MapName2})";
 
         RuntimeSummary =
-            $"Host Name: {_runtimeConfigState.CurrentMachineHostName}  |  Point: {_runtimeConfigState.CurrentPoint}  |  OpenPts: {_runtimeConfigState.CurrentOpenPts}  |  ConfirmGapPts: {_runtimeConfigState.CurrentConfirmGapPts}  |  HoldConfirmMs: {_runtimeConfigState.CurrentHoldConfirmMs}  |  ClosePts: {_runtimeConfigState.CurrentClosePts}  |  CloseConfirmGapPts: {_runtimeConfigState.CurrentCloseConfirmGapPts}  |  CloseHoldConfirmMs: {_runtimeConfigState.CurrentCloseHoldConfirmMs}  |  StartTimeHold: {_runtimeConfigState.CurrentStartTimeHold}  |  EndTimeHold: {_runtimeConfigState.CurrentEndTimeHold}  |  StartWaitTime: {_runtimeConfigState.CurrentStartWaitTime}  |  EndWaitTime: {_runtimeConfigState.CurrentEndWaitTime}  |  Map 1: {_runtimeConfigState.CurrentMapName1}  |  Map 2: {_runtimeConfigState.CurrentMapName2}";
+            $"Host Name: {_runtimeConfigState.CurrentMachineHostName}  |  Point: {_runtimeConfigState.CurrentPoint}  |  OpenPts: {_runtimeConfigState.CurrentOpenPts}  |  ConfirmGapPts: {_runtimeConfigState.CurrentConfirmGapPts}  |  HoldConfirmMs: {_runtimeConfigState.CurrentHoldConfirmMs}  |  ClosePts: {_runtimeConfigState.CurrentClosePts}  |  CloseConfirmGapPts: {_runtimeConfigState.CurrentCloseConfirmGapPts}  |  CloseHoldConfirmMs: {_runtimeConfigState.CurrentCloseHoldConfirmMs}  |  StartTimeHold: {_runtimeConfigState.CurrentStartTimeHold}  |  EndTimeHold: {_runtimeConfigState.CurrentEndTimeHold}  |  StartWaitTime: {_runtimeConfigState.CurrentStartWaitTime}  |  EndWaitTime: {_runtimeConfigState.CurrentEndWaitTime}  |  ConfirmLatencyMs: {_runtimeConfigState.CurrentConfirmLatencyMs}  |  MaxGap: {_runtimeConfigState.CurrentMaxGap}  |  MaxSpread: {_runtimeConfigState.CurrentMaxSpread}  |  Map 1: {_runtimeConfigState.CurrentMapName1}  |  Map 2: {_runtimeConfigState.CurrentMapName2}";
 
         HasManualTradeHwndConfig =
             !string.IsNullOrWhiteSpace(_runtimeConfigState.CurrentChartHwndA) &&
@@ -1904,7 +1905,10 @@ public sealed class DashboardViewModel : ObservableObject
                     result.StartTimeHold,
                     result.EndTimeHold,
                     result.StartWaitTime,
-                    result.EndWaitTime);
+                    result.EndWaitTime,
+                    result.ConfirmLatencyMs,
+                    result.MaxGap,
+                    result.MaxSpread);
                 ResetTradingLogicState();
 
                 if (string.Equals(result.MachineHostName, InlineDbHostName, StringComparison.OrdinalIgnoreCase))
@@ -1989,6 +1993,7 @@ public sealed class DashboardViewModel : ObservableObject
 
             BindDashboardMetrics(metrics);
             RefreshTradeRowsFromSnapshot(metrics, _runtimeConfigState.CurrentPoint);
+            SignalEntryGuard.TrackPriceHistory(_priceHistory, metrics);
 
             if (!IsTradingLogicEnabled)
             {
@@ -2046,6 +2051,22 @@ public sealed class DashboardViewModel : ObservableObject
                 var waitSeconds = _tradingFlowEngine.CurrentWaitSeconds;
                 var waitText = $"[{triggeredAtLocal:HH:mm:ss.fff}] Random waiting time {waitSeconds}s";
                 SignalLogItems.Insert(0, waitText);
+            }
+
+            // Guard: kiểm tra điều kiện lọc trước khi vào lệnh
+            var holdMs = trigger.Action == GapSignalAction.Open
+                ? _runtimeConfigState.CurrentHoldConfirmMs
+                : _runtimeConfigState.CurrentCloseHoldConfirmMs;
+            var guardConfig = new SignalEntryGuard.GuardConfig(
+                ConfirmLatencyMs: _runtimeConfigState.CurrentConfirmLatencyMs,
+                MaxGap: _runtimeConfigState.CurrentMaxGap,
+                MaxSpread: _runtimeConfigState.CurrentMaxSpread,
+                PointMultiplier: _runtimeConfigState.CurrentPoint);
+            var guardResult = SignalEntryGuard.Check(trigger, metrics, guardConfig, _priceHistory, holdMs);
+            if (!guardResult.CanTrade)
+            {
+                SignalLogItems.Insert(0, $"    - [{triggeredAtLocal:HH:mm:ss.fff}] ⛔ SKIP: {guardResult.SkipReason}");
+                return;
             }
 
             // Auto-execute trade from signal trigger

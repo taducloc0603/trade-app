@@ -53,7 +53,10 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
             StartTimeHold: row.StartTimeHold,
             EndTimeHold: row.EndTimeHold,
             StartWaitTime: row.StartWaitTime,
-            EndWaitTime: row.EndWaitTime);
+            EndWaitTime: row.EndWaitTime,
+            ConfirmLatencyMs: row.ConfirmLatencyMs,
+            MaxGap: row.MaxGap,
+            MaxSpread: row.MaxSpread);
     }
 
     public async Task<bool> UpdateSansAndHostNameByHostNameAsync(string hostName, string sansJson, CancellationToken cancellationToken = default)
@@ -127,6 +130,9 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
         first.TryGetProperty("end_time_hold", out var endTimeHoldElement);
         first.TryGetProperty("start_wait_time", out var startWaitTimeElement);
         first.TryGetProperty("end_wait_time", out var endWaitTimeElement);
+        first.TryGetProperty("confirm_latency", out var confirmLatencyMsElement);
+        first.TryGetProperty("max_gap", out var maxGapElement);
+        first.TryGetProperty("max_spread", out var maxSpreadElement);
 
         // DB column name is lowercase: hostname
         var hasHostName = first.TryGetProperty("hostname", out var hostNameElement);
@@ -153,7 +159,10 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
             StartTimeHold = startTimeHoldElement.ValueKind == JsonValueKind.Number && startTimeHoldElement.TryGetInt32(out var startTimeHold) ? startTimeHold : 0,
             EndTimeHold = endTimeHoldElement.ValueKind == JsonValueKind.Number && endTimeHoldElement.TryGetInt32(out var endTimeHold) ? endTimeHold : 0,
             StartWaitTime = startWaitTimeElement.ValueKind == JsonValueKind.Number && startWaitTimeElement.TryGetInt32(out var startWaitTime) ? startWaitTime : 0,
-            EndWaitTime = endWaitTimeElement.ValueKind == JsonValueKind.Number && endWaitTimeElement.TryGetInt32(out var endWaitTime) ? endWaitTime : 0
+            EndWaitTime = endWaitTimeElement.ValueKind == JsonValueKind.Number && endWaitTimeElement.TryGetInt32(out var endWaitTime) ? endWaitTime : 0,
+            ConfirmLatencyMs = confirmLatencyMsElement.ValueKind == JsonValueKind.Number && confirmLatencyMsElement.TryGetInt32(out var confirmLatencyMs) ? confirmLatencyMs : 0,
+            MaxGap = maxGapElement.ValueKind == JsonValueKind.Number && maxGapElement.TryGetInt32(out var maxGap) ? maxGap : 0,
+            MaxSpread = maxSpreadElement.ValueKind == JsonValueKind.Number && maxSpreadElement.TryGetInt32(out var maxSpread) ? maxSpread : 0
         };
     }
 
@@ -199,6 +208,9 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
         first.TryGetProperty("end_time_hold", out var endTimeHoldElement);
         first.TryGetProperty("start_wait_time", out var startWaitTimeElement);
         first.TryGetProperty("end_wait_time", out var endWaitTimeElement);
+        first.TryGetProperty("confirm_latency", out var confirmLatencyMsElement);
+        first.TryGetProperty("max_gap", out var maxGapElement);
+        first.TryGetProperty("max_spread", out var maxSpreadElement);
 
         var hasHostName = first.TryGetProperty("hostname", out var hostNameElement);
         if (!hasHostName)
@@ -223,7 +235,10 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
             StartTimeHold = startTimeHoldElement.ValueKind == JsonValueKind.Number && startTimeHoldElement.TryGetInt32(out var startTimeHold) ? startTimeHold : 0,
             EndTimeHold = endTimeHoldElement.ValueKind == JsonValueKind.Number && endTimeHoldElement.TryGetInt32(out var endTimeHold) ? endTimeHold : 0,
             StartWaitTime = startWaitTimeElement.ValueKind == JsonValueKind.Number && startWaitTimeElement.TryGetInt32(out var startWaitTime) ? startWaitTime : 0,
-            EndWaitTime = endWaitTimeElement.ValueKind == JsonValueKind.Number && endWaitTimeElement.TryGetInt32(out var endWaitTime) ? endWaitTime : 0
+            EndWaitTime = endWaitTimeElement.ValueKind == JsonValueKind.Number && endWaitTimeElement.TryGetInt32(out var endWaitTime) ? endWaitTime : 0,
+            ConfirmLatencyMs = confirmLatencyMsElement.ValueKind == JsonValueKind.Number && confirmLatencyMsElement.TryGetInt32(out var confirmLatencyMs) ? confirmLatencyMs : 0,
+            MaxGap = maxGapElement.ValueKind == JsonValueKind.Number && maxGapElement.TryGetInt32(out var maxGap) ? maxGap : 0,
+            MaxSpread = maxSpreadElement.ValueKind == JsonValueKind.Number && maxSpreadElement.TryGetInt32(out var maxSpread) ? maxSpread : 0
         };
     }
 
@@ -313,5 +328,14 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
 
         [JsonPropertyName("end_wait_time")]
         public int EndWaitTime { get; set; }
+
+        [JsonPropertyName("confirm_latency")]
+        public int ConfirmLatencyMs { get; set; }
+
+        [JsonPropertyName("max_gap")]
+        public int MaxGap { get; set; }
+
+        [JsonPropertyName("max_spread")]
+        public int MaxSpread { get; set; }
     }
 }

@@ -17,6 +17,9 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
     public int CurrentEndTimeHold { get; private set; }
     public int CurrentStartWaitTime { get; private set; }
     public int CurrentEndWaitTime { get; private set; }
+    public int CurrentConfirmLatencyMs { get; private set; }
+    public int CurrentMaxGap { get; private set; }
+    public int CurrentMaxSpread { get; private set; }
     public string CurrentMapName1 { get; private set; } = string.Empty;
     public string CurrentMapName2 { get; private set; } = string.Empty;
     public string CurrentChartHwndA { get; private set; } = string.Empty;
@@ -43,6 +46,9 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
     public int EndTimeHold => CurrentEndTimeHold;
     public int StartWaitTime => CurrentStartWaitTime;
     public int EndWaitTime => CurrentEndWaitTime;
+    public int ConfirmLatencyMs => CurrentConfirmLatencyMs;
+    public int MaxGap => CurrentMaxGap;
+    public int MaxSpread => CurrentMaxSpread;
 
     public event EventHandler? StateChanged;
 
@@ -60,7 +66,10 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
         int startTimeHold,
         int endTimeHold,
         int startWaitTime,
-        int endWaitTime)
+        int endWaitTime,
+        int confirmLatencyMs = 0,
+        int maxGap = 0,
+        int maxSpread = 0)
     {
         CurrentMachineHostName = (machineHostName ?? string.Empty).Trim().ToLower();
         CurrentPoint = point > 0 ? point : 1;
@@ -74,6 +83,9 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
         CurrentEndTimeHold = Math.Max(0, endTimeHold);
         CurrentStartWaitTime = Math.Max(0, startWaitTime);
         CurrentEndWaitTime = Math.Max(0, endWaitTime);
+        CurrentConfirmLatencyMs = Math.Max(0, confirmLatencyMs);
+        CurrentMaxGap = Math.Max(0, maxGap);
+        CurrentMaxSpread = Math.Max(0, maxSpread);
         CurrentMapName1 = (mapName1 ?? string.Empty).Trim();
         CurrentMapName2 = (mapName2 ?? string.Empty).Trim();
         StateChanged?.Invoke(this, EventArgs.Empty);
@@ -94,7 +106,10 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
             CurrentStartTimeHold,
             CurrentEndTimeHold,
             CurrentStartWaitTime,
-            CurrentEndWaitTime);
+            CurrentEndWaitTime,
+            CurrentConfirmLatencyMs,
+            CurrentMaxGap,
+            CurrentMaxSpread);
 
     public void Update(string machineHostName, string mapName1, string mapName2)
         => Update(
@@ -111,7 +126,10 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
             CurrentStartTimeHold,
             CurrentEndTimeHold,
             CurrentStartWaitTime,
-            CurrentEndWaitTime);
+            CurrentEndWaitTime,
+            CurrentConfirmLatencyMs,
+            CurrentMaxGap,
+            CurrentMaxSpread);
 
     public void UpdateDashboardMetrics(DashboardMetrics snapshot)
     {

@@ -14,4 +14,7 @@ public sealed record ConfigRecord(
     int StartTimeHold,
     int EndTimeHold,
     int StartWaitTime,
-    int EndWaitTime);
+    int EndWaitTime,
+    int ConfirmLatencyMs,
+    int MaxGap,
+    int MaxSpread);
