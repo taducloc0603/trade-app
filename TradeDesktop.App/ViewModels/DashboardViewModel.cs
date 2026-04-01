@@ -593,7 +593,7 @@ public sealed class DashboardViewModel : ObservableObject
         CapturePendingCloseRequestFromTrigger(selectA, trigger, isExchangeA: true, appCloseRequestTimeLocal, appCloseRequestRawMs, slot);
         CapturePendingCloseRequestFromTrigger(selectB, trigger, isExchangeA: false, appCloseRequestTimeLocal, appCloseRequestRawMs, slot);
 
-        await _mt5ManualTradeService.ExecuteCloseAsync(
+        var closeResult = await _mt5ManualTradeService.ExecuteCloseAsync(
             selectA.Request,
             selectB.Request);
 
@@ -603,9 +603,15 @@ public sealed class DashboardViewModel : ObservableObject
             var now = DateTime.Now;
             var isCloseBuy = trigger.TriggerType is GapSignalTriggerType.CloseByGapBuy;
             var triggerGapLabel = isCloseBuy ? "Gap BUY" : "Gap SELL";
+            var triggerLastGap = isCloseBuy ? trigger.LastBuyGap : trigger.LastSellGap;
             var triggerAllGaps = isCloseBuy ? trigger.BuyGaps : trigger.SellGaps;
+            var successByExchange = closeResult.Legs
+                .GroupBy(x => x.Exchange, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.Any(x => x.Success), StringComparer.OrdinalIgnoreCase);
 
-            if (selectA.TradeType.HasValue)
+            if (selectA.TradeType.HasValue
+                && successByExchange.TryGetValue("A", out var successA)
+                && successA)
             {
                 var isBuyA = selectA.TradeType.Value == 0;
                 var typeA = SignalLogFormatter.TradeTypeString(selectA.TradeType.Value);
@@ -614,10 +620,12 @@ public sealed class DashboardViewModel : ObservableObject
                     _runtimeConfigState.CurrentDashboardMetrics?.ExchangeA.Bid,
                     _runtimeConfigState.CurrentDashboardMetrics?.ExchangeA.Ask,
                     isBuyA);
-                SignalLogItems.Insert(0, SignalLogFormatter.FormatAutoClose(now, slot, "A", typeA, symbolA, closePriceA, triggerGapLabel, triggerAllGaps));
+                SignalLogItems.Insert(0, SignalLogFormatter.FormatAutoClose(now, slot, "A", typeA, symbolA, closePriceA, triggerGapLabel, triggerLastGap, triggerAllGaps));
             }
 
-            if (selectB.TradeType.HasValue)
+            if (selectB.TradeType.HasValue
+                && successByExchange.TryGetValue("B", out var successB)
+                && successB)
             {
                 var isBuyB = selectB.TradeType.Value == 0;
                 var typeB = SignalLogFormatter.TradeTypeString(selectB.TradeType.Value);
@@ -626,7 +634,7 @@ public sealed class DashboardViewModel : ObservableObject
                     _runtimeConfigState.CurrentDashboardMetrics?.ExchangeB.Bid,
                     _runtimeConfigState.CurrentDashboardMetrics?.ExchangeB.Ask,
                     isBuyB);
-                SignalLogItems.Insert(0, SignalLogFormatter.FormatAutoClose(now, slot, "B", typeB, symbolB, closePriceB, triggerGapLabel, triggerAllGaps));
+                SignalLogItems.Insert(0, SignalLogFormatter.FormatAutoClose(now, slot, "B", typeB, symbolB, closePriceB, triggerGapLabel, triggerLastGap, triggerAllGaps));
             }
 
             AppendCloseSelectionDiagnostics(selectA, selectB);
@@ -2030,14 +2038,6 @@ public sealed class DashboardViewModel : ObservableObject
                 return;
             }
 
-            var instruction = _tradeInstructionFactory.Create(trigger);
-            var signalLines = _tradeSignalLogBuilder.BuildLogLines(instruction);
-            LastSignalText = signalLines.Count > 0 ? signalLines[0] : "-";
-            for (var i = signalLines.Count - 1; i >= 0; i--)
-            {
-                SignalLogItems.Insert(0, signalLines[i]);
-            }
-
             var triggeredAtLocal = trigger.TriggeredAtUtc.ToLocalTime();
 
             if (trigger.Action == GapSignalAction.Open)
@@ -2065,8 +2065,15 @@ public sealed class DashboardViewModel : ObservableObject
             var guardResult = SignalEntryGuard.Check(trigger, metrics, guardConfig, _priceHistory, holdMs);
             if (!guardResult.CanTrade)
             {
-                SignalLogItems.Insert(0, $"    - [{triggeredAtLocal:HH:mm:ss.fff}] ⛔ SKIP: {guardResult.SkipReason}");
                 return;
+            }
+
+            var instruction = _tradeInstructionFactory.Create(trigger);
+            var signalLines = _tradeSignalLogBuilder.BuildLogLines(instruction);
+            LastSignalText = signalLines.Count > 0 ? signalLines[0] : "-";
+            for (var i = signalLines.Count - 1; i >= 0; i--)
+            {
+                SignalLogItems.Insert(0, signalLines[i]);
             }
 
             // Auto-execute trade from signal trigger

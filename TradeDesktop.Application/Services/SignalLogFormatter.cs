@@ -48,15 +48,16 @@ public static class SignalLogFormatter
     }
 
     /// <summary>
-    /// Format: "Time> [slot:X]. CLOSE TYPE SYMBOL at PRICE. Reason: Close by Gap BUY/SELL (allGap)"
+    /// Format: "Time> [slot:X]. CLOSE TYPE SYMBOL at PRICE. Reason: Close by Gap BUY/SELL = lastGap (allGap)"
     /// </summary>
     public static string FormatAutoClose(
         DateTime localTime, int slot, string exchangeLabel,
         string tradeType, string symbol, decimal? price,
-        string gapLabel, IReadOnlyList<int>? allGaps)
+        string gapLabel, int? lastGap, IReadOnlyList<int>? allGaps)
     {
         var ts = localTime.ToString(TimestampFormat, CultureInfo.InvariantCulture);
-        return $"{ts}> [{slot}:{exchangeLabel}]. CLOSE {tradeType.ToUpperInvariant()} {symbol} at {Fp(price)}. Reason: Close by {gapLabel} ({Fg(allGaps)})";
+        var lastGapText = lastGap.HasValue ? lastGap.Value.ToString(CultureInfo.InvariantCulture) : "0";
+        return $"{ts}> [{slot}:{exchangeLabel}]. CLOSE {tradeType.ToUpperInvariant()} {symbol} at {Fp(price)}. Reason: Close by {gapLabel} = {lastGapText} ({Fg(allGaps)})";
     }
 
     /// <summary>
