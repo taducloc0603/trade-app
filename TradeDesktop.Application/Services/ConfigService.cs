@@ -6,13 +6,24 @@ namespace TradeDesktop.Application.Services;
 public interface IConfigService
 {
     Task<ConfigLoadResult> LoadByMachineHostNameAsync(CancellationToken cancellationToken = default);
-    Task<ConfigSaveResult> SaveByMachineHostNameAsync(string mapName1, string mapName2, CancellationToken cancellationToken = default);
+    Task<ConfigSaveResult> SaveByMachineHostNameAsync(
+        string mapName1,
+        string mapName2,
+        string platformA,
+        string platformB,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class ConfigService(
     IConfigRepository configRepository,
     IMachineIdentityService machineIdentityService) : IConfigService
 {
+    private static string NormalizePlatform(string? platform)
+    {
+        var normalized = (platform ?? string.Empty).Trim().ToLower();
+        return normalized is "mt4" or "mt5" ? normalized : "mt5";
+    }
+
     public async Task<ConfigLoadResult> LoadByMachineHostNameAsync(CancellationToken cancellationToken = default)
     {
         var hostName = machineIdentityService.GetHostName();
@@ -32,6 +43,8 @@ public sealed class ConfigService(
             hostName,
             mapName1,
             mapName2,
+            record.PlatformA,
+            record.PlatformB,
             record.Point,
             record.OpenPts,
             record.ConfirmGapPts,
@@ -50,7 +63,12 @@ public sealed class ConfigService(
             record.MaxSpread);
     }
 
-    public async Task<ConfigSaveResult> SaveByMachineHostNameAsync(string mapName1, string mapName2, CancellationToken cancellationToken = default)
+    public async Task<ConfigSaveResult> SaveByMachineHostNameAsync(
+        string mapName1,
+        string mapName2,
+        string platformA,
+        string platformB,
+        CancellationToken cancellationToken = default)
     {
         var hostName = machineIdentityService.GetHostName();
         if (string.IsNullOrWhiteSpace(hostName))
@@ -58,9 +76,17 @@ public sealed class ConfigService(
             return ConfigSaveResult.Failed("Không lấy được host name máy hiện tại.");
         }
 
+        var normalizedPlatformA = NormalizePlatform(platformA);
+        var normalizedPlatformB = NormalizePlatform(platformB);
+
         var sansJson = SansJsonHelper.BuildSans(mapName1, mapName2);
 
-        var updated = await configRepository.UpdateSansAndHostNameByHostNameAsync(hostName, sansJson, cancellationToken);
+        var updated = await configRepository.UpdateSansAndHostNameByHostNameAsync(
+            hostName,
+            sansJson,
+            normalizedPlatformA,
+            normalizedPlatformB,
+            cancellationToken);
         if (!updated)
         {
             return ConfigSaveResult.Failed("Lưu thất bại: không có bản ghi nào được cập nhật.");
@@ -87,6 +113,8 @@ public sealed record ConfigLoadResult(
     bool IsSuccess,
     bool Exists,
     string MachineHostName,
+    string PlatformA,
+    string PlatformB,
     int Point,
     int OpenPts,
     int ConfirmGapPts,
@@ -111,6 +139,8 @@ public sealed record ConfigLoadResult(
         string machineHostName,
         string mapName1,
         string mapName2,
+        string platformA,
+        string platformB,
         int point,
         int openPts,
         int confirmGapPts,
@@ -131,6 +161,8 @@ public sealed record ConfigLoadResult(
             true,
             true,
             machineHostName,
+            NormalizePlatform(platformA),
+            NormalizePlatform(platformB),
             point > 0 ? point : 1,
             Math.Abs(openPts),
             Math.Abs(confirmGapPts),
@@ -152,10 +184,16 @@ public sealed record ConfigLoadResult(
             Math.Max(0, maxSpread));
 
     public static ConfigLoadResult NotFound(string machineHostName) =>
-        new(false, false, machineHostName, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", null, 0, 0, 0);
+        new(false, false, machineHostName, "mt5", "mt5", 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", null, 0, 0, 0);
 
     public static ConfigLoadResult Failed(string machineHostName, string error) =>
-        new(false, true, machineHostName, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", error, 0, 0, 0);
+        new(false, true, machineHostName, "mt5", "mt5", 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", error, 0, 0, 0);
+
+    private static string NormalizePlatform(string? platform)
+    {
+        var normalized = (platform ?? string.Empty).Trim().ToLower();
+        return normalized is "mt4" or "mt5" ? normalized : "mt5";
+    }
 }
 
 public sealed record ConfigSaveResult(bool IsSuccess, string? MachineHostName, string? Error)

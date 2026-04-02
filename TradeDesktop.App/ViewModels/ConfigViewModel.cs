@@ -17,6 +17,8 @@ public sealed class ConfigViewModel : ObservableObject
     private string _tradeHwndA = string.Empty;
     private string _chartHwndB = string.Empty;
     private string _tradeHwndB = string.Empty;
+    private string _platformA = "mt5";
+    private string _platformB = "mt5";
 
     private string _loadStatus = "Đang tải theo host name máy...";
     private string _map1CheckStatus = "Chưa kiểm tra";
@@ -46,6 +48,8 @@ public sealed class ConfigViewModel : ObservableObject
         TradeHwndA = runtimeConfigState.CurrentTradeHwndA;
         ChartHwndB = runtimeConfigState.CurrentChartHwndB;
         TradeHwndB = runtimeConfigState.CurrentTradeHwndB;
+        PlatformA = runtimeConfigState.CurrentPlatformA;
+        PlatformB = runtimeConfigState.CurrentPlatformB;
 
         var hasRuntimeState =
             !string.IsNullOrWhiteSpace(MachineHostName) ||
@@ -163,6 +167,94 @@ public sealed class ConfigViewModel : ObservableObject
         set => SetProperty(ref _tradeHwndB, value);
     }
 
+    public string PlatformA
+    {
+        get => _platformA;
+        set
+        {
+            var normalized = NormalizePlatform(value);
+            if (!SetProperty(ref _platformA, normalized))
+            {
+                return;
+            }
+
+            OnPropertyChanged(nameof(IsPlatformAMt4));
+            OnPropertyChanged(nameof(IsPlatformAMt5));
+        }
+    }
+
+    public string PlatformB
+    {
+        get => _platformB;
+        set
+        {
+            var normalized = NormalizePlatform(value);
+            if (!SetProperty(ref _platformB, normalized))
+            {
+                return;
+            }
+
+            OnPropertyChanged(nameof(IsPlatformBMt4));
+            OnPropertyChanged(nameof(IsPlatformBMt5));
+        }
+    }
+
+    public bool IsPlatformAMt4
+    {
+        get => string.Equals(PlatformA, "mt4", StringComparison.OrdinalIgnoreCase);
+        set
+        {
+            if (!value)
+            {
+                return;
+            }
+
+            PlatformA = "mt4";
+        }
+    }
+
+    public bool IsPlatformAMt5
+    {
+        get => string.Equals(PlatformA, "mt5", StringComparison.OrdinalIgnoreCase);
+        set
+        {
+            if (!value)
+            {
+                return;
+            }
+
+            PlatformA = "mt5";
+        }
+    }
+
+    public bool IsPlatformBMt4
+    {
+        get => string.Equals(PlatformB, "mt4", StringComparison.OrdinalIgnoreCase);
+        set
+        {
+            if (!value)
+            {
+                return;
+            }
+
+            PlatformB = "mt4";
+        }
+    }
+
+    public bool IsPlatformBMt5
+    {
+        get => string.Equals(PlatformB, "mt5", StringComparison.OrdinalIgnoreCase);
+        set
+        {
+            if (!value)
+            {
+                return;
+            }
+
+            PlatformB = "mt5";
+        }
+    }
+
     public bool IsMapName1Valid
     {
         get => _isMap1Valid;
@@ -241,10 +333,14 @@ public sealed class ConfigViewModel : ObservableObject
 
             MapName1 = loadResult.MapName1;
             MapName2 = loadResult.MapName2;
+            PlatformA = loadResult.PlatformA;
+            PlatformB = loadResult.PlatformB;
             _runtimeConfigState.Update(
                 loadResult.MachineHostName,
                 loadResult.MapName1,
                 loadResult.MapName2,
+                loadResult.PlatformA,
+                loadResult.PlatformB,
                 loadResult.Point,
                 loadResult.OpenPts,
                 loadResult.ConfirmGapPts,
@@ -309,7 +405,7 @@ public sealed class ConfigViewModel : ObservableObject
         try
         {
             ClearError();
-            var saveResult = await _configService.SaveByMachineHostNameAsync(MapName1, MapName2);
+            var saveResult = await _configService.SaveByMachineHostNameAsync(MapName1, MapName2, PlatformA, PlatformB);
             if (!saveResult.IsSuccess)
             {
                 LoadStatus = "✖ Save thất bại";
@@ -326,6 +422,7 @@ public sealed class ConfigViewModel : ObservableObject
 
             LoadStatus = "✔ Lưu thành công";
             _runtimeConfigState.Update(MachineHostName, MapName1, MapName2, _runtimeConfigState.CurrentPoint);
+            _runtimeConfigState.UpdatePlatform(PlatformA, PlatformB);
             _runtimeConfigState.UpdateManualTradeHwnd(ChartHwndA, TradeHwndA, ChartHwndB, TradeHwndB);
             RequestClose?.Invoke(true);
         }
@@ -369,5 +466,11 @@ public sealed class ConfigViewModel : ObservableObject
         }
 
         return message;
+    }
+
+    private static string NormalizePlatform(string? platform)
+    {
+        var normalized = (platform ?? string.Empty).Trim().ToLower();
+        return normalized is "mt4" or "mt5" ? normalized : "mt5";
     }
 }

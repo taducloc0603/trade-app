@@ -122,6 +122,7 @@ public sealed class DashboardViewModel : ObservableObject
     private string _exchangeBTime = "-";
     private string _exchangeBMaxLatMs = "-";
     private string _exchangeBAvgLatMs = "-";
+    private string _latencyDiffDisplay = "-";
     private bool _isTradingLogicEnabled;
     private string _lastSignalText = "-";
     private bool _isLoading = true;
@@ -266,6 +267,7 @@ public sealed class DashboardViewModel : ObservableObject
     public string ExchangeBTime { get => _exchangeBTime; private set => SetProperty(ref _exchangeBTime, value); }
     public string ExchangeBMaxLatMs { get => _exchangeBMaxLatMs; private set => SetProperty(ref _exchangeBMaxLatMs, value); }
     public string ExchangeBAvgLatMs { get => _exchangeBAvgLatMs; private set => SetProperty(ref _exchangeBAvgLatMs, value); }
+    public string LatencyDiffDisplay { get => _latencyDiffDisplay; private set => SetProperty(ref _latencyDiffDisplay, value); }
     public bool IsLoading { get => _isLoading; private set => SetProperty(ref _isLoading, value); }
     public string LoadingMessage { get => _loadingMessage; private set => SetProperty(ref _loadingMessage, value); }
     public string MachineHostName { get => _machineHostName; private set => SetProperty(ref _machineHostName, value); }
@@ -2025,6 +2027,8 @@ public sealed class DashboardViewModel : ObservableObject
                     result.MachineHostName,
                     result.MapName1,
                     result.MapName2,
+                    result.PlatformA,
+                    result.PlatformB,
                     result.Point,
                     result.OpenPts,
                     result.ConfirmGapPts,
@@ -2259,6 +2263,8 @@ public sealed class DashboardViewModel : ObservableObject
         ExchangeBMaxLatMs = FormatNumberOrDash(metrics.ExchangeB.MaxLatMs, 0);
         ExchangeBAvgLatMs = FormatNumberOrDash(metrics.ExchangeB.AvgLatMs, 0);
 
+        LatencyDiffDisplay = FormatLatencyDiff(metrics.ExchangeA.LatencyMs, metrics.ExchangeB.LatencyMs);
+
         GapBuy = FormatIntegerOrDash(metrics.GapBuy);
         GapSell = FormatIntegerOrDash(metrics.GapSell);
     }
@@ -2333,4 +2339,17 @@ public sealed class DashboardViewModel : ObservableObject
 
     private static string FormatTextOrDash(string? value)
         => string.IsNullOrWhiteSpace(value) ? "-" : value;
+
+    private static string FormatLatencyDiff(decimal? latencyA, decimal? latencyB)
+    {
+        if (!latencyA.HasValue || !latencyB.HasValue)
+        {
+            return "-";
+        }
+
+        var a = latencyA.Value;
+        var b = latencyB.Value;
+        var result = a - b;
+        return $"({a:0} - {b:0}) = {result:0}";
+    }
 }

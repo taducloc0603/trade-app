@@ -22,6 +22,8 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
     public int CurrentMaxSpread { get; private set; }
     public string CurrentMapName1 { get; private set; } = string.Empty;
     public string CurrentMapName2 { get; private set; } = string.Empty;
+    public string CurrentPlatformA { get; private set; } = "mt5";
+    public string CurrentPlatformB { get; private set; } = "mt5";
     public string CurrentChartHwndA { get; private set; } = string.Empty;
     public string CurrentTradeHwndA { get; private set; } = string.Empty;
     public string CurrentChartHwndB { get; private set; } = string.Empty;
@@ -32,6 +34,8 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
     public string MachineHostName => CurrentMachineHostName;
     public string MapName1 => CurrentMapName1;
     public string MapName2 => CurrentMapName2;
+    public string PlatformA => CurrentPlatformA;
+    public string PlatformB => CurrentPlatformB;
     public string ChartHwndA => CurrentChartHwndA;
     public string TradeHwndA => CurrentTradeHwndA;
     public string ChartHwndB => CurrentChartHwndB;
@@ -70,6 +74,47 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
         int confirmLatencyMs = 0,
         int maxGap = 0,
         int maxSpread = 0)
+        => Update(
+            machineHostName,
+            mapName1,
+            mapName2,
+            CurrentPlatformA,
+            CurrentPlatformB,
+            point,
+            openPts,
+            confirmGapPts,
+            holdConfirmMs,
+            closePts,
+            closeConfirmGapPts,
+            closeHoldConfirmMs,
+            startTimeHold,
+            endTimeHold,
+            startWaitTime,
+            endWaitTime,
+            confirmLatencyMs,
+            maxGap,
+            maxSpread);
+
+    public void Update(
+        string machineHostName,
+        string mapName1,
+        string mapName2,
+        string platformA,
+        string platformB,
+        int point,
+        int openPts,
+        int confirmGapPts,
+        int holdConfirmMs,
+        int closePts,
+        int closeConfirmGapPts,
+        int closeHoldConfirmMs,
+        int startTimeHold,
+        int endTimeHold,
+        int startWaitTime,
+        int endWaitTime,
+        int confirmLatencyMs = 0,
+        int maxGap = 0,
+        int maxSpread = 0)
     {
         CurrentMachineHostName = (machineHostName ?? string.Empty).Trim().ToLower();
         CurrentPoint = point > 0 ? point : 1;
@@ -88,7 +133,15 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
         CurrentMaxSpread = Math.Max(0, maxSpread);
         CurrentMapName1 = (mapName1 ?? string.Empty).Trim();
         CurrentMapName2 = (mapName2 ?? string.Empty).Trim();
+        CurrentPlatformA = NormalizePlatform(platformA);
+        CurrentPlatformB = NormalizePlatform(platformB);
         StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private static string NormalizePlatform(string? platform)
+    {
+        var normalized = (platform ?? string.Empty).Trim().ToLower();
+        return normalized is "mt4" or "mt5" ? normalized : "mt5";
     }
 
     public void Update(string machineHostName, string mapName1, string mapName2, int point)
@@ -96,6 +149,8 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
             machineHostName,
             mapName1,
             mapName2,
+            CurrentPlatformA,
+            CurrentPlatformB,
             point,
             CurrentOpenPts,
             CurrentConfirmGapPts,
@@ -116,6 +171,8 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
             machineHostName,
             mapName1,
             mapName2,
+            CurrentPlatformA,
+            CurrentPlatformB,
             CurrentPoint,
             CurrentOpenPts,
             CurrentConfirmGapPts,
@@ -130,6 +187,13 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
             CurrentConfirmLatencyMs,
             CurrentMaxGap,
             CurrentMaxSpread);
+
+    public void UpdatePlatform(string platformA, string platformB)
+    {
+        CurrentPlatformA = NormalizePlatform(platformA);
+        CurrentPlatformB = NormalizePlatform(platformB);
+        StateChanged?.Invoke(this, EventArgs.Empty);
+    }
 
     public void UpdateDashboardMetrics(DashboardMetrics snapshot)
     {

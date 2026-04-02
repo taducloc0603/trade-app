@@ -54,8 +54,8 @@
                                VerticalAlignment="Center" />
 
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                        <RadioButton Content="MT4" GroupName="ExchangeAPlatform" Margin="0,0,22,0" IsChecked="True" />
-                        <RadioButton Content="MT5" GroupName="ExchangeAPlatform" />
+                        <RadioButton Content="MT4" GroupName="ExchangeAPlatform" Margin="0,0,22,0" IsChecked="{Binding IsPlatformAMt4, Mode=TwoWay}" />
+                        <RadioButton Content="MT5" GroupName="ExchangeAPlatform" IsChecked="{Binding IsPlatformAMt5, Mode=TwoWay}" />
                     </StackPanel>
                 </Grid>
 
@@ -127,8 +127,8 @@
                                VerticalAlignment="Center" />
 
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                        <RadioButton Content="MT4" GroupName="ExchangeBPlatform" Margin="0,0,22,0" IsChecked="True" />
-                        <RadioButton Content="MT5" GroupName="ExchangeBPlatform" />
+                        <RadioButton Content="MT4" GroupName="ExchangeBPlatform" Margin="0,0,22,0" IsChecked="{Binding IsPlatformBMt4, Mode=TwoWay}" />
+                        <RadioButton Content="MT5" GroupName="ExchangeBPlatform" IsChecked="{Binding IsPlatformBMt5, Mode=TwoWay}" />
                     </StackPanel>
                 </Grid>
 

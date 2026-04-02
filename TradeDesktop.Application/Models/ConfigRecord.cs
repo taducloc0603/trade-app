@@ -4,6 +4,8 @@ public sealed record ConfigRecord(
     string Id,
     string SansJson,
     string? HostName,
+    string PlatformA,
+    string PlatformB,
     int Point,
     int OpenPts,
     int ConfirmGapPts,
