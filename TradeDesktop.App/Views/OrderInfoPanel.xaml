@@ -361,20 +361,20 @@
 
                                 <DataGrid.Columns>
                                     <DataGridTextColumn Header="Close EA Time Local" Binding="{Binding CloseEaTimeLocal}" Width="180" />
-                                <DataGridTextColumn Header="Open excution" Binding="{Binding OpenExecution}" Width="130" />
-                                <DataGridTextColumn Header="Close excution" Binding="{Binding CloseExecution}" Width="130" />
-                                    <DataGridTextColumn Header="Timestamp" Binding="{Binding Timestamp}" Width="120" />
-                                    <DataGridTextColumn Header="Count" Binding="{Binding Count}" Width="70" />
-                                    <DataGridTextColumn Header="Symbol" Binding="{Binding Symbol}" Width="90" />
                                     <DataGridTextColumn Header="Ticket" Binding="{Binding Ticket}" Width="110" />
+                                    <DataGridTextColumn Header="Profit" Binding="{Binding Profit}" Width="95" />
+                                    <DataGridTextColumn Header="Symbol" Binding="{Binding Symbol}" Width="90" />
                                     <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="60" />
                                     <DataGridTextColumn Header="Volume" Binding="{Binding Volume}" Width="70" />
-                                    <DataGridTextColumn Header="Open Price" Binding="{Binding OpenPrice}" Width="95" />
-                                    <DataGridTextColumn Header="Close Price" Binding="{Binding ClosePrice}" Width="95" />
                                     <DataGridTextColumn Header="Open Slippage" Binding="{Binding OpenSlippage}" Width="110" />
                                     <DataGridTextColumn Header="Close Slippage" Binding="{Binding CloseSlippage}" Width="110" />
-                                    <DataGridTextColumn Header="Profit" Binding="{Binding Profit}" Width="95" />
+                                    <DataGridTextColumn Header="Open execution" Binding="{Binding OpenExecution}" Width="130" />
+                                    <DataGridTextColumn Header="Close execution" Binding="{Binding CloseExecution}" Width="130" />
                                     <DataGridTextColumn Header="Fee Spread" Binding="{Binding FeeSpread}" Width="95" />
+                                    <DataGridTextColumn Header="Open Price" Binding="{Binding OpenPrice}" Width="95" />
+                                    <DataGridTextColumn Header="Close Price" Binding="{Binding ClosePrice}" Width="95" />
+                                    <DataGridTextColumn Header="Timestamp" Binding="{Binding Timestamp}" Width="120" />
+                                    <DataGridTextColumn Header="Count" Binding="{Binding Count}" Width="70" />
                                     <DataGridTextColumn Header="Commission" Binding="{Binding Commission}" Width="95" />
                                     <DataGridTextColumn Header="SL" Binding="{Binding Sl}" Width="95" />
                                     <DataGridTextColumn Header="TP" Binding="{Binding Tp}" Width="95" />
@@ -438,19 +438,19 @@
 
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="Open EA Time Local" Binding="{Binding OpenEaTimeLocal}" Width="180" />
-                                <DataGridTextColumn Header="Open excution" Binding="{Binding OpenExecution}" Width="130" />
+                                <DataGridTextColumn Header="Ticket" Binding="{Binding Ticket}" Width="110" />
+                                <DataGridTextColumn Header="Profit" Binding="{Binding Profit}" Width="95" />
+                                <DataGridTextColumn Header="Symbol" Binding="{Binding Symbol}" Width="90" />
+                                <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="60" />
+                                <DataGridTextColumn Header="Volume" Binding="{Binding Lot}" Width="80" />
+                                <DataGridTextColumn Header="Slippage" Binding="{Binding Slippage}" Width="95" />
+                                <DataGridTextColumn Header="Open execution" Binding="{Binding OpenExecution}" Width="130" />
+                                <DataGridTextColumn Header="Fee Spread" Binding="{Binding FeeSpread}" Width="95" />
+                                <DataGridTextColumn Header="Price" Binding="{Binding Price}" Width="95" />
                                 <DataGridTextColumn Header="Timestamp" Binding="{Binding Timestamp}" Width="120" />
                                 <DataGridTextColumn Header="Count" Binding="{Binding Count}" Width="70" />
-                                <DataGridTextColumn Header="Symbol" Binding="{Binding Symbol}" Width="90" />
-                                <DataGridTextColumn Header="Ticket" Binding="{Binding Ticket}" Width="110" />
-                                <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="60" />
-                                <DataGridTextColumn Header="Lot" Binding="{Binding Lot}" Width="80" />
-                                <DataGridTextColumn Header="Price" Binding="{Binding Price}" Width="95" />
                                 <DataGridTextColumn Header="SL" Binding="{Binding Sl}" Width="95" />
                                 <DataGridTextColumn Header="TP" Binding="{Binding Tp}" Width="95" />
-                                <DataGridTextColumn Header="Slippage" Binding="{Binding Slippage}" Width="95" />
-                                <DataGridTextColumn Header="Profit" Binding="{Binding Profit}" Width="95" />
-                                <DataGridTextColumn Header="Fee Spread" Binding="{Binding FeeSpread}" Width="95" />
                                 <DataGridTextColumn Header="Time" Binding="{Binding Time}" Width="180" />
                             </DataGrid.Columns>
                         </DataGrid>

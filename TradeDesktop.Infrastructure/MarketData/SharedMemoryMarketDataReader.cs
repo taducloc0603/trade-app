@@ -20,7 +20,7 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
     private const long AskOffset = 24;
     private const long SpreadOffset = 32;
     private const long TickTimeMscOffset = 40;
-    private const long SymbolOffset = 52;
+    private const long SymbolOffset = 48;
     private const int MaxSymbolBytesToRead = 64;
 
     private readonly object _syncRoot = new();
@@ -144,7 +144,7 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
                 Bid: bidDecimal,
                 Ask: askDecimal,
                 Spread: spreadDecimal,
-                LatencyMs: TryComputeLatencyMs(tickRecord.TickTimeMsc),
+                LatencyMs: TryComputeLatencyMs(tickRecord.TimestampMs),
                 Tps: null,
                 Time: FormatTickTime(tickRecord.TickTimeMsc),
                 MaxLatMs: null,
@@ -330,11 +330,11 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
         }
     }
 
-    private static decimal? TryComputeLatencyMs(long timestampMs)
+    private static decimal? TryComputeLatencyMs(long tickCountMs)
     {
         try
         {
-            var diff = Environment.TickCount64 - timestampMs;
+            var diff = Environment.TickCount64 - tickCountMs;
             if (diff < 0)
             {
                 return 0;
