@@ -40,7 +40,24 @@
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                <TextBlock Grid.Row="0" Text="Sàn A" FontWeight="SemiBold" FontSize="14" Foreground="#101828" />
+                <Grid Grid.Row="0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="150" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Grid.Column="0"
+                               Text="Sàn A"
+                               FontWeight="SemiBold"
+                               FontSize="14"
+                               Foreground="#101828"
+                               VerticalAlignment="Center" />
+
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <RadioButton Content="MT4" GroupName="ExchangeAPlatform" Margin="0,0,22,0" IsChecked="True" />
+                        <RadioButton Content="MT5" GroupName="ExchangeAPlatform" />
+                    </StackPanel>
+                </Grid>
 
                 <Grid Grid.Row="2">
                     <Grid.ColumnDefinitions>
@@ -96,7 +113,24 @@
                              Text="{Binding TradeHwndA, UpdateSourceTrigger=PropertyChanged}" />
                 </Grid>
 
-                <TextBlock Grid.Row="8" Text="Sàn B" FontWeight="SemiBold" FontSize="14" Foreground="#101828" />
+                <Grid Grid.Row="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="150" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Grid.Column="0"
+                               Text="Sàn B"
+                               FontWeight="SemiBold"
+                               FontSize="14"
+                               Foreground="#101828"
+                               VerticalAlignment="Center" />
+
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <RadioButton Content="MT4" GroupName="ExchangeBPlatform" Margin="0,0,22,0" IsChecked="True" />
+                        <RadioButton Content="MT5" GroupName="ExchangeBPlatform" />
+                    </StackPanel>
+                </Grid>
 
                 <Grid Grid.Row="10">
                     <Grid.ColumnDefinitions>
