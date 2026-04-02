@@ -108,7 +108,6 @@ public sealed class DashboardViewModel : ObservableObject
     private string _exchangeAAsk = "-";
     private string _exchangeASpread = "-";
     private string _exchangeALatencyMs = "-";
-    private string _exchangeALatencyDebug = "-";
     private string _exchangeATps = "-";
     private string _exchangeATime = "-";
     private string _exchangeAMaxLatMs = "-";
@@ -119,7 +118,6 @@ public sealed class DashboardViewModel : ObservableObject
     private string _exchangeBAsk = "-";
     private string _exchangeBSpread = "-";
     private string _exchangeBLatencyMs = "-";
-    private string _exchangeBLatencyDebug = "-";
     private string _exchangeBTps = "-";
     private string _exchangeBTime = "-";
     private string _exchangeBMaxLatMs = "-";
@@ -255,7 +253,6 @@ public sealed class DashboardViewModel : ObservableObject
     public string ExchangeAAsk { get => _exchangeAAsk; private set => SetProperty(ref _exchangeAAsk, value); }
     public string ExchangeASpread { get => _exchangeASpread; private set => SetProperty(ref _exchangeASpread, value); }
     public string ExchangeALatencyMs { get => _exchangeALatencyMs; private set => SetProperty(ref _exchangeALatencyMs, value); }
-    public string ExchangeALatencyDebug { get => _exchangeALatencyDebug; private set => SetProperty(ref _exchangeALatencyDebug, value); }
     public string ExchangeATps { get => _exchangeATps; private set => SetProperty(ref _exchangeATps, value); }
     public string ExchangeATime { get => _exchangeATime; private set => SetProperty(ref _exchangeATime, value); }
     public string ExchangeAMaxLatMs { get => _exchangeAMaxLatMs; private set => SetProperty(ref _exchangeAMaxLatMs, value); }
@@ -266,7 +263,6 @@ public sealed class DashboardViewModel : ObservableObject
     public string ExchangeBAsk { get => _exchangeBAsk; private set => SetProperty(ref _exchangeBAsk, value); }
     public string ExchangeBSpread { get => _exchangeBSpread; private set => SetProperty(ref _exchangeBSpread, value); }
     public string ExchangeBLatencyMs { get => _exchangeBLatencyMs; private set => SetProperty(ref _exchangeBLatencyMs, value); }
-    public string ExchangeBLatencyDebug { get => _exchangeBLatencyDebug; private set => SetProperty(ref _exchangeBLatencyDebug, value); }
     public string ExchangeBTps { get => _exchangeBTps; private set => SetProperty(ref _exchangeBTps, value); }
     public string ExchangeBTime { get => _exchangeBTime; private set => SetProperty(ref _exchangeBTime, value); }
     public string ExchangeBMaxLatMs { get => _exchangeBMaxLatMs; private set => SetProperty(ref _exchangeBMaxLatMs, value); }
@@ -2247,14 +2243,11 @@ public sealed class DashboardViewModel : ObservableObject
 
     private void BindDashboardMetrics(DashboardMetrics metrics)
     {
-        var appTimeDisplay = DateTime.Now.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture);
-
         ExchangeASymbol = FormatTextOrDash(metrics.ExchangeA.Symbol);
         ExchangeABid = FormatTrimmedNumberOrDash(metrics.ExchangeA.Bid);
         ExchangeAAsk = FormatTrimmedNumberOrDash(metrics.ExchangeA.Ask);
         ExchangeASpread = FormatTrimmedNumberOrDash(metrics.ExchangeA.Spread);
         ExchangeALatencyMs = FormatNumberOrDash(metrics.ExchangeA.LatencyMs, 0);
-        ExchangeALatencyDebug = FormatLatencyDebug(appTimeDisplay, metrics.ExchangeA.Time, metrics.ExchangeA.LatencyMs);
         ExchangeATps = FormatOneDecimalOrDash(metrics.ExchangeA.Tps);
         ExchangeATime = FormatTextOrDash(metrics.ExchangeA.Time);
         ExchangeAMaxLatMs = FormatNumberOrDash(metrics.ExchangeA.MaxLatMs, 0);
@@ -2265,7 +2258,6 @@ public sealed class DashboardViewModel : ObservableObject
         ExchangeBAsk = FormatTrimmedNumberOrDash(metrics.ExchangeB.Ask);
         ExchangeBSpread = FormatTrimmedNumberOrDash(metrics.ExchangeB.Spread);
         ExchangeBLatencyMs = FormatNumberOrDash(metrics.ExchangeB.LatencyMs, 0);
-        ExchangeBLatencyDebug = FormatLatencyDebug(appTimeDisplay, metrics.ExchangeB.Time, metrics.ExchangeB.LatencyMs);
         ExchangeBTps = FormatOneDecimalOrDash(metrics.ExchangeB.Tps);
         ExchangeBTime = FormatTextOrDash(metrics.ExchangeB.Time);
         ExchangeBMaxLatMs = FormatNumberOrDash(metrics.ExchangeB.MaxLatMs, 0);
@@ -2361,14 +2353,4 @@ public sealed class DashboardViewModel : ObservableObject
         return $"({a:0} - {b:0}) = {result:0}";
     }
 
-    private static string FormatLatencyDebug(string appTimeDisplay, string? headerTimeDisplay, decimal? latency)
-    {
-        if (!latency.HasValue)
-        {
-            return "-";
-        }
-
-        var header = string.IsNullOrWhiteSpace(headerTimeDisplay) ? "-" : headerTimeDisplay.Trim();
-        return $"({appTimeDisplay} - {header}) = {latency.Value:0}";
-    }
 }
