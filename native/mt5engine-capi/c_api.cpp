@@ -61,6 +61,12 @@ MT_API int mt_close_position_mt5(void* ctx, int rowIdx)
     return ClosePositionMT5(context, rowIdx) ? 1 : 0;
 }
 
+MT_API int mt_close_position_mt4(void* ctx, int rowIdx)
+{
+    auto* context = reinterpret_cast<Context*>(ctx);
+    return ClosePositionMT4(context, rowIdx) ? 1 : 0;
+}
+
 MT_API void mt_destroy_context(void* ctx)
 {
     auto* context = reinterpret_cast<Context*>(ctx);

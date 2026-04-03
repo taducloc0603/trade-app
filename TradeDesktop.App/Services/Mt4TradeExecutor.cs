@@ -1,60 +1,237 @@
+using System.Globalization;
 using TradeDesktop.App.Native;
 
 namespace TradeDesktop.App.Services;
 
 public sealed class Mt4TradeExecutor : ITradePlatformExecutor
 {
-    private const string Mt4NotImplementedMessage = "MT4 executor is not implemented yet";
+    private readonly SemaphoreSlim _actionGate = new(1, 1);
 
     public TradeLegPlatform Platform => TradeLegPlatform.Mt4;
 
-    public Task<ManualTradeResult> OpenPairAsync(TradeOpenPairRequest request, CancellationToken cancellationToken = default)
+    public async Task<ManualTradeResult> OpenPairAsync(TradeOpenPairRequest request, CancellationToken cancellationToken = default)
     {
         if (request is null)
         {
             throw new ArgumentNullException(nameof(request));
         }
 
-        return Task.FromResult(new ManualTradeResult(
-            Label: "OPEN_MANUAL",
-            Success: false,
-            Legs:
-            [
-                BuildNotSupportedLeg(request.LegA.Exchange, request.LegA.Action),
-                BuildNotSupportedLeg(request.LegB.Exchange, request.LegB.Action)
-            ],
-            ErrorMessage: Mt4NotImplementedMessage));
+        await _actionGate.WaitAsync(cancellationToken);
+        try
+        {
+            if (!TryParseHwnd(request.LegA.ChartHwnd, out var hwndA) || !TryParseHwnd(request.LegB.ChartHwnd, out var hwndB))
+            {
+                return new ManualTradeResult(
+                    Label: "OPEN_MANUAL",
+                    Success: false,
+                    Legs: [],
+                    ErrorMessage: "HWND CHART không hợp lệ. Vui lòng kiểm tra lại Config (định dạng 0x... hoặc số thập phân).");
+            }
+
+            if (!IsValidWindow(hwndA) || !IsValidWindow(hwndB))
+            {
+                return new ManualTradeResult(
+                    Label: "OPEN_MANUAL",
+                    Success: false,
+                    Legs: [],
+                    ErrorMessage: "Một trong các CHART HWND không còn hợp lệ.");
+            }
+
+            var legATask = Task.Run(
+                () => ExecuteOpenLeg(request.LegA.Exchange, request.LegA.Action, hwndA),
+                cancellationToken);
+            var legBTask = Task.Run(
+                () => ExecuteOpenLeg(request.LegB.Exchange, request.LegB.Action, hwndB),
+                cancellationToken);
+            var legs = await Task.WhenAll(legATask, legBTask);
+
+            return new ManualTradeResult(
+                Label: "OPEN_MANUAL",
+                Success: legs.All(l => l.Success),
+                Legs: legs);
+        }
+        catch (Exception ex)
+        {
+            return new ManualTradeResult(
+                Label: "OPEN_MANUAL",
+                Success: false,
+                Legs: [],
+                ErrorMessage: $"Lỗi open manual MT4: {ex.Message}");
+        }
+        finally
+        {
+            _actionGate.Release();
+        }
     }
 
-    public Task<ManualTradeResult> ClosePairAsync(TradeClosePairRequest request, CancellationToken cancellationToken = default)
+    public async Task<ManualTradeResult> ClosePairAsync(TradeClosePairRequest request, CancellationToken cancellationToken = default)
     {
         if (request is null)
         {
             throw new ArgumentNullException(nameof(request));
         }
 
-        // Keep MT4 native type referenced intentionally as skeleton marker for upcoming implementation.
-        _ = typeof(NativeMethodsMt4);
+        await _actionGate.WaitAsync(cancellationToken);
+        try
+        {
+            var legATask = Task.Run(() => CloseFirstTrade(request.LegA), cancellationToken);
+            var legBTask = Task.Run(() => CloseFirstTrade(request.LegB), cancellationToken);
+            var legs = await Task.WhenAll(legATask, legBTask);
 
-        var legA = request.LegA is null
-            ? new ManualTradeLegResult("A", "CLOSE", true, "Close A skipped: no open trade")
-            : BuildNotSupportedLeg(request.LegA.Exchange, TradeLegAction.Close);
-
-        var legB = request.LegB is null
-            ? new ManualTradeLegResult("B", "CLOSE", true, "Close B skipped: no open trade")
-            : BuildNotSupportedLeg(request.LegB.Exchange, TradeLegAction.Close);
-
-        return Task.FromResult(new ManualTradeResult(
-            Label: "CLOSE_MANUAL",
-            Success: false,
-            Legs: [legA, legB],
-            ErrorMessage: Mt4NotImplementedMessage));
+            return new ManualTradeResult(
+                Label: "CLOSE_MANUAL",
+                Success: legs.All(l => l.Success),
+                Legs: legs);
+        }
+        catch (Exception ex)
+        {
+            return new ManualTradeResult(
+                Label: "CLOSE_MANUAL",
+                Success: false,
+                Legs: [],
+                ErrorMessage: $"Lỗi close manual MT4: {ex.Message}");
+        }
+        finally
+        {
+            _actionGate.Release();
+        }
     }
 
-    private static ManualTradeLegResult BuildNotSupportedLeg(string exchange, TradeLegAction action)
-        => new(
-            Exchange: exchange,
-            Action: action.ToString().ToUpperInvariant(),
-            Success: false,
-            Detail: Mt4NotImplementedMessage);
+    private static ManualTradeLegResult ExecuteOpenLeg(string exchange, TradeLegAction action, ulong chartHwnd)
+    {
+        var actionText = action.ToString().ToUpperInvariant();
+        try
+        {
+            var clickResult = action switch
+            {
+                TradeLegAction.Buy => NativeMethodsMt4.ClickBuy(chartHwnd),
+                TradeLegAction.Sell => NativeMethodsMt4.ClickSell(chartHwnd),
+                _ => 0
+            };
+
+            if (action is not (TradeLegAction.Buy or TradeLegAction.Sell))
+            {
+                return new ManualTradeLegResult(exchange, actionText, false, "Unsupported MT4 open action");
+            }
+
+            var success = clickResult == 1;
+            return new ManualTradeLegResult(
+                Exchange: exchange,
+                Action: actionText,
+                Success: success,
+                Detail: success ? "clicked" : "click failed");
+        }
+        catch (Exception ex)
+        {
+            return new ManualTradeLegResult(exchange, actionText, false, ex.Message);
+        }
+    }
+
+    private static ManualTradeLegResult CloseFirstTrade(TradeCloseLegRequest? request)
+    {
+        if (request is null)
+        {
+            return new ManualTradeLegResult(
+                Exchange: "UNKNOWN",
+                Action: "CLOSE",
+                Success: true,
+                Detail: "Close skipped: no open trade");
+        }
+
+        if (!TryParseHwnd(request.TradeHwnd, out var tradeParentHwnd))
+        {
+            return new ManualTradeLegResult(
+                Exchange: request.Exchange,
+                Action: "CLOSE",
+                Success: false,
+                Detail: $"Close {request.Exchange} failed: ticket={request.Ticket}, error=TRADE HWND không hợp lệ");
+        }
+
+        if (!IsValidWindow(tradeParentHwnd))
+        {
+            return new ManualTradeLegResult(
+                Exchange: request.Exchange,
+                Action: "CLOSE",
+                Success: false,
+                Detail: $"Close {request.Exchange} failed: ticket={request.Ticket}, error=TRADE HWND không còn hợp lệ");
+        }
+
+        IntPtr context = IntPtr.Zero;
+        try
+        {
+            context = NativeMethodsMt4.CreateContextFromParent(tradeParentHwnd);
+            if (context == IntPtr.Zero)
+            {
+                return new ManualTradeLegResult(
+                    Exchange: request.Exchange,
+                    Action: "CLOSE",
+                    Success: false,
+                    Detail: $"Close {request.Exchange} failed: ticket={request.Ticket}, error=create_context_from_parent failed");
+            }
+
+            var rowCount = NativeMethodsMt4.UpdateRowCount(context);
+            if (rowCount <= 0)
+            {
+                return new ManualTradeLegResult(
+                    Exchange: request.Exchange,
+                    Action: "CLOSE",
+                    Success: true,
+                    Detail: $"Close {request.Exchange} skipped: no open trade");
+            }
+
+            var closeResult = NativeMethodsMt4.ClosePositionMt4(context, 0);
+            var success = closeResult == 1;
+            return new ManualTradeLegResult(
+                Exchange: request.Exchange,
+                Action: "CLOSE",
+                Success: success,
+                Detail: success
+                    ? $"Close {request.Exchange} first trade: ticket={request.Ticket}"
+                    : $"Close {request.Exchange} failed: ticket={request.Ticket}, error=close_position_mt4 failed");
+        }
+        catch (Exception ex)
+        {
+            return new ManualTradeLegResult(
+                Exchange: request.Exchange,
+                Action: "CLOSE",
+                Success: false,
+                Detail: $"Close {request.Exchange} failed: ticket={request.Ticket}, error={ex.Message}");
+        }
+        finally
+        {
+            if (context != IntPtr.Zero)
+            {
+                NativeMethodsMt4.DestroyContext(context);
+            }
+        }
+    }
+
+    private static bool TryParseHwnd(string raw, out ulong hwnd)
+    {
+        hwnd = 0;
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return false;
+        }
+
+        var text = raw.Trim();
+        if (text.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+        {
+            return ulong.TryParse(text[2..], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out hwnd);
+        }
+
+        return ulong.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out hwnd);
+    }
+
+    private static bool IsValidWindow(ulong hwnd)
+    {
+        try
+        {
+            return NativeMethodsMt4.IsValidWindow(hwnd) == 1;
+        }
+        catch
+        {
+            return false;
+        }
+    }
 }

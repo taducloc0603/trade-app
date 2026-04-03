@@ -15,6 +15,7 @@ MT_API void* mt_create_context(uint64_t listViewHwnd);
 MT_API void* mt_create_context_from_parent(uint64_t parentHwnd);
 MT_API int   mt_update_row_count(void* ctx);
 MT_API int   mt_close_position_mt5(void* ctx, int rowIdx);
+MT_API int   mt_close_position_mt4(void* ctx, int rowIdx);
 MT_API void  mt_destroy_context(void* ctx);
 
 MT_API int mt_click_buy(uint64_t chartHwnd);
