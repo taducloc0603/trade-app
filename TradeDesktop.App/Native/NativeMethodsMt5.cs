@@ -2,7 +2,7 @@ using System.Runtime.InteropServices;
 
 namespace TradeDesktop.App.Native;
 
-internal static class NativeMethods
+internal static class NativeMethodsMt5
 {
     private const string DllName = "mt5engine_capi";
 

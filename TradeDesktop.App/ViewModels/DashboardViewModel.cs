@@ -26,6 +26,7 @@ public sealed class DashboardViewModel : ObservableObject
     private readonly IMachineIdentityService _machineIdentityService;
     private readonly ITradesSharedMemoryReader _tradesSharedMemoryReader;
     private readonly IHistorySharedMemoryReader _historySharedMemoryReader;
+    private readonly ITradeExecutionRouter _tradeExecutionRouter;
     private readonly IMt5ManualTradeService _mt5ManualTradeService;
     private readonly string _normalizedHostName;
     private readonly CancellationTokenSource _orderInfoPollingCts = new();
@@ -144,6 +145,7 @@ public sealed class DashboardViewModel : ObservableObject
         IMachineIdentityService machineIdentityService,
         ITradesSharedMemoryReader tradesSharedMemoryReader,
         IHistorySharedMemoryReader historySharedMemoryReader,
+        ITradeExecutionRouter tradeExecutionRouter,
         IMt5ManualTradeService mt5ManualTradeService)
     {
         _serviceProvider = serviceProvider;
@@ -156,6 +158,7 @@ public sealed class DashboardViewModel : ObservableObject
         _machineIdentityService = machineIdentityService;
         _tradesSharedMemoryReader = tradesSharedMemoryReader;
         _historySharedMemoryReader = historySharedMemoryReader;
+        _tradeExecutionRouter = tradeExecutionRouter;
         _mt5ManualTradeService = mt5ManualTradeService;
 
         var normalizedHostName = _machineIdentityService.GetHostName();
@@ -407,9 +410,18 @@ public sealed class DashboardViewModel : ObservableObject
         CapturePendingOpenRequest(TradeTab.LeftPanel.TargetMapName, snapshot, isExchangeA: true, tradeType: 0, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
         CapturePendingOpenRequest(TradeTab.RightPanel.TargetMapName, snapshot, isExchangeA: false, tradeType: 1, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
 
-        var result = await _mt5ManualTradeService.ExecuteBuyAsync(
-            _runtimeConfigState.CurrentChartHwndA,
-            _runtimeConfigState.CurrentChartHwndB);
+        var result = await _tradeExecutionRouter.OpenPairAsync(
+            new TradeOpenPairRequest(
+                new TradeOpenLegRequest(
+                    Exchange: "A",
+                    Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformA),
+                    ChartHwnd: _runtimeConfigState.CurrentChartHwndA,
+                    Action: TradeLegAction.Buy),
+                new TradeOpenLegRequest(
+                    Exchange: "B",
+                    Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformB),
+                    ChartHwnd: _runtimeConfigState.CurrentChartHwndB,
+                    Action: TradeLegAction.Sell)));
 
         // Phase 1 Manual Open log: A buy, B sell
         var now = DateTime.Now;
@@ -436,9 +448,18 @@ public sealed class DashboardViewModel : ObservableObject
         CapturePendingOpenRequest(TradeTab.LeftPanel.TargetMapName, snapshot, isExchangeA: true, tradeType: 1, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
         CapturePendingOpenRequest(TradeTab.RightPanel.TargetMapName, snapshot, isExchangeA: false, tradeType: 0, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
 
-        var result = await _mt5ManualTradeService.ExecuteSellAsync(
-            _runtimeConfigState.CurrentChartHwndA,
-            _runtimeConfigState.CurrentChartHwndB);
+        var result = await _tradeExecutionRouter.OpenPairAsync(
+            new TradeOpenPairRequest(
+                new TradeOpenLegRequest(
+                    Exchange: "A",
+                    Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformA),
+                    ChartHwnd: _runtimeConfigState.CurrentChartHwndA,
+                    Action: TradeLegAction.Sell),
+                new TradeOpenLegRequest(
+                    Exchange: "B",
+                    Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformB),
+                    ChartHwnd: _runtimeConfigState.CurrentChartHwndB,
+                    Action: TradeLegAction.Buy)));
 
         // Phase 1 Manual Open log: A sell, B buy
         var now = DateTime.Now;
@@ -475,9 +496,24 @@ public sealed class DashboardViewModel : ObservableObject
         CapturePendingCloseRequest(selectA, snapshot, isExchangeA: true, appCloseRequestTimeLocal, appCloseRequestRawMs, slot);
         CapturePendingCloseRequest(selectB, snapshot, isExchangeA: false, appCloseRequestTimeLocal, appCloseRequestRawMs, slot);
 
-        var result = await _mt5ManualTradeService.ExecuteCloseAsync(
-            selectA.Request,
-            selectB.Request);
+        var result = await _tradeExecutionRouter.ClosePairAsync(
+            new TradeClosePairRequest(
+                LegA: selectA.Request is null
+                    ? null
+                    : new TradeCloseLegRequest(
+                        Exchange: selectA.Request.Exchange,
+                        Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformA),
+                        TradeHwnd: selectA.Request.TradeHwnd,
+                        Ticket: selectA.Request.Ticket,
+                        Action: TradeLegAction.Close),
+                LegB: selectB.Request is null
+                    ? null
+                    : new TradeCloseLegRequest(
+                        Exchange: selectB.Request.Exchange,
+                        Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformB),
+                        TradeHwnd: selectB.Request.TradeHwnd,
+                        Ticket: selectB.Request.Ticket,
+                        Action: TradeLegAction.Close)));
 
         // Phase 1 Manual Close log
         var now = DateTime.Now;
@@ -549,9 +585,18 @@ public sealed class DashboardViewModel : ObservableObject
         CapturePendingOpenRequestFromTrigger(TradeTab.LeftPanel.TargetMapName, trigger, isExchangeA: true, tradeType: 0, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
         CapturePendingOpenRequestFromTrigger(TradeTab.RightPanel.TargetMapName, trigger, isExchangeA: false, tradeType: 1, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
 
-        await _mt5ManualTradeService.ExecuteBuyAsync(
-            _runtimeConfigState.CurrentChartHwndA,
-            _runtimeConfigState.CurrentChartHwndB);
+        await _tradeExecutionRouter.OpenPairAsync(
+            new TradeOpenPairRequest(
+                new TradeOpenLegRequest(
+                    Exchange: "A",
+                    Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformA),
+                    ChartHwnd: _runtimeConfigState.CurrentChartHwndA,
+                    Action: TradeLegAction.Buy),
+                new TradeOpenLegRequest(
+                    Exchange: "B",
+                    Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformB),
+                    ChartHwnd: _runtimeConfigState.CurrentChartHwndB,
+                    Action: TradeLegAction.Sell)));
 
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
@@ -581,9 +626,18 @@ public sealed class DashboardViewModel : ObservableObject
         CapturePendingOpenRequestFromTrigger(TradeTab.LeftPanel.TargetMapName, trigger, isExchangeA: true, tradeType: 1, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
         CapturePendingOpenRequestFromTrigger(TradeTab.RightPanel.TargetMapName, trigger, isExchangeA: false, tradeType: 0, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
 
-        await _mt5ManualTradeService.ExecuteSellAsync(
-            _runtimeConfigState.CurrentChartHwndA,
-            _runtimeConfigState.CurrentChartHwndB);
+        await _tradeExecutionRouter.OpenPairAsync(
+            new TradeOpenPairRequest(
+                new TradeOpenLegRequest(
+                    Exchange: "A",
+                    Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformA),
+                    ChartHwnd: _runtimeConfigState.CurrentChartHwndA,
+                    Action: TradeLegAction.Sell),
+                new TradeOpenLegRequest(
+                    Exchange: "B",
+                    Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformB),
+                    ChartHwnd: _runtimeConfigState.CurrentChartHwndB,
+                    Action: TradeLegAction.Buy)));
 
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
@@ -623,9 +677,24 @@ public sealed class DashboardViewModel : ObservableObject
         CapturePendingCloseRequestFromTrigger(selectA, trigger, isExchangeA: true, appCloseRequestTimeLocal, appCloseRequestRawMs, slot);
         CapturePendingCloseRequestFromTrigger(selectB, trigger, isExchangeA: false, appCloseRequestTimeLocal, appCloseRequestRawMs, slot);
 
-        var closeResult = await _mt5ManualTradeService.ExecuteCloseAsync(
-            selectA.Request,
-            selectB.Request);
+        var closeResult = await _tradeExecutionRouter.ClosePairAsync(
+            new TradeClosePairRequest(
+                LegA: selectA.Request is null
+                    ? null
+                    : new TradeCloseLegRequest(
+                        Exchange: selectA.Request.Exchange,
+                        Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformA),
+                        TradeHwnd: selectA.Request.TradeHwnd,
+                        Ticket: selectA.Request.Ticket,
+                        Action: TradeLegAction.Close),
+                LegB: selectB.Request is null
+                    ? null
+                    : new TradeCloseLegRequest(
+                        Exchange: selectB.Request.Exchange,
+                        Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformB),
+                        TradeHwnd: selectB.Request.TradeHwnd,
+                        Ticket: selectB.Request.Ticket,
+                        Action: TradeLegAction.Close)));
 
         var hadCloseCandidateA = selectA.Request is not null;
         var hadCloseCandidateB = selectB.Request is not null;
@@ -1024,6 +1093,17 @@ public sealed class DashboardViewModel : ObservableObject
         }
 
         return isExchangeA ? snapshot.ExchangeA.Symbol : snapshot.ExchangeB.Symbol;
+    }
+
+    private static TradeLegPlatform ResolveTradeLegPlatform(string? platformRaw)
+    {
+        var normalized = (platformRaw ?? string.Empty).Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "mt4" => TradeLegPlatform.Mt4,
+            "mt5" => TradeLegPlatform.Mt5,
+            _ => throw new InvalidOperationException($"Unsupported platform: '{platformRaw}'")
+        };
     }
 
     private static double? ResolveExpectedClosePrice(DashboardMetrics? snapshot, bool isExchangeA, int originalTradeType)

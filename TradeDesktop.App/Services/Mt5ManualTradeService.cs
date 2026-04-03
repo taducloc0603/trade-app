@@ -14,8 +14,8 @@ public sealed class Mt5ManualTradeService : IMt5ManualTradeService
             chartHwndB,
             actionA: "BUY",
             actionB: "SELL",
-            clickA: NativeMethods.ClickBuy,
-            clickB: NativeMethods.ClickSell,
+            clickA: NativeMethodsMt5.ClickBuy,
+            clickB: NativeMethodsMt5.ClickSell,
             cancellationToken);
 
     public Task<ManualTradeResult> ExecuteSellAsync(string chartHwndA, string chartHwndB, CancellationToken cancellationToken = default)
@@ -25,8 +25,8 @@ public sealed class Mt5ManualTradeService : IMt5ManualTradeService
             chartHwndB,
             actionA: "SELL",
             actionB: "BUY",
-            clickA: NativeMethods.ClickSell,
-            clickB: NativeMethods.ClickBuy,
+            clickA: NativeMethodsMt5.ClickSell,
+            clickB: NativeMethodsMt5.ClickBuy,
             cancellationToken);
 
     public async Task<ManualTradeResult> ExecuteCloseAsync(ManualCloseRequest? closeA, ManualCloseRequest? closeB, CancellationToken cancellationToken = default)
@@ -162,7 +162,7 @@ public sealed class Mt5ManualTradeService : IMt5ManualTradeService
         IntPtr ctx = IntPtr.Zero;
         try
         {
-            ctx = NativeMethods.CreateContextFromParent(tradeParentHwnd);
+            ctx = NativeMethodsMt5.CreateContextFromParent(tradeParentHwnd);
             if (ctx == IntPtr.Zero)
             {
                 return Task.FromResult(new ManualTradeLegResult(
@@ -172,7 +172,7 @@ public sealed class Mt5ManualTradeService : IMt5ManualTradeService
                     Detail: $"Close {request.Exchange} failed: ticket={request.Ticket}, error=create_context_from_parent failed"));
             }
 
-            var rowCount = NativeMethods.UpdateRowCount(ctx);
+            var rowCount = NativeMethodsMt5.UpdateRowCount(ctx);
             if (rowCount <= 0)
             {
                 return Task.FromResult(new ManualTradeLegResult(
@@ -182,7 +182,7 @@ public sealed class Mt5ManualTradeService : IMt5ManualTradeService
                     Detail: $"Close {request.Exchange} skipped: no open trade"));
             }
 
-            var closeResult = NativeMethods.ClosePositionMt5(ctx, 0);
+            var closeResult = NativeMethodsMt5.ClosePositionMt5(ctx, 0);
             var success = closeResult == 1;
             return Task.FromResult(new ManualTradeLegResult(
                 Exchange: request.Exchange,
@@ -204,7 +204,7 @@ public sealed class Mt5ManualTradeService : IMt5ManualTradeService
         {
             if (ctx != IntPtr.Zero)
             {
-                NativeMethods.DestroyContext(ctx);
+                NativeMethodsMt5.DestroyContext(ctx);
             }
         }
     }
@@ -230,7 +230,7 @@ public sealed class Mt5ManualTradeService : IMt5ManualTradeService
     {
         try
         {
-            return NativeMethods.IsValidWindow(hwnd) == 1;
+            return NativeMethodsMt5.IsValidWindow(hwnd) == 1;
         }
         catch
         {
