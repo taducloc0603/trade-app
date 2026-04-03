@@ -27,6 +27,7 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
     private readonly IRuntimeConfigProvider _runtimeConfigProvider;
     private readonly Dictionary<string, MapReaderHandle> _mapReaders = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, LatencyAccumulator> _latencyStatsByMap = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, TpsAccumulator> _tpsStatsByMap = new(StringComparer.OrdinalIgnoreCase);
     private CancellationTokenSource? _cts;
     private Task? _worker;
 
@@ -142,6 +143,7 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
 
             var latencyMs = TryComputeLatencyMs(tickRecord.TimestampMs);
             var (maxLatMs, avgLatMs) = UpdateLatencyStats(normalizedMapName, latencyMs);
+            var tps = UpdateTpsStats(normalizedMapName);
 
             return new ExchangeMetrics(
                 Symbol: symbol,
@@ -149,7 +151,7 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
                 Ask: askDecimal,
                 Spread: spreadDecimal,
                 LatencyMs: latencyMs,
-                Tps: null,
+                Tps: tps,
                 Time: FormatTickTime(tickRecord.TickTimeMsc),
                 MaxLatMs: maxLatMs,
                 AvgLatMs: avgLatMs,
@@ -207,6 +209,7 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
                 _mapReaders[key].Dispose();
                 _mapReaders.Remove(key);
                 _latencyStatsByMap.Remove(key);
+                _tpsStatsByMap.Remove(key);
             }
         }
     }
@@ -223,6 +226,7 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
             handle.Dispose();
             _mapReaders.Remove(mapName);
             _latencyStatsByMap.Remove(mapName);
+            _tpsStatsByMap.Remove(mapName);
         }
     }
 
@@ -237,6 +241,7 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
 
             _mapReaders.Clear();
             _latencyStatsByMap.Clear();
+            _tpsStatsByMap.Clear();
         }
     }
 
@@ -257,6 +262,22 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
 
             accumulator.Add(latencyMs.Value);
             return (accumulator.Max, accumulator.Avg);
+        }
+    }
+
+    private float? UpdateTpsStats(string mapName)
+    {
+        var currentSecond = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+        lock (_syncRoot)
+        {
+            if (!_tpsStatsByMap.TryGetValue(mapName, out var accumulator))
+            {
+                accumulator = new TpsAccumulator();
+                _tpsStatsByMap[mapName] = accumulator;
+            }
+
+            return accumulator.Add(currentSecond);
         }
     }
 
@@ -420,6 +441,36 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
 
             _sum += latency;
             _count++;
+        }
+    }
+
+    private sealed class TpsAccumulator
+    {
+        private long? _currentSecond;
+        private int _tickCountInCurrentSecond;
+        private float _lastTps;
+
+        public float Add(long second)
+        {
+            if (!_currentSecond.HasValue)
+            {
+                _currentSecond = second;
+                _tickCountInCurrentSecond = 1;
+                _lastTps = 1f;
+                return _lastTps;
+            }
+
+            if (second == _currentSecond.Value)
+            {
+                _tickCountInCurrentSecond++;
+                _lastTps = _tickCountInCurrentSecond;
+                return _lastTps;
+            }
+
+            _lastTps = _tickCountInCurrentSecond;
+            _currentSecond = second;
+            _tickCountInCurrentSecond = 1;
+            return _lastTps;
         }
     }
 }
