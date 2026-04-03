@@ -141,7 +141,7 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
             Debug.WriteLine(
                 $"[SHM:{normalizedMapName}] version={tickRecord.Version} symbol={symbol} tsMs={tickRecord.TimestampMs} tickTimeMsc={tickRecord.TickTimeMsc} bid={tickRecord.Bid} ask={tickRecord.Ask} spread={tickRecord.Spread}");
 
-            var latencyMs = TryComputeLatencyMs(tickRecord.TimestampMs);
+            var latencyMs = TryComputeLatencyMs(tickRecord.TickTimeMsc);
             var (maxLatMs, avgLatMs) = UpdateLatencyStats(normalizedMapName, latencyMs);
             var tps = UpdateTpsStats(normalizedMapName);
 
