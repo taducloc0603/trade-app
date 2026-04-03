@@ -26,9 +26,7 @@ public sealed class TradeExecutionRouter : ITradeExecutionRouter
         Debug.WriteLine($"[TradeRouter][Open] leg={request.LegA.Exchange}, platform={request.LegA.Platform}, action={request.LegA.Action}, chartHwnd={request.LegA.ChartHwnd}");
         Debug.WriteLine($"[TradeRouter][Open] leg={request.LegB.Exchange}, platform={request.LegB.Platform}, action={request.LegB.Action}, chartHwnd={request.LegB.ChartHwnd}");
 
-        var executor = ResolveExecutor(request.LegA.Platform, request.LegB.Platform);
-        Debug.WriteLine($"[TradeRouter][Open] executor={executor.GetType().Name}");
-        return executor.OpenPairAsync(request, cancellationToken);
+        return ExecuteOpenPairPerLegAsync(request, cancellationToken);
     }
 
     public Task<ManualTradeResult> ClosePairAsync(TradeClosePairRequest request, CancellationToken cancellationToken = default)
@@ -61,9 +59,7 @@ public sealed class TradeExecutionRouter : ITradeExecutionRouter
             Debug.WriteLine("[TradeRouter][Close] leg=B, skipped (no close request)");
         }
 
-        var executor = ResolveExecutorForClose(platformA, platformB);
-        Debug.WriteLine($"[TradeRouter][Close] executor={executor.GetType().Name}");
-        return executor.ClosePairAsync(request, cancellationToken);
+        return ExecuteClosePairPerLegAsync(request, cancellationToken);
     }
 
     private static void ValidatePlatformOrThrow(TradeLegPlatform platform, string exchange)
@@ -76,40 +72,63 @@ public sealed class TradeExecutionRouter : ITradeExecutionRouter
         throw new InvalidOperationException($"Invalid platform for exchange {exchange}: {platform}");
     }
 
-    private ITradePlatformExecutor ResolveExecutorForClose(TradeLegPlatform? legAPlatform, TradeLegPlatform? legBPlatform)
+    private async Task<ManualTradeResult> ExecuteOpenPairPerLegAsync(TradeOpenPairRequest request, CancellationToken cancellationToken)
     {
-        if (legAPlatform.HasValue && legBPlatform.HasValue)
-        {
-            return ResolveExecutor(legAPlatform.Value, legBPlatform.Value);
-        }
+        var executorA = ResolveExecutor(request.LegA.Platform);
+        var executorB = ResolveExecutor(request.LegB.Platform);
 
-        if (legAPlatform.HasValue)
-        {
-            return legAPlatform.Value == TradeLegPlatform.Mt4 ? _mt4Executor : _mt5Executor;
-        }
+        Debug.WriteLine($"[TradeRouter][Open] executorA={executorA.GetType().Name}, executorB={executorB.GetType().Name}");
 
-        if (legBPlatform.HasValue)
-        {
-            return legBPlatform.Value == TradeLegPlatform.Mt4 ? _mt4Executor : _mt5Executor;
-        }
+        var legATask = executorA.OpenLegAsync(request.LegA, cancellationToken);
+        var legBTask = executorB.OpenLegAsync(request.LegB, cancellationToken);
+        var legs = await Task.WhenAll(legATask, legBTask);
 
-        // Keep existing close-noop behavior when both legs are absent.
-        return _mt5Executor;
+        return new ManualTradeResult(
+            Label: "OPEN_MANUAL",
+            Success: legs.All(x => x.Success),
+            Legs: legs);
     }
 
-    private ITradePlatformExecutor ResolveExecutor(TradeLegPlatform legAPlatform, TradeLegPlatform legBPlatform)
+    private async Task<ManualTradeResult> ExecuteClosePairPerLegAsync(TradeClosePairRequest request, CancellationToken cancellationToken)
     {
-        if (legAPlatform == TradeLegPlatform.Mt5 && legBPlatform == TradeLegPlatform.Mt5)
+        var tasks = new List<Task<ManualTradeLegResult>>(capacity: 2);
+
+        if (request.LegA is not null)
         {
-            return _mt5Executor;
+            var executorA = ResolveExecutor(request.LegA.Platform);
+            Debug.WriteLine($"[TradeRouter][Close] executorA={executorA.GetType().Name}");
+            tasks.Add(executorA.CloseLegAsync(request.LegA, cancellationToken));
         }
 
-        if (legAPlatform == TradeLegPlatform.Mt4 || legBPlatform == TradeLegPlatform.Mt4)
+        if (request.LegB is not null)
         {
-            return _mt4Executor;
+            var executorB = ResolveExecutor(request.LegB.Platform);
+            Debug.WriteLine($"[TradeRouter][Close] executorB={executorB.GetType().Name}");
+            tasks.Add(executorB.CloseLegAsync(request.LegB, cancellationToken));
         }
 
-        throw new InvalidOperationException(
-            $"Unsupported platform combination: legA={legAPlatform}, legB={legBPlatform}");
+        if (tasks.Count == 0)
+        {
+            return new ManualTradeResult(
+                Label: "CLOSE_MANUAL",
+                Success: true,
+                Legs: []);
+        }
+
+        var legs = await Task.WhenAll(tasks);
+        return new ManualTradeResult(
+            Label: "CLOSE_MANUAL",
+            Success: legs.All(x => x.Success),
+            Legs: legs);
+    }
+
+    private ITradePlatformExecutor ResolveExecutor(TradeLegPlatform platform)
+    {
+        return platform switch
+        {
+            TradeLegPlatform.Mt4 => _mt4Executor,
+            TradeLegPlatform.Mt5 => _mt5Executor,
+            _ => throw new InvalidOperationException($"Unsupported platform: {platform}")
+        };
     }
 }

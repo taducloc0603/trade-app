@@ -9,6 +9,68 @@ public sealed class Mt4TradeExecutor : ITradePlatformExecutor
 
     public TradeLegPlatform Platform => TradeLegPlatform.Mt4;
 
+    public async Task<ManualTradeLegResult> OpenLegAsync(TradeOpenLegRequest request, CancellationToken cancellationToken = default)
+    {
+        if (request is null)
+        {
+            throw new ArgumentNullException(nameof(request));
+        }
+
+        await _actionGate.WaitAsync(cancellationToken);
+        try
+        {
+            if (!TryParseHwnd(request.ChartHwnd, out var chartHwnd))
+            {
+                return new ManualTradeLegResult(
+                    Exchange: request.Exchange,
+                    Action: request.Action.ToString().ToUpperInvariant(),
+                    Success: false,
+                    Detail: $"Open {request.Exchange} failed: HWND CHART không hợp lệ");
+            }
+
+            if (!IsValidWindow(chartHwnd))
+            {
+                return new ManualTradeLegResult(
+                    Exchange: request.Exchange,
+                    Action: request.Action.ToString().ToUpperInvariant(),
+                    Success: false,
+                    Detail: $"Open {request.Exchange} failed: CHART HWND không còn hợp lệ");
+            }
+
+            return ExecuteOpenLeg(request.Exchange, request.Action, chartHwnd);
+        }
+        catch (Exception ex)
+        {
+            return new ManualTradeLegResult(
+                Exchange: request.Exchange,
+                Action: request.Action.ToString().ToUpperInvariant(),
+                Success: false,
+                Detail: ex.Message);
+        }
+        finally
+        {
+            _actionGate.Release();
+        }
+    }
+
+    public async Task<ManualTradeLegResult> CloseLegAsync(TradeCloseLegRequest request, CancellationToken cancellationToken = default)
+    {
+        if (request is null)
+        {
+            throw new ArgumentNullException(nameof(request));
+        }
+
+        await _actionGate.WaitAsync(cancellationToken);
+        try
+        {
+            return CloseFirstTrade(request);
+        }
+        finally
+        {
+            _actionGate.Release();
+        }
+    }
+
     public async Task<ManualTradeResult> OpenPairAsync(TradeOpenPairRequest request, CancellationToken cancellationToken = default)
     {
         if (request is null)
@@ -37,12 +99,8 @@ public sealed class Mt4TradeExecutor : ITradePlatformExecutor
                     ErrorMessage: "Một trong các CHART HWND không còn hợp lệ.");
             }
 
-            var legATask = Task.Run(
-                () => ExecuteOpenLeg(request.LegA.Exchange, request.LegA.Action, hwndA),
-                cancellationToken);
-            var legBTask = Task.Run(
-                () => ExecuteOpenLeg(request.LegB.Exchange, request.LegB.Action, hwndB),
-                cancellationToken);
+            var legATask = Task.Run(() => ExecuteOpenLeg(request.LegA.Exchange, request.LegA.Action, hwndA), cancellationToken);
+            var legBTask = Task.Run(() => ExecuteOpenLeg(request.LegB.Exchange, request.LegB.Action, hwndB), cancellationToken);
             var legs = await Task.WhenAll(legATask, legBTask);
 
             return new ManualTradeResult(
