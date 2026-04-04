@@ -16,6 +16,11 @@ public interface IRuntimeConfigProvider
     int CurrentEndTimeHold { get; }
     int CurrentStartWaitTime { get; }
     int CurrentEndWaitTime { get; }
+    int CurrentConfirmLatencyMs { get; }
+    int CurrentMaxGap { get; }
+    int CurrentMaxSpread { get; }
+    int CurrentOpenPendingTimeMs { get; }
+    int CurrentClosePendingTimeMs { get; }
     string CurrentMapName1 { get; }
     string CurrentMapName2 { get; }
     DashboardMetrics? CurrentDashboardMetrics { get; }

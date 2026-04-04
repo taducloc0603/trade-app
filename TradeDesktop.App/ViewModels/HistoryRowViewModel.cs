@@ -3,6 +3,7 @@ namespace TradeDesktop.App.ViewModels;
 public sealed class HistoryRowViewModel
 {
     public HistoryRowViewModel(
+        string pairId,
         string timestamp,
         string count,
         string symbol,
@@ -24,6 +25,7 @@ public sealed class HistoryRowViewModel
         string openExecution,
         string closeExecution)
     {
+        PairId = pairId;
         Timestamp = timestamp;
         Count = count;
         Symbol = symbol;
@@ -46,6 +48,7 @@ public sealed class HistoryRowViewModel
         CloseExecution = closeExecution;
     }
 
+    public string PairId { get; }
     public string Timestamp { get; }
     public string Count { get; }
     public string Symbol { get; }

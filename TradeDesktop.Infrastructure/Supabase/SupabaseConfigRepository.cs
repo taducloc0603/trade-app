@@ -58,7 +58,9 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
             EndWaitTime: row.EndWaitTime,
             ConfirmLatencyMs: row.ConfirmLatencyMs,
             MaxGap: row.MaxGap,
-            MaxSpread: row.MaxSpread);
+            MaxSpread: row.MaxSpread,
+            OpenPendingTimeMs: row.OpenPendingTimeMs,
+            ClosePendingTimeMs: row.ClosePendingTimeMs);
     }
 
     public async Task<bool> UpdateSansAndHostNameByHostNameAsync(
@@ -152,6 +154,8 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
         first.TryGetProperty("confirm_latency", out var confirmLatencyMsElement);
         first.TryGetProperty("max_gap", out var maxGapElement);
         first.TryGetProperty("max_spread", out var maxSpreadElement);
+        first.TryGetProperty("open_pending_time_ms", out var openPendingTimeMsElement);
+        first.TryGetProperty("close_pending_time_ms", out var closePendingTimeMsElement);
         first.TryGetProperty("platform_a", out var platformAElement);
         first.TryGetProperty("platform_b", out var platformBElement);
 
@@ -184,6 +188,8 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
             ConfirmLatencyMs = confirmLatencyMsElement.ValueKind == JsonValueKind.Number && confirmLatencyMsElement.TryGetInt32(out var confirmLatencyMs) ? confirmLatencyMs : 0,
             MaxGap = maxGapElement.ValueKind == JsonValueKind.Number && maxGapElement.TryGetInt32(out var maxGap) ? maxGap : 0,
             MaxSpread = maxSpreadElement.ValueKind == JsonValueKind.Number && maxSpreadElement.TryGetInt32(out var maxSpread) ? maxSpread : 0,
+            OpenPendingTimeMs = openPendingTimeMsElement.ValueKind == JsonValueKind.Number && openPendingTimeMsElement.TryGetInt32(out var openPendingTimeMs) ? openPendingTimeMs : 0,
+            ClosePendingTimeMs = closePendingTimeMsElement.ValueKind == JsonValueKind.Number && closePendingTimeMsElement.TryGetInt32(out var closePendingTimeMs) ? closePendingTimeMs : 0,
             PlatformA = platformAElement.ValueKind == JsonValueKind.String ? platformAElement.GetString() : null,
             PlatformB = platformBElement.ValueKind == JsonValueKind.String ? platformBElement.GetString() : null
         };
@@ -234,6 +240,8 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
         first.TryGetProperty("confirm_latency", out var confirmLatencyMsElement);
         first.TryGetProperty("max_gap", out var maxGapElement);
         first.TryGetProperty("max_spread", out var maxSpreadElement);
+        first.TryGetProperty("open_pending_time_ms", out var openPendingTimeMsElement);
+        first.TryGetProperty("close_pending_time_ms", out var closePendingTimeMsElement);
         first.TryGetProperty("platform_a", out var platformAElement);
         first.TryGetProperty("platform_b", out var platformBElement);
 
@@ -264,6 +272,8 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
             ConfirmLatencyMs = confirmLatencyMsElement.ValueKind == JsonValueKind.Number && confirmLatencyMsElement.TryGetInt32(out var confirmLatencyMs) ? confirmLatencyMs : 0,
             MaxGap = maxGapElement.ValueKind == JsonValueKind.Number && maxGapElement.TryGetInt32(out var maxGap) ? maxGap : 0,
             MaxSpread = maxSpreadElement.ValueKind == JsonValueKind.Number && maxSpreadElement.TryGetInt32(out var maxSpread) ? maxSpread : 0,
+            OpenPendingTimeMs = openPendingTimeMsElement.ValueKind == JsonValueKind.Number && openPendingTimeMsElement.TryGetInt32(out var openPendingTimeMs) ? openPendingTimeMs : 0,
+            ClosePendingTimeMs = closePendingTimeMsElement.ValueKind == JsonValueKind.Number && closePendingTimeMsElement.TryGetInt32(out var closePendingTimeMs) ? closePendingTimeMs : 0,
             PlatformA = platformAElement.ValueKind == JsonValueKind.String ? platformAElement.GetString() : null,
             PlatformB = platformBElement.ValueKind == JsonValueKind.String ? platformBElement.GetString() : null
         };
@@ -368,6 +378,12 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
 
         [JsonPropertyName("max_spread")]
         public int MaxSpread { get; set; }
+
+        [JsonPropertyName("open_pending_time_ms")]
+        public int OpenPendingTimeMs { get; set; }
+
+        [JsonPropertyName("close_pending_time_ms")]
+        public int ClosePendingTimeMs { get; set; }
 
         [JsonPropertyName("platform_a")]
         public string? PlatformA { get; set; }

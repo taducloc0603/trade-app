@@ -60,7 +60,9 @@ public sealed class ConfigService(
             record.SansJson,
             record.ConfirmLatencyMs,
             record.MaxGap,
-            record.MaxSpread);
+            record.MaxSpread,
+            record.OpenPendingTimeMs,
+            record.ClosePendingTimeMs);
     }
 
     public async Task<ConfigSaveResult> SaveByMachineHostNameAsync(
@@ -133,7 +135,9 @@ public sealed record ConfigLoadResult(
     string? Error,
     int ConfirmLatencyMs,
     int MaxGap,
-    int MaxSpread)
+    int MaxSpread,
+    int OpenPendingTimeMs,
+    int ClosePendingTimeMs)
 {
     public static ConfigLoadResult Success(
         string machineHostName,
@@ -156,7 +160,9 @@ public sealed record ConfigLoadResult(
         string sansJson,
         int confirmLatencyMs = 0,
         int maxGap = 0,
-        int maxSpread = 0) =>
+        int maxSpread = 0,
+        int openPendingTimeMs = 0,
+        int closePendingTimeMs = 0) =>
         new(
             true,
             true,
@@ -181,13 +187,15 @@ public sealed record ConfigLoadResult(
             null,
             Math.Max(0, confirmLatencyMs),
             Math.Max(0, maxGap),
-            Math.Max(0, maxSpread));
+            Math.Max(0, maxSpread),
+            Math.Max(0, openPendingTimeMs),
+            Math.Max(0, closePendingTimeMs));
 
     public static ConfigLoadResult NotFound(string machineHostName) =>
-        new(false, false, machineHostName, "mt5", "mt5", 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", null, 0, 0, 0);
+        new(false, false, machineHostName, "mt5", "mt5", 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", null, 0, 0, 0, 0, 0);
 
     public static ConfigLoadResult Failed(string machineHostName, string error) =>
-        new(false, true, machineHostName, "mt5", "mt5", 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", error, 0, 0, 0);
+        new(false, true, machineHostName, "mt5", "mt5", 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", error, 0, 0, 0, 0, 0);
 
     private static string NormalizePlatform(string? platform)
     {

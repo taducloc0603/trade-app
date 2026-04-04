@@ -351,7 +351,12 @@ public sealed class ConfigViewModel : ObservableObject
                 loadResult.StartTimeHold,
                 loadResult.EndTimeHold,
                 loadResult.StartWaitTime,
-                loadResult.EndWaitTime);
+                loadResult.EndWaitTime,
+                loadResult.ConfirmLatencyMs,
+                loadResult.MaxGap,
+                loadResult.MaxSpread,
+                loadResult.OpenPendingTimeMs,
+                loadResult.ClosePendingTimeMs);
             IsExistingRecordLoaded = true;
             AreMapNamesEnabled = true;
 

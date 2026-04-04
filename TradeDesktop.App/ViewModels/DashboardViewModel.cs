@@ -38,11 +38,14 @@ public sealed class DashboardViewModel : ObservableObject
     private readonly Dictionary<string, List<PendingCloseRequest>> _pendingCloseRequestsByMap = new(StringComparer.Ordinal);
     private readonly Dictionary<ulong, PendingOpenRequest> _openRequestByTicket = [];
     private readonly Dictionary<ulong, PendingCloseRequest> _closeRequestByTicket = [];
+    private readonly Dictionary<ulong, string> _pairIdByTicket = [];
     private readonly Dictionary<int, OpenConfirmCycleState> _openConfirmBySlot = [];
     private readonly Dictionary<int, CloseConfirmCycleState> _closeConfirmBySlot = [];
     private readonly Dictionary<ulong, double> _openSlippageByTicket = [];
     private readonly Dictionary<ulong, long> _openExecutionMsByTicket = [];
     private readonly Dictionary<ulong, long> _closeExecutionMsByTicket = [];
+    private readonly Dictionary<string, PendingOpenPairState> _pendingOpenPairById = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, PendingClosePairState> _pendingClosePairById = new(StringComparer.Ordinal);
     private int _manualSlot;
     private int _autoSlot;
     private readonly Queue<SignalEntryGuard.PriceHistoryEntry> _priceHistory = new();
@@ -52,6 +55,7 @@ public sealed class DashboardViewModel : ObservableObject
     private static readonly TimeSpan OrderInfoPollInterval = TimeSpan.FromSeconds(1);
 
     private sealed record PendingOpenRequest(
+        string PairId,
         string TradeMapName,
         string? Symbol,
         int TradeType,
@@ -66,6 +70,7 @@ public sealed class DashboardViewModel : ObservableObject
         string ExchangeLabel = "");
 
     private sealed record PendingCloseRequest(
+        string PairId,
         string TradeMapName,
         ulong? Ticket,
         string? Symbol,
@@ -93,6 +98,88 @@ public sealed class DashboardViewModel : ObservableObject
         public bool HasB { get; set; }
         public bool WaitingStarted { get; set; }
     }
+
+    private sealed class PendingClosePairState
+    {
+        public string PairId { get; init; } = string.Empty;
+        public bool IsAutoFlow { get; init; }
+        public int SlotNumber { get; init; }
+        public DateTimeOffset CreatedAtLocal { get; set; }
+        public DateTimeOffset LastCheckedAtLocal { get; set; }
+        public int ClosePendingTimeoutMs { get; set; }
+        public int RetryChecks { get; set; }
+        public bool ExhaustedLogged { get; set; }
+        public bool IsResolved { get; set; }
+
+        public bool CloseConfirmedA { get; set; }
+        public bool CloseConfirmedB { get; set; }
+
+        public string? TradeMapNameA { get; set; }
+        public string? TradeMapNameB { get; set; }
+        public TradeLegPlatform? PlatformA { get; set; }
+        public TradeLegPlatform? PlatformB { get; set; }
+        public string? TradeHwndA { get; set; }
+        public string? TradeHwndB { get; set; }
+        public ulong? TicketA { get; set; }
+        public ulong? TicketB { get; set; }
+        public int? TradeTypeA { get; set; }
+        public int? TradeTypeB { get; set; }
+        public string? SymbolA { get; set; }
+        public string? SymbolB { get; set; }
+        public double? VolumeA { get; set; }
+        public double? VolumeB { get; set; }
+    }
+
+    private sealed class PendingOpenPairState
+    {
+        public string PairId { get; init; } = string.Empty;
+        public bool IsAutoFlow { get; init; }
+        public int SlotNumber { get; init; }
+        public DateTimeOffset CreatedAtLocal { get; init; }
+        public int OpenPendingTimeoutMs { get; set; }
+
+        public bool OpenConfirmedA { get; set; }
+        public bool OpenConfirmedB { get; set; }
+        public ulong? OpenedTicketA { get; set; }
+        public ulong? OpenedTicketB { get; set; }
+
+        public string? TradeMapNameA { get; set; }
+        public string? TradeMapNameB { get; set; }
+        public int? TradeTypeA { get; set; }
+        public int? TradeTypeB { get; set; }
+        public string? SymbolA { get; set; }
+        public string? SymbolB { get; set; }
+        public double? VolumeA { get; set; }
+        public double? VolumeB { get; set; }
+
+        public bool TimeoutCloseTriggered { get; set; }
+        public bool IsResolved { get; set; }
+    }
+
+    private sealed record PendingOpenTimeoutAction(
+        string PairId,
+        bool IsAutoFlow,
+        int SlotNumber,
+        string OpenedExchange,
+        string MissingExchange,
+        ulong Ticket,
+        string TradeMapName,
+        int? TradeType,
+        string? Symbol,
+        double? Volume);
+
+    private sealed record PendingCloseRetryAction(
+        string PairId,
+        bool IsAutoFlow,
+        int SlotNumber,
+        string Exchange,
+        string TradeMapName,
+        TradeLegPlatform Platform,
+        string TradeHwnd,
+        ulong Ticket,
+        int? TradeType,
+        string? Symbol,
+        double? Volume);
 
     private string _runtimeSummary = string.Empty;
     private string _dbInlineData = string.Empty;
@@ -997,6 +1084,7 @@ public sealed class DashboardViewModel : ObservableObject
         }
 
         var pending = new PendingOpenRequest(
+            PairId: BuildPairId(slotNumber, appOpenRequestRawMs, isAutoFlow),
             TradeMapName: key,
             Symbol: symbol,
             TradeType: tradeType,
@@ -1011,7 +1099,41 @@ public sealed class DashboardViewModel : ObservableObject
             ExchangeLabel: exchangeLabel);
 
         pendingList.Add(pending);
+        RegisterOrUpdatePendingOpenPairState(pending);
         Debug.WriteLine($"[ExecOpen][Capture] map={key}, type={tradeType}, slot={slotNumber}, label={exchangeLabel}, app_open_request_time={pending.AppOpenRequestTimeLocal:O}, app_open_request_raw_ms={pending.AppOpenRequestRawMs}");
+    }
+
+    private void RegisterOrUpdatePendingOpenPairState(PendingOpenRequest pending)
+    {
+        if (!_pendingOpenPairById.TryGetValue(pending.PairId, out var state))
+        {
+            state = new PendingOpenPairState
+            {
+                PairId = pending.PairId,
+                IsAutoFlow = pending.IsAutoFlow,
+                SlotNumber = pending.SlotNumber,
+                CreatedAtLocal = pending.AppOpenRequestTimeLocal,
+                OpenPendingTimeoutMs = Math.Max(0, _runtimeConfigState.CurrentOpenPendingTimeMs)
+            };
+            _pendingOpenPairById[pending.PairId] = state;
+        }
+
+        state.OpenPendingTimeoutMs = Math.Max(0, _runtimeConfigState.CurrentOpenPendingTimeMs);
+
+        if (string.Equals(pending.ExchangeLabel, "A", StringComparison.OrdinalIgnoreCase))
+        {
+            state.TradeMapNameA = pending.TradeMapName;
+            state.TradeTypeA = pending.TradeType;
+            state.SymbolA = pending.Symbol;
+            state.VolumeA = pending.Volume;
+        }
+        else if (string.Equals(pending.ExchangeLabel, "B", StringComparison.OrdinalIgnoreCase))
+        {
+            state.TradeMapNameB = pending.TradeMapName;
+            state.TradeTypeB = pending.TradeType;
+            state.SymbolB = pending.Symbol;
+            state.VolumeB = pending.Volume;
+        }
     }
 
     private void RegisterPendingCloseRequest(
@@ -1035,6 +1157,7 @@ public sealed class DashboardViewModel : ObservableObject
         }
 
         var pending = new PendingCloseRequest(
+            PairId: ResolvePairIdForClose(ticket, slotNumber, appCloseRequestRawMs, isAutoFlow),
             TradeMapName: key,
             Ticket: ticket,
             Symbol: symbol,
@@ -1049,11 +1172,67 @@ public sealed class DashboardViewModel : ObservableObject
             ExchangeLabel: exchangeLabel);
 
         pendingList.Add(pending);
+        RegisterOrUpdatePendingClosePairState(pending);
         Debug.WriteLine($"[ExecClose][Capture] map={key}, ticket={(ticket.HasValue ? ticket.Value.ToString(CultureInfo.InvariantCulture) : "-")}, type={tradeType}, slot={slotNumber}, label={exchangeLabel}, app_close_request_time={pending.AppCloseRequestTimeLocal:O}, app_close_request_raw_ms={pending.AppCloseRequestRawMs}");
+    }
+
+    private void RegisterOrUpdatePendingClosePairState(PendingCloseRequest pending)
+    {
+        if (!_pendingClosePairById.TryGetValue(pending.PairId, out var state))
+        {
+            state = new PendingClosePairState
+            {
+                PairId = pending.PairId,
+                IsAutoFlow = pending.IsAutoFlow,
+                SlotNumber = pending.SlotNumber,
+                CreatedAtLocal = pending.AppCloseRequestTimeLocal,
+                LastCheckedAtLocal = pending.AppCloseRequestTimeLocal,
+                ClosePendingTimeoutMs = Math.Max(0, _runtimeConfigState.CurrentClosePendingTimeMs)
+            };
+            _pendingClosePairById[pending.PairId] = state;
+        }
+
+        state.ClosePendingTimeoutMs = Math.Max(0, _runtimeConfigState.CurrentClosePendingTimeMs);
+
+        if (string.Equals(pending.ExchangeLabel, "A", StringComparison.OrdinalIgnoreCase))
+        {
+            state.TradeMapNameA = pending.TradeMapName;
+            state.PlatformA = ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformA);
+            state.TradeHwndA = _runtimeConfigState.CurrentTradeHwndA;
+            state.TicketA = pending.Ticket;
+            state.TradeTypeA = pending.TradeType;
+            state.SymbolA = pending.Symbol;
+            state.VolumeA = pending.Volume;
+            state.CloseConfirmedA = false;
+        }
+        else if (string.Equals(pending.ExchangeLabel, "B", StringComparison.OrdinalIgnoreCase))
+        {
+            state.TradeMapNameB = pending.TradeMapName;
+            state.PlatformB = ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformB);
+            state.TradeHwndB = _runtimeConfigState.CurrentTradeHwndB;
+            state.TicketB = pending.Ticket;
+            state.TradeTypeB = pending.TradeType;
+            state.SymbolB = pending.Symbol;
+            state.VolumeB = pending.Volume;
+            state.CloseConfirmedB = false;
+        }
     }
 
     private static string ResolveTradeMapNameFromCloseSelection(CloseSelectionResult selection)
         => NormalizeMapName(selection.TradeMapName);
+
+    private static string BuildPairId(int slotNumber, long requestRawMs, bool isAutoFlow)
+        => $"{(isAutoFlow ? "AUTO" : "MANUAL")}-{slotNumber:D4}-{requestRawMs}";
+
+    private string ResolvePairIdForClose(ulong? ticket, int slotNumber, long requestRawMs, bool isAutoFlow)
+    {
+        if (ticket.HasValue && _pairIdByTicket.TryGetValue(ticket.Value, out var pairId) && !string.IsNullOrWhiteSpace(pairId))
+        {
+            return pairId;
+        }
+
+        return BuildPairId(slotNumber, requestRawMs, isAutoFlow);
+    }
 
     private static string ResolveTradeMapNameFromHistoryMap(string historyMapName)
     {
@@ -1343,6 +1522,8 @@ public sealed class DashboardViewModel : ObservableObject
 
         while (await timer.WaitForNextTickAsync(cancellationToken))
         {
+            List<PendingOpenTimeoutAction> timeoutActions = [];
+            List<PendingCloseRetryAction> closeRetryActions = [];
             var tradeLeftResult = _tradesSharedMemoryReader.ReadTrades(TradeTab.LeftPanel.TargetMapName);
             var tradeRightResult = _tradesSharedMemoryReader.ReadTrades(TradeTab.RightPanel.TargetMapName);
             var historyLeftResult = _historySharedMemoryReader.ReadHistory(HistoryTab.LeftPanel.TargetMapName);
@@ -1377,8 +1558,348 @@ public sealed class DashboardViewModel : ObservableObject
                 {
                     ApplyHistoryResult(HistoryTab.RightPanel, historyRightResult, point);
                 }
+
+                timeoutActions = CollectPendingOpenTimeoutActions();
+                closeRetryActions = CollectPendingCloseRetryActions();
             });
+
+            if (timeoutActions.Count > 0)
+            {
+                await ExecutePendingOpenTimeoutActionsAsync(timeoutActions, cancellationToken);
+            }
+
+            if (closeRetryActions.Count > 0)
+            {
+                await ExecutePendingCloseRetryActionsAsync(closeRetryActions, cancellationToken);
+            }
         }
+    }
+
+    private List<PendingOpenTimeoutAction> CollectPendingOpenTimeoutActions()
+    {
+        var actions = new List<PendingOpenTimeoutAction>();
+        var now = DateTimeOffset.Now;
+
+        foreach (var state in _pendingOpenPairById.Values)
+        {
+            if (state.IsResolved || state.TimeoutCloseTriggered)
+            {
+                continue;
+            }
+
+            var timeoutMs = Math.Max(0, state.OpenPendingTimeoutMs);
+            if (timeoutMs <= 0)
+            {
+                continue;
+            }
+
+            if (now - state.CreatedAtLocal < TimeSpan.FromMilliseconds(timeoutMs))
+            {
+                continue;
+            }
+
+            var hasOnlyA = state.OpenConfirmedA && !state.OpenConfirmedB && state.OpenedTicketA.HasValue;
+            var hasOnlyB = state.OpenConfirmedB && !state.OpenConfirmedA && state.OpenedTicketB.HasValue;
+
+            if (!hasOnlyA && !hasOnlyB)
+            {
+                state.IsResolved = state.OpenConfirmedA && state.OpenConfirmedB;
+                continue;
+            }
+
+            state.TimeoutCloseTriggered = true;
+
+            if (hasOnlyA)
+            {
+                actions.Add(new PendingOpenTimeoutAction(
+                    PairId: state.PairId,
+                    IsAutoFlow: state.IsAutoFlow,
+                    SlotNumber: state.SlotNumber,
+                    OpenedExchange: "A",
+                    MissingExchange: "B",
+                    Ticket: state.OpenedTicketA!.Value,
+                    TradeMapName: state.TradeMapNameA ?? string.Empty,
+                    TradeType: state.TradeTypeA,
+                    Symbol: state.SymbolA,
+                    Volume: state.VolumeA));
+            }
+            else if (hasOnlyB)
+            {
+                actions.Add(new PendingOpenTimeoutAction(
+                    PairId: state.PairId,
+                    IsAutoFlow: state.IsAutoFlow,
+                    SlotNumber: state.SlotNumber,
+                    OpenedExchange: "B",
+                    MissingExchange: "A",
+                    Ticket: state.OpenedTicketB!.Value,
+                    TradeMapName: state.TradeMapNameB ?? string.Empty,
+                    TradeType: state.TradeTypeB,
+                    Symbol: state.SymbolB,
+                    Volume: state.VolumeB));
+            }
+        }
+
+        return actions;
+    }
+
+    private async Task ExecutePendingOpenTimeoutActionsAsync(
+        IReadOnlyList<PendingOpenTimeoutAction> actions,
+        CancellationToken cancellationToken)
+    {
+        foreach (var action in actions)
+        {
+            await CloseOpenedLegByTimeoutAsync(action, cancellationToken);
+        }
+    }
+
+    private async Task CloseOpenedLegByTimeoutAsync(PendingOpenTimeoutAction action, CancellationToken cancellationToken)
+    {
+        var isExchangeA = string.Equals(action.OpenedExchange, "A", StringComparison.OrdinalIgnoreCase);
+        var platform = ResolveTradeLegPlatform(isExchangeA ? _runtimeConfigState.CurrentPlatformA : _runtimeConfigState.CurrentPlatformB);
+        var tradeHwnd = isExchangeA ? _runtimeConfigState.CurrentTradeHwndA : _runtimeConfigState.CurrentTradeHwndB;
+
+        var appCloseRequestTimeLocal = DateTimeOffset.Now;
+        var appCloseRequestRawMs = Environment.TickCount64;
+
+        if (action.TradeType.HasValue)
+        {
+            var expectedClose = ResolveExpectedClosePrice(_runtimeConfigState.CurrentDashboardMetrics, isExchangeA, action.TradeType.Value);
+            RegisterPendingCloseRequest(
+                tradeMapName: action.TradeMapName,
+                ticket: action.Ticket,
+                tradeType: action.TradeType.Value,
+                expectedPrice: expectedClose,
+                appCloseRequestTimeLocal: appCloseRequestTimeLocal,
+                appCloseRequestRawMs: appCloseRequestRawMs,
+                symbol: action.Symbol,
+                volume: action.Volume,
+                isAutoFlow: action.IsAutoFlow,
+                slotNumber: action.SlotNumber,
+                exchangeLabel: action.OpenedExchange);
+        }
+
+        var closeResult = await _tradeExecutionRouter.ClosePairAsync(
+            new TradeClosePairRequest(
+                LegA: isExchangeA
+                    ? new TradeCloseLegRequest(
+                        Exchange: "A",
+                        Platform: platform,
+                        TradeHwnd: tradeHwnd,
+                        Ticket: action.Ticket,
+                        Action: TradeLegAction.Close)
+                    : null,
+                LegB: isExchangeA
+                    ? null
+                    : new TradeCloseLegRequest(
+                        Exchange: "B",
+                        Platform: platform,
+                        TradeHwnd: tradeHwnd,
+                        Ticket: action.Ticket,
+                        Action: TradeLegAction.Close)),
+            cancellationToken);
+
+        System.Windows.Application.Current.Dispatcher.Invoke(() =>
+        {
+            SignalLogItems.Insert(0,
+                $"[{DateTime.Now:HH:mm:ss.fff}] {action.OpenedExchange} close by {action.MissingExchange} can not open.");
+
+            if (_pendingOpenPairById.TryGetValue(action.PairId, out var state))
+            {
+                state.IsResolved = true;
+            }
+        });
+
+        Debug.WriteLine($"[ExecOpen][TimeoutClose] pairId={action.PairId}, opened={action.OpenedExchange}, missing={action.MissingExchange}, ticket={action.Ticket}, success={closeResult.Success}");
+    }
+
+    private List<PendingCloseRetryAction> CollectPendingCloseRetryActions()
+    {
+        var actions = new List<PendingCloseRetryAction>();
+        var now = DateTimeOffset.Now;
+
+        foreach (var state in _pendingClosePairById.Values)
+        {
+            if (state.IsResolved)
+            {
+                continue;
+            }
+
+            state.ClosePendingTimeoutMs = Math.Max(0, _runtimeConfigState.CurrentClosePendingTimeMs);
+            var timeoutMs = state.ClosePendingTimeoutMs;
+            if (timeoutMs <= 0)
+            {
+                continue;
+            }
+
+            if (now - state.LastCheckedAtLocal < TimeSpan.FromMilliseconds(timeoutMs))
+            {
+                continue;
+            }
+
+            state.LastCheckedAtLocal = now;
+
+            var needCheckA = state.CloseConfirmedA == false && state.TicketA.HasValue;
+            var needCheckB = state.CloseConfirmedB == false && state.TicketB.HasValue;
+
+            if (!needCheckA && !needCheckB)
+            {
+                state.IsResolved = true;
+                continue;
+            }
+
+            if (needCheckA)
+            {
+                if (!IsTicketStillOpen(state.TradeMapNameA, state.TicketA!.Value))
+                {
+                    state.CloseConfirmedA = true;
+                }
+                else if (state.RetryChecks < 2 &&
+                         !string.IsNullOrWhiteSpace(state.TradeMapNameA) &&
+                         state.PlatformA.HasValue &&
+                         !string.IsNullOrWhiteSpace(state.TradeHwndA))
+                {
+                    actions.Add(new PendingCloseRetryAction(
+                        PairId: state.PairId,
+                        IsAutoFlow: state.IsAutoFlow,
+                        SlotNumber: state.SlotNumber,
+                        Exchange: "A",
+                        TradeMapName: state.TradeMapNameA!,
+                        Platform: state.PlatformA.Value,
+                        TradeHwnd: state.TradeHwndA!,
+                        Ticket: state.TicketA!.Value,
+                        TradeType: state.TradeTypeA,
+                        Symbol: state.SymbolA,
+                        Volume: state.VolumeA));
+                }
+            }
+
+            if (needCheckB)
+            {
+                if (!IsTicketStillOpen(state.TradeMapNameB, state.TicketB!.Value))
+                {
+                    state.CloseConfirmedB = true;
+                }
+                else if (state.RetryChecks < 2 &&
+                         !string.IsNullOrWhiteSpace(state.TradeMapNameB) &&
+                         state.PlatformB.HasValue &&
+                         !string.IsNullOrWhiteSpace(state.TradeHwndB))
+                {
+                    actions.Add(new PendingCloseRetryAction(
+                        PairId: state.PairId,
+                        IsAutoFlow: state.IsAutoFlow,
+                        SlotNumber: state.SlotNumber,
+                        Exchange: "B",
+                        TradeMapName: state.TradeMapNameB!,
+                        Platform: state.PlatformB.Value,
+                        TradeHwnd: state.TradeHwndB!,
+                        Ticket: state.TicketB!.Value,
+                        TradeType: state.TradeTypeB,
+                        Symbol: state.SymbolB,
+                        Volume: state.VolumeB));
+                }
+            }
+
+            if (state.CloseConfirmedA && state.CloseConfirmedB)
+            {
+                state.IsResolved = true;
+                continue;
+            }
+
+            if (state.RetryChecks >= 2 && !state.ExhaustedLogged)
+            {
+                state.ExhaustedLogged = true;
+                state.IsResolved = true;
+                SignalLogItems.Insert(0,
+                    $"    - [{DateTime.Now:HH:mm:ss.fff}] Close pending exhausted after 2 checks: pair={state.PairId}");
+                Debug.WriteLine($"[ExecClose][PendingExhausted] pairId={state.PairId}, retryChecks={state.RetryChecks}");
+            }
+        }
+
+        return actions;
+    }
+
+    private async Task ExecutePendingCloseRetryActionsAsync(
+        IReadOnlyList<PendingCloseRetryAction> actions,
+        CancellationToken cancellationToken)
+    {
+        foreach (var action in actions)
+        {
+            await RetryCloseLegByPendingAsync(action, cancellationToken);
+        }
+    }
+
+    private async Task RetryCloseLegByPendingAsync(PendingCloseRetryAction action, CancellationToken cancellationToken)
+    {
+        if (!_pendingClosePairById.TryGetValue(action.PairId, out var state) || state.IsResolved)
+        {
+            return;
+        }
+
+        state.RetryChecks++;
+
+        var appCloseRequestTimeLocal = DateTimeOffset.Now;
+        var appCloseRequestRawMs = Environment.TickCount64;
+        if (action.TradeType.HasValue)
+        {
+            var isExchangeA = string.Equals(action.Exchange, "A", StringComparison.OrdinalIgnoreCase);
+            var expectedClose = ResolveExpectedClosePrice(_runtimeConfigState.CurrentDashboardMetrics, isExchangeA, action.TradeType.Value);
+            RegisterPendingCloseRequest(
+                tradeMapName: action.TradeMapName,
+                ticket: action.Ticket,
+                tradeType: action.TradeType.Value,
+                expectedPrice: expectedClose,
+                appCloseRequestTimeLocal: appCloseRequestTimeLocal,
+                appCloseRequestRawMs: appCloseRequestRawMs,
+                symbol: action.Symbol,
+                volume: action.Volume,
+                isAutoFlow: action.IsAutoFlow,
+                slotNumber: action.SlotNumber,
+                exchangeLabel: action.Exchange);
+        }
+
+        var closeResult = await _tradeExecutionRouter.ClosePairAsync(
+            new TradeClosePairRequest(
+                LegA: string.Equals(action.Exchange, "A", StringComparison.OrdinalIgnoreCase)
+                    ? new TradeCloseLegRequest(
+                        Exchange: "A",
+                        Platform: action.Platform,
+                        TradeHwnd: action.TradeHwnd,
+                        Ticket: action.Ticket,
+                        Action: TradeLegAction.Close)
+                    : null,
+                LegB: string.Equals(action.Exchange, "B", StringComparison.OrdinalIgnoreCase)
+                    ? new TradeCloseLegRequest(
+                        Exchange: "B",
+                        Platform: action.Platform,
+                        TradeHwnd: action.TradeHwnd,
+                        Ticket: action.Ticket,
+                        Action: TradeLegAction.Close)
+                    : null),
+            cancellationToken);
+
+        System.Windows.Application.Current.Dispatcher.Invoke(() =>
+        {
+            SignalLogItems.Insert(0,
+                $"    - [{DateTime.Now:HH:mm:ss.fff}] Close pending retry #{state.RetryChecks}: pair={action.PairId}, exchange={action.Exchange}, success={closeResult.Success}");
+        });
+
+        Debug.WriteLine($"[ExecClose][PendingRetry] pairId={action.PairId}, exchange={action.Exchange}, retryChecks={state.RetryChecks}, success={closeResult.Success}");
+    }
+
+    private bool IsTicketStillOpen(string? tradeMapName, ulong ticket)
+    {
+        if (string.IsNullOrWhiteSpace(tradeMapName))
+        {
+            return false;
+        }
+
+        var result = _tradesSharedMemoryReader.ReadTrades(tradeMapName);
+        if (!result.IsMapAvailable || !result.IsParseSuccess || result.Records.Count == 0)
+        {
+            return false;
+        }
+
+        return result.Records.Any(x => x.Ticket == ticket);
     }
 
     private bool ShouldApplyTradeResult(string mapName, SharedMapReadResult<TradeSharedRecord> result)
@@ -1449,7 +1970,17 @@ public sealed class DashboardViewModel : ObservableObject
         }
 
         RegisterOpenExpectedForNewTickets(panel.TargetMapName, result.Records);
-        var rows = BuildTradeRows(result.Records, result.Count, result.Timestamp, snapshot, isExchangeA, point);
+        var appGeneratedRecords = result.Records
+            .Where(x => IsAppGeneratedTicket(x.Ticket))
+            .ToList();
+
+        if (appGeneratedRecords.Count == 0)
+        {
+            panel.SetEmpty();
+            return;
+        }
+
+        var rows = BuildTradeRows(appGeneratedRecords, appGeneratedRecords.Count, result.Timestamp, snapshot, isExchangeA, point);
         panel.SetTradeData(rows);
     }
 
@@ -1483,9 +2014,24 @@ public sealed class DashboardViewModel : ObservableObject
         }
 
         RegisterCloseExecutionForNewHistoryTickets(panel.TargetMapName, result.Records);
-        var rows = BuildHistoryRows(result.Records, result.Count, result.Timestamp, point);
+        var appGeneratedRecords = result.Records
+            .Where(x => IsAppGeneratedTicket(x.Ticket))
+            .ToList();
+
+        if (appGeneratedRecords.Count == 0)
+        {
+            panel.SetEmpty();
+            return;
+        }
+
+        var rows = BuildHistoryRows(appGeneratedRecords, appGeneratedRecords.Count, result.Timestamp, point);
         panel.SetHistoryData(rows);
     }
+
+    private bool IsAppGeneratedTicket(ulong ticket)
+        => _pairIdByTicket.TryGetValue(ticket, out var pairId)
+           && !string.IsNullOrWhiteSpace(pairId)
+           && !string.Equals(pairId, "-", StringComparison.Ordinal);
 
     private void RegisterOpenExpectedForNewTickets(string tradeMapName, IReadOnlyList<TradeSharedRecord> records)
     {
@@ -1507,6 +2053,8 @@ public sealed class DashboardViewModel : ObservableObject
             }
 
             _openRequestByTicket[newRecord.Ticket] = pendingRequest;
+            _pairIdByTicket[newRecord.Ticket] = pendingRequest.PairId;
+            MarkOpenPairLegConfirmed(pendingRequest, newRecord.Ticket, newRecord.Symbol, newRecord.Lot);
             var openExecutionMs = ComputeExecutionMilliseconds(
                 newRecord.OpenEaTimeLocal,
                 pendingRequest.AppOpenRequestRawMs);
@@ -1568,6 +2116,38 @@ public sealed class DashboardViewModel : ObservableObject
         _knownTradeTicketsByMap[key] = currentTickets;
     }
 
+    private void MarkOpenPairLegConfirmed(PendingOpenRequest pendingRequest, ulong ticket, string symbol, double volume)
+    {
+        if (!_pendingOpenPairById.TryGetValue(pendingRequest.PairId, out var state))
+        {
+            return;
+        }
+
+        if (string.Equals(pendingRequest.ExchangeLabel, "A", StringComparison.OrdinalIgnoreCase))
+        {
+            state.OpenConfirmedA = true;
+            state.OpenedTicketA = ticket;
+            state.SymbolA ??= symbol;
+            state.VolumeA ??= volume;
+            state.TradeMapNameA ??= pendingRequest.TradeMapName;
+            state.TradeTypeA ??= pendingRequest.TradeType;
+        }
+        else if (string.Equals(pendingRequest.ExchangeLabel, "B", StringComparison.OrdinalIgnoreCase))
+        {
+            state.OpenConfirmedB = true;
+            state.OpenedTicketB = ticket;
+            state.SymbolB ??= symbol;
+            state.VolumeB ??= volume;
+            state.TradeMapNameB ??= pendingRequest.TradeMapName;
+            state.TradeTypeB ??= pendingRequest.TradeType;
+        }
+
+        if (state.OpenConfirmedA && state.OpenConfirmedB)
+        {
+            state.IsResolved = true;
+        }
+    }
+
     private void RegisterCloseExecutionForNewHistoryTickets(string historyMapName, IReadOnlyList<HistorySharedRecord> records)
     {
         var key = NormalizeMapName(historyMapName);
@@ -1598,6 +2178,7 @@ public sealed class DashboardViewModel : ObservableObject
             }
 
             _closeRequestByTicket[record.Ticket] = pendingRequest;
+            _pairIdByTicket[record.Ticket] = pendingRequest.PairId;
             var closeExecutionMs = ComputeExecutionMilliseconds(
                 record.CloseEaTimeLocal,
                 pendingRequest.AppCloseRequestRawMs);
@@ -1682,9 +2263,11 @@ public sealed class DashboardViewModel : ObservableObject
             _openExecutionMsByTicket.TryGetValue(record.Ticket, out var openExecutionMsValue);
             var openExecutionMs = _openExecutionMsByTicket.ContainsKey(record.Ticket) ? openExecutionMsValue : (long?)null;
             _openRequestByTicket.TryGetValue(record.Ticket, out var openRequest);
+            var pairId = _pairIdByTicket.TryGetValue(record.Ticket, out var value) ? value : "-";
             var tradeOpenSlippage = CalculateTradeOpenSlippage(record, point);
 
             return new TradeRowViewModel(
+                pairId: pairId,
                 timestamp: FormatRawTimestamp(timestamp),
                 count: count.ToString(CultureInfo.InvariantCulture),
                 symbol: record.Symbol,
@@ -1714,9 +2297,11 @@ public sealed class DashboardViewModel : ObservableObject
             var openExecutionMs = _openExecutionMsByTicket.ContainsKey(record.Ticket) ? openExecutionMsValue : (long?)null;
             var closeExecutionMs = _closeExecutionMsByTicket.ContainsKey(record.Ticket) ? closeExecutionMsValue : (long?)null;
             _closeRequestByTicket.TryGetValue(record.Ticket, out var closeRequest);
+            var pairId = _pairIdByTicket.TryGetValue(record.Ticket, out var value) ? value : "-";
             var historyCloseSlippage = CalculateHistoryCloseSlippage(record, point);
 
             return new HistoryRowViewModel(
+                pairId: pairId,
                 timestamp: FormatRawTimestamp(timestamp),
                 count: count.ToString(CultureInfo.InvariantCulture),
                 symbol: record.Symbol,
@@ -2122,7 +2707,9 @@ public sealed class DashboardViewModel : ObservableObject
                     result.EndWaitTime,
                     result.ConfirmLatencyMs,
                     result.MaxGap,
-                    result.MaxSpread);
+                    result.MaxSpread,
+                    result.OpenPendingTimeMs,
+                    result.ClosePendingTimeMs);
                 ResetTradingLogicState();
 
                 if (string.Equals(result.MachineHostName, InlineDbHostName, StringComparison.OrdinalIgnoreCase))
