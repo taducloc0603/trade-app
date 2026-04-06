@@ -35,7 +35,7 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
             return null;
         }
 
-        var sansJson = row.Sans.ValueKind == JsonValueKind.Array
+        var sansJson = row.Sans.ValueKind is JsonValueKind.Array or JsonValueKind.Object
             ? row.Sans.GetRawText()
             : "[]";
 

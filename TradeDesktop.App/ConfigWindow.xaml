@@ -153,10 +153,13 @@
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="150" />
                         <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="90" />
+                        <ColumnDefinition Width="150" />
                     </Grid.ColumnDefinitions>
 
                     <TextBlock Grid.Column="0" VerticalAlignment="Top" Margin="0,8,0,0" Text="TRADE HWND A" FontWeight="SemiBold" />
                     <TextBox Grid.Column="1"
+                             Margin="0,0,10,0"
                              Height="32"
                              VerticalContentAlignment="Center"
                              Text="{Binding TradeHwndA, UpdateSourceTrigger=PropertyChanged}" />
@@ -233,18 +236,6 @@
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
-
-                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                            <Button Content="delete"
-                                    Width="78"
-                                    Height="30"
-                                    Margin="0,0,10,0"
-                                    Command="{Binding DeleteHwndColumnCommand}" />
-                            <Button Content="add"
-                                    Width="78"
-                                    Height="30"
-                                    Command="{Binding AddHwndColumnCommand}" />
-                        </StackPanel>
                     </StackPanel>
                 </Grid>
 
@@ -252,10 +243,13 @@
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="150" />
                         <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="90" />
+                        <ColumnDefinition Width="150" />
                     </Grid.ColumnDefinitions>
 
                     <TextBlock Grid.Column="0" VerticalAlignment="Top" Margin="0,8,0,0" Text="TRADE HWND B" FontWeight="SemiBold" />
                     <TextBox Grid.Column="1"
+                             Margin="0,0,10,0"
                              Height="32"
                              VerticalContentAlignment="Center"
                              Text="{Binding TradeHwndB, UpdateSourceTrigger=PropertyChanged}" />
