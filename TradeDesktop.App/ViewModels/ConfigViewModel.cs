@@ -1,6 +1,10 @@
+using System.Collections.ObjectModel;
+using System.Collections.Specialized;
+using System.ComponentModel;
 using TradeDesktop.App.Commands;
 using TradeDesktop.App.Helpers;
 using TradeDesktop.App.State;
+using TradeDesktop.Application.Models;
 using TradeDesktop.Application.Services;
 
 namespace TradeDesktop.App.ViewModels;
@@ -13,9 +17,7 @@ public sealed class ConfigViewModel : ObservableObject
 
     private string _mapName1 = string.Empty;
     private string _mapName2 = string.Empty;
-    private string _chartHwndA = string.Empty;
     private string _tradeHwndA = string.Empty;
-    private string _chartHwndB = string.Empty;
     private string _tradeHwndB = string.Empty;
     private string _platformA = "mt5";
     private string _platformB = "mt5";
@@ -40,14 +42,12 @@ public sealed class ConfigViewModel : ObservableObject
         CheckMap2Command = new AsyncRelayCommand(CheckMap2Async, CanCheckMap2);
         SaveCommand = new AsyncRelayCommand(SaveAsync, CanSaveCommand);
         CancelCommand = new AsyncRelayCommand(CancelAsync);
+        AddHwndColumnCommand = new AsyncRelayCommand(AddHwndColumnAsync);
+        DeleteHwndColumnCommand = new AsyncRelayCommand(DeleteHwndColumnAsync, CanDeleteHwndColumn);
 
         MachineHostName = runtimeConfigState.CurrentMachineHostName;
         MapName1 = runtimeConfigState.CurrentMapName1;
         MapName2 = runtimeConfigState.CurrentMapName2;
-        ChartHwndA = runtimeConfigState.CurrentChartHwndA;
-        TradeHwndA = runtimeConfigState.CurrentTradeHwndA;
-        ChartHwndB = runtimeConfigState.CurrentChartHwndB;
-        TradeHwndB = runtimeConfigState.CurrentTradeHwndB;
         PlatformA = runtimeConfigState.CurrentPlatformA;
         PlatformB = runtimeConfigState.CurrentPlatformB;
 
@@ -62,12 +62,17 @@ public sealed class ConfigViewModel : ObservableObject
             ? "✔ Đã nạp dữ liệu runtime"
             : "Đang tải theo host name máy...";
 
-        RefreshDerivedState();
+        ManualHwndColumns.CollectionChanged += OnManualHwndColumnsChanged;
+        InitializeColumns(runtimeConfigState.CurrentManualHwndColumns);
 
+        RefreshDerivedState();
         _ = LoadByMachineHostNameAsync();
     }
 
     public event Action<bool?>? RequestClose;
+
+    // Dùng cho CHART HWND nhiều cột.
+    public ObservableCollection<ManualHwndColumnItemViewModel> ManualHwndColumns { get; } = [];
 
     public string MachineHostName
     {
@@ -109,6 +114,40 @@ public sealed class ConfigViewModel : ObservableObject
         }
     }
 
+    // Backward-compatible properties trỏ về cột CHART đầu tiên.
+    public string ChartHwndA
+    {
+        get => ManualHwndColumns.Count > 0 ? ManualHwndColumns[0].ChartHwndA : string.Empty;
+        set
+        {
+            EnsureAtLeastOneColumn();
+            ManualHwndColumns[0].ChartHwndA = value;
+        }
+    }
+
+    public string ChartHwndB
+    {
+        get => ManualHwndColumns.Count > 0 ? ManualHwndColumns[0].ChartHwndB : string.Empty;
+        set
+        {
+            EnsureAtLeastOneColumn();
+            ManualHwndColumns[0].ChartHwndB = value;
+        }
+    }
+
+    // TRADE HWND luôn chỉ có 1 mỗi sàn.
+    public string TradeHwndA
+    {
+        get => _tradeHwndA;
+        set => SetProperty(ref _tradeHwndA, value);
+    }
+
+    public string TradeHwndB
+    {
+        get => _tradeHwndB;
+        set => SetProperty(ref _tradeHwndB, value);
+    }
+
     public string LoadStatus
     {
         get => _loadStatus;
@@ -142,30 +181,6 @@ public sealed class ConfigViewModel : ObservableObject
     }
 
     public bool HasError => !string.IsNullOrWhiteSpace(ErrorMessage);
-
-    public string ChartHwndA
-    {
-        get => _chartHwndA;
-        set => SetProperty(ref _chartHwndA, value);
-    }
-
-    public string TradeHwndA
-    {
-        get => _tradeHwndA;
-        set => SetProperty(ref _tradeHwndA, value);
-    }
-
-    public string ChartHwndB
-    {
-        get => _chartHwndB;
-        set => SetProperty(ref _chartHwndB, value);
-    }
-
-    public string TradeHwndB
-    {
-        get => _tradeHwndB;
-        set => SetProperty(ref _tradeHwndB, value);
-    }
 
     public string PlatformA
     {
@@ -289,14 +304,41 @@ public sealed class ConfigViewModel : ObservableObject
     public AsyncRelayCommand CheckMap2Command { get; }
     public AsyncRelayCommand SaveCommand { get; }
     public AsyncRelayCommand CancelCommand { get; }
+    public AsyncRelayCommand AddHwndColumnCommand { get; }
+    public AsyncRelayCommand DeleteHwndColumnCommand { get; }
 
     private bool CanCheckMap1() => AreMapNamesEnabled && !string.IsNullOrWhiteSpace(MapName1);
     private bool CanCheckMap2() => AreMapNamesEnabled && !string.IsNullOrWhiteSpace(MapName2);
+    private bool CanDeleteHwndColumn() => ManualHwndColumns.Count > 1;
 
     private bool CanSaveCommand() =>
         CanSave &&
         !string.IsNullOrWhiteSpace(MapName1) &&
         !string.IsNullOrWhiteSpace(MapName2);
+
+    // Add/Delete chỉ tác động số cột CHART.
+    private Task AddHwndColumnAsync()
+    {
+        var item = CreateColumnItem(new ManualHwndColumnConfig(string.Empty, TradeHwndA, string.Empty, TradeHwndB), ManualHwndColumns.Count + 1);
+        ManualHwndColumns.Add(item);
+        return Task.CompletedTask;
+    }
+
+    private Task DeleteHwndColumnAsync()
+    {
+        if (ManualHwndColumns.Count <= 1)
+        {
+            return Task.CompletedTask;
+        }
+
+        var lastIndex = ManualHwndColumns.Count - 1;
+        var last = ManualHwndColumns[lastIndex];
+        last.PropertyChanged -= OnColumnPropertyChanged;
+        ManualHwndColumns.RemoveAt(lastIndex);
+        ReindexColumns();
+        RefreshButtons();
+        return Task.CompletedTask;
+    }
 
     private async Task LoadByMachineHostNameAsync()
     {
@@ -312,6 +354,7 @@ public sealed class ConfigViewModel : ObservableObject
                 AreMapNamesEnabled = false;
                 MapName1 = string.Empty;
                 MapName2 = string.Empty;
+                InitializeColumns([ManualHwndColumnConfig.Empty]);
                 LoadStatus = $"✖ Không có config cho host name: {MachineHostName}";
                 ErrorMessage = "Không tìm thấy record config theo host name máy hiện tại.";
                 RefreshDerivedState();
@@ -322,6 +365,7 @@ public sealed class ConfigViewModel : ObservableObject
             {
                 IsExistingRecordLoaded = false;
                 AreMapNamesEnabled = false;
+                InitializeColumns([ManualHwndColumnConfig.Empty]);
                 LoadStatus = "✖ Không tải được config";
                 if (!string.IsNullOrWhiteSpace(loadResult.Error))
                 {
@@ -335,6 +379,8 @@ public sealed class ConfigViewModel : ObservableObject
             MapName2 = loadResult.MapName2;
             PlatformA = loadResult.PlatformA;
             PlatformB = loadResult.PlatformB;
+            InitializeColumns(loadResult.ManualHwndColumns);
+
             _runtimeConfigState.Update(
                 loadResult.MachineHostName,
                 loadResult.MapName1,
@@ -357,6 +403,8 @@ public sealed class ConfigViewModel : ObservableObject
                 loadResult.MaxSpread,
                 loadResult.OpenPendingTimeMs,
                 loadResult.ClosePendingTimeMs);
+            _runtimeConfigState.UpdateManualTradeHwnd(BuildManualHwndColumns());
+
             IsExistingRecordLoaded = true;
             AreMapNamesEnabled = true;
 
@@ -410,7 +458,8 @@ public sealed class ConfigViewModel : ObservableObject
         try
         {
             ClearError();
-            var saveResult = await _configService.SaveByMachineHostNameAsync(MapName1, MapName2, PlatformA, PlatformB);
+            var columns = BuildManualHwndColumns();
+            var saveResult = await _configService.SaveByMachineHostNameAsync(MapName1, MapName2, PlatformA, PlatformB, columns);
             if (!saveResult.IsSuccess)
             {
                 LoadStatus = "✖ Save thất bại";
@@ -428,7 +477,7 @@ public sealed class ConfigViewModel : ObservableObject
             LoadStatus = "✔ Lưu thành công";
             _runtimeConfigState.Update(MachineHostName, MapName1, MapName2, _runtimeConfigState.CurrentPoint);
             _runtimeConfigState.UpdatePlatform(PlatformA, PlatformB);
-            _runtimeConfigState.UpdateManualTradeHwnd(ChartHwndA, TradeHwndA, ChartHwndB, TradeHwndB);
+            _runtimeConfigState.UpdateManualTradeHwnd(columns);
             RequestClose?.Invoke(true);
         }
         catch (Exception ex)
@@ -449,7 +498,8 @@ public sealed class ConfigViewModel : ObservableObject
         CanSave =
             IsExistingRecordLoaded &&
             !string.IsNullOrWhiteSpace(MapName1) &&
-            !string.IsNullOrWhiteSpace(MapName2);
+            !string.IsNullOrWhiteSpace(MapName2) &&
+            ManualHwndColumns.Count > 0;
     }
 
     private void RefreshButtons()
@@ -458,6 +508,121 @@ public sealed class ConfigViewModel : ObservableObject
         CheckMap1Command?.RaiseCanExecuteChanged();
         CheckMap2Command?.RaiseCanExecuteChanged();
         SaveCommand?.RaiseCanExecuteChanged();
+        DeleteHwndColumnCommand?.RaiseCanExecuteChanged();
+    }
+
+    private void InitializeColumns(IReadOnlyList<ManualHwndColumnConfig>? columns)
+    {
+        foreach (var column in ManualHwndColumns)
+        {
+            column.PropertyChanged -= OnColumnPropertyChanged;
+        }
+
+        ManualHwndColumns.Clear();
+
+        var normalizedColumns = (columns ?? [ManualHwndColumnConfig.Empty])
+            .Select(x => (x ?? ManualHwndColumnConfig.Empty).Normalize())
+            .ToList();
+
+        if (normalizedColumns.Count == 0)
+        {
+            normalizedColumns.Add(ManualHwndColumnConfig.Empty);
+        }
+
+        var first = normalizedColumns[0];
+        TradeHwndA = first.TradeHwndA;
+        TradeHwndB = first.TradeHwndB;
+
+        for (var i = 0; i < normalizedColumns.Count; i++)
+        {
+            ManualHwndColumns.Add(CreateColumnItem(new ManualHwndColumnConfig(
+                normalizedColumns[i].ChartHwndA,
+                TradeHwndA,
+                normalizedColumns[i].ChartHwndB,
+                TradeHwndB), i + 1));
+        }
+
+        ReindexColumns();
+        OnPropertyChanged(nameof(ChartHwndA));
+        OnPropertyChanged(nameof(ChartHwndB));
+        RefreshButtons();
+    }
+
+    private ManualHwndColumnItemViewModel CreateColumnItem(ManualHwndColumnConfig source, int displayIndex)
+    {
+        var item = new ManualHwndColumnItemViewModel
+        {
+            DisplayIndex = displayIndex,
+            ChartHwndA = source.ChartHwndA,
+            TradeHwndA = source.TradeHwndA,
+            ChartHwndB = source.ChartHwndB,
+            TradeHwndB = source.TradeHwndB
+        };
+
+        item.PropertyChanged += OnColumnPropertyChanged;
+        return item;
+    }
+
+    private IReadOnlyList<ManualHwndColumnConfig> BuildManualHwndColumns()
+    {
+        if (ManualHwndColumns.Count == 0)
+        {
+            return [new ManualHwndColumnConfig(string.Empty, TradeHwndA, string.Empty, TradeHwndB)];
+        }
+
+        return ManualHwndColumns
+            .Select(x => new ManualHwndColumnConfig(x.ChartHwndA, TradeHwndA, x.ChartHwndB, TradeHwndB).Normalize())
+            .ToList();
+    }
+
+    private void EnsureAtLeastOneColumn()
+    {
+        if (ManualHwndColumns.Count > 0)
+        {
+            return;
+        }
+
+        ManualHwndColumns.Add(CreateColumnItem(new ManualHwndColumnConfig(string.Empty, TradeHwndA, string.Empty, TradeHwndB), 1));
+    }
+
+    private void ReindexColumns()
+    {
+        for (var i = 0; i < ManualHwndColumns.Count; i++)
+        {
+            ManualHwndColumns[i].DisplayIndex = i + 1;
+        }
+    }
+
+    private void OnManualHwndColumnsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.OldItems is not null)
+        {
+            foreach (var oldItem in e.OldItems.OfType<ManualHwndColumnItemViewModel>())
+            {
+                oldItem.PropertyChanged -= OnColumnPropertyChanged;
+            }
+        }
+
+        if (e.NewItems is not null)
+        {
+            foreach (var newItem in e.NewItems.OfType<ManualHwndColumnItemViewModel>())
+            {
+                newItem.PropertyChanged -= OnColumnPropertyChanged;
+                newItem.PropertyChanged += OnColumnPropertyChanged;
+                newItem.TradeHwndA = TradeHwndA;
+                newItem.TradeHwndB = TradeHwndB;
+            }
+        }
+
+        ReindexColumns();
+        OnPropertyChanged(nameof(ChartHwndA));
+        OnPropertyChanged(nameof(ChartHwndB));
+        RefreshButtons();
+    }
+
+    private void OnColumnPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        RefreshButtons();
     }
 
     private void ClearError() => ErrorMessage = string.Empty;

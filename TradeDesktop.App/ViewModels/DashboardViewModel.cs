@@ -488,6 +488,7 @@ public sealed class DashboardViewModel : ObservableObject
 
     private async Task BuyAsync()
     {
+        var (_, hwndColumn) = _runtimeConfigState.GetRandomManualHwndColumn();
         var snapshot = _runtimeConfigState.CurrentDashboardMetrics;
         var appOpenRequestTimeLocal = DateTimeOffset.Now;
         var appOpenRequestRawMs = Environment.TickCount64;
@@ -502,12 +503,12 @@ public sealed class DashboardViewModel : ObservableObject
                 new TradeOpenLegRequest(
                     Exchange: "A",
                     Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformA),
-                    ChartHwnd: _runtimeConfigState.CurrentChartHwndA,
+                    ChartHwnd: hwndColumn.ChartHwndA,
                     Action: TradeLegAction.Buy),
                 new TradeOpenLegRequest(
                     Exchange: "B",
                     Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformB),
-                    ChartHwnd: _runtimeConfigState.CurrentChartHwndB,
+                    ChartHwnd: hwndColumn.ChartHwndB,
                     Action: TradeLegAction.Sell)));
 
         // Phase 1 Manual Open log: A buy, B sell
@@ -526,6 +527,7 @@ public sealed class DashboardViewModel : ObservableObject
 
     private async Task SellAsync()
     {
+        var (_, hwndColumn) = _runtimeConfigState.GetRandomManualHwndColumn();
         var snapshot = _runtimeConfigState.CurrentDashboardMetrics;
         var appOpenRequestTimeLocal = DateTimeOffset.Now;
         var appOpenRequestRawMs = Environment.TickCount64;
@@ -540,12 +542,12 @@ public sealed class DashboardViewModel : ObservableObject
                 new TradeOpenLegRequest(
                     Exchange: "A",
                     Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformA),
-                    ChartHwnd: _runtimeConfigState.CurrentChartHwndA,
+                    ChartHwnd: hwndColumn.ChartHwndA,
                     Action: TradeLegAction.Sell),
                 new TradeOpenLegRequest(
                     Exchange: "B",
                     Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformB),
-                    ChartHwnd: _runtimeConfigState.CurrentChartHwndB,
+                    ChartHwnd: hwndColumn.ChartHwndB,
                     Action: TradeLegAction.Buy)));
 
         // Phase 1 Manual Open log: A sell, B buy
@@ -663,6 +665,7 @@ public sealed class DashboardViewModel : ObservableObject
 
     private async Task AutoBuyAsync(GapSignalTriggerResult trigger)
     {
+        var (_, hwndColumn) = _runtimeConfigState.GetRandomManualHwndColumn();
         var appOpenRequestTimeLocal = DateTimeOffset.Now;
         var appOpenRequestRawMs = Environment.TickCount64;
         var slot = _autoSlot;
@@ -677,12 +680,12 @@ public sealed class DashboardViewModel : ObservableObject
                 new TradeOpenLegRequest(
                     Exchange: "A",
                     Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformA),
-                    ChartHwnd: _runtimeConfigState.CurrentChartHwndA,
+                    ChartHwnd: hwndColumn.ChartHwndA,
                     Action: TradeLegAction.Buy),
                 new TradeOpenLegRequest(
                     Exchange: "B",
                     Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformB),
-                    ChartHwnd: _runtimeConfigState.CurrentChartHwndB,
+                    ChartHwnd: hwndColumn.ChartHwndB,
                     Action: TradeLegAction.Sell)));
 
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
@@ -704,6 +707,7 @@ public sealed class DashboardViewModel : ObservableObject
 
     private async Task AutoSellAsync(GapSignalTriggerResult trigger)
     {
+        var (_, hwndColumn) = _runtimeConfigState.GetRandomManualHwndColumn();
         var appOpenRequestTimeLocal = DateTimeOffset.Now;
         var appOpenRequestRawMs = Environment.TickCount64;
         var slot = _autoSlot;
@@ -718,12 +722,12 @@ public sealed class DashboardViewModel : ObservableObject
                 new TradeOpenLegRequest(
                     Exchange: "A",
                     Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformA),
-                    ChartHwnd: _runtimeConfigState.CurrentChartHwndA,
+                    ChartHwnd: hwndColumn.ChartHwndA,
                     Action: TradeLegAction.Sell),
                 new TradeOpenLegRequest(
                     Exchange: "B",
                     Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformB),
-                    ChartHwnd: _runtimeConfigState.CurrentChartHwndB,
+                    ChartHwnd: hwndColumn.ChartHwndB,
                     Action: TradeLegAction.Buy)));
 
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
@@ -1463,11 +1467,7 @@ public sealed class DashboardViewModel : ObservableObject
         RuntimeSummary =
             $"Host Name: {_runtimeConfigState.CurrentMachineHostName}  |  Point: {_runtimeConfigState.CurrentPoint}  |  OpenPts: {_runtimeConfigState.CurrentOpenPts}  |  ConfirmGapPts: {_runtimeConfigState.CurrentConfirmGapPts}  |  ClosePts: {_runtimeConfigState.CurrentClosePts}  |  CloseConfirmGapPts: {_runtimeConfigState.CurrentCloseConfirmGapPts}  |  StartTimeHold: {_runtimeConfigState.CurrentStartTimeHold}  |  EndTimeHold: {_runtimeConfigState.CurrentEndTimeHold}  |  StartWaitTime: {_runtimeConfigState.CurrentStartWaitTime}  |  EndWaitTime: {_runtimeConfigState.CurrentEndWaitTime}  |  ConfirmLatencyMs: {_runtimeConfigState.CurrentConfirmLatencyMs}  |  MaxGap: {_runtimeConfigState.CurrentMaxGap}  |  MaxSpread: {_runtimeConfigState.CurrentMaxSpread}  |  Map 1: {_runtimeConfigState.CurrentMapName1}  |  Map 2: {_runtimeConfigState.CurrentMapName2}";
 
-        HasManualTradeHwndConfig =
-            !string.IsNullOrWhiteSpace(_runtimeConfigState.CurrentChartHwndA) &&
-            !string.IsNullOrWhiteSpace(_runtimeConfigState.CurrentTradeHwndA) &&
-            !string.IsNullOrWhiteSpace(_runtimeConfigState.CurrentChartHwndB) &&
-            !string.IsNullOrWhiteSpace(_runtimeConfigState.CurrentTradeHwndB);
+        HasManualTradeHwndConfig = _runtimeConfigState.CurrentManualHwndColumns.Any(x => x.IsComplete);
 
         RefreshOrderInfoTabs();
     }
@@ -2710,6 +2710,7 @@ public sealed class DashboardViewModel : ObservableObject
                     result.MaxSpread,
                     result.OpenPendingTimeMs,
                     result.ClosePendingTimeMs);
+                _runtimeConfigState.UpdateManualTradeHwnd(result.ManualHwndColumns);
                 ResetTradingLogicState();
 
                 if (string.Equals(result.MachineHostName, InlineDbHostName, StringComparison.OrdinalIgnoreCase))

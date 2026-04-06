@@ -1,5 +1,6 @@
 using TradeDesktop.Application.Abstractions;
 using TradeDesktop.Application.Helpers;
+using TradeDesktop.Application.Models;
 
 namespace TradeDesktop.Application.Services;
 
@@ -11,6 +12,7 @@ public interface IConfigService
         string mapName2,
         string platformA,
         string platformB,
+        IReadOnlyList<ManualHwndColumnConfig>? manualHwndColumns = null,
         CancellationToken cancellationToken = default);
 }
 
@@ -38,11 +40,12 @@ public sealed class ConfigService(
             return ConfigLoadResult.NotFound(hostName);
         }
 
-        SansJsonHelper.TryParseSans(record.SansJson, out var mapName1, out var mapName2);
+        SansJsonHelper.TryParseSans(record.SansJson, out var mapName1, out var mapName2, out var manualHwndColumns);
         return ConfigLoadResult.Success(
             hostName,
             mapName1,
             mapName2,
+            manualHwndColumns,
             record.PlatformA,
             record.PlatformB,
             record.Point,
@@ -70,6 +73,7 @@ public sealed class ConfigService(
         string mapName2,
         string platformA,
         string platformB,
+        IReadOnlyList<ManualHwndColumnConfig>? manualHwndColumns = null,
         CancellationToken cancellationToken = default)
     {
         var hostName = machineIdentityService.GetHostName();
@@ -81,7 +85,7 @@ public sealed class ConfigService(
         var normalizedPlatformA = NormalizePlatform(platformA);
         var normalizedPlatformB = NormalizePlatform(platformB);
 
-        var sansJson = SansJsonHelper.BuildSans(mapName1, mapName2);
+        var sansJson = SansJsonHelper.BuildSans(mapName1, mapName2, manualHwndColumns);
 
         var updated = await configRepository.UpdateSansAndHostNameByHostNameAsync(
             hostName,
@@ -115,6 +119,7 @@ public sealed record ConfigLoadResult(
     bool IsSuccess,
     bool Exists,
     string MachineHostName,
+    IReadOnlyList<ManualHwndColumnConfig> ManualHwndColumns,
     string PlatformA,
     string PlatformB,
     int Point,
@@ -143,6 +148,7 @@ public sealed record ConfigLoadResult(
         string machineHostName,
         string mapName1,
         string mapName2,
+        IReadOnlyList<ManualHwndColumnConfig>? manualHwndColumns,
         string platformA,
         string platformB,
         int point,
@@ -167,6 +173,7 @@ public sealed record ConfigLoadResult(
             true,
             true,
             machineHostName,
+            NormalizeColumns(manualHwndColumns),
             NormalizePlatform(platformA),
             NormalizePlatform(platformB),
             point > 0 ? point : 1,
@@ -192,10 +199,19 @@ public sealed record ConfigLoadResult(
             Math.Max(0, closePendingTimeMs));
 
     public static ConfigLoadResult NotFound(string machineHostName) =>
-        new(false, false, machineHostName, "mt5", "mt5", 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", null, 0, 0, 0, 0, 0);
+        new(false, false, machineHostName, [ManualHwndColumnConfig.Empty], "mt5", "mt5", 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", null, 0, 0, 0, 0, 0);
 
     public static ConfigLoadResult Failed(string machineHostName, string error) =>
-        new(false, true, machineHostName, "mt5", "mt5", 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", error, 0, 0, 0, 0, 0);
+        new(false, true, machineHostName, [ManualHwndColumnConfig.Empty], "mt5", "mt5", 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", error, 0, 0, 0, 0, 0);
+
+    private static IReadOnlyList<ManualHwndColumnConfig> NormalizeColumns(IReadOnlyList<ManualHwndColumnConfig>? columns)
+    {
+        var normalized = (columns ?? [ManualHwndColumnConfig.Empty])
+            .Select(x => (x ?? ManualHwndColumnConfig.Empty).Normalize())
+            .ToList();
+
+        return normalized.Count > 0 ? normalized : [ManualHwndColumnConfig.Empty];
+    }
 
     private static string NormalizePlatform(string? platform)
     {

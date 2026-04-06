@@ -93,11 +93,56 @@
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
 
-                    <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="CHART HWND A" FontWeight="SemiBold" />
-                    <TextBox Grid.Column="1"
-                             Height="32"
-                             VerticalContentAlignment="Center"
-                             Text="{Binding ChartHwndA, UpdateSourceTrigger=PropertyChanged}" />
+                    <TextBlock Grid.Column="0" VerticalAlignment="Top" Margin="0,8,0,0" Text="CHART HWND A" FontWeight="SemiBold" />
+
+                    <StackPanel Grid.Column="1">
+                        <ItemsControl ItemsSource="{Binding ManualHwndColumns}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Width="92"
+                                               Margin="0,0,10,4"
+                                               HorizontalAlignment="Left"
+                                               Text="{Binding DisplayIndex}"
+                                               TextAlignment="Center"
+                                               Foreground="#344054" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <ItemsControl ItemsSource="{Binding ManualHwndColumns}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBox Width="92"
+                                             Margin="0,0,10,0"
+                                             Height="32"
+                                             VerticalContentAlignment="Center"
+                                             Text="{Binding ChartHwndA, UpdateSourceTrigger=PropertyChanged}" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                            <Button Content="delete"
+                                    Width="78"
+                                    Height="30"
+                                    Margin="0,0,10,0"
+                                    Command="{Binding DeleteHwndColumnCommand}" />
+                            <Button Content="add"
+                                    Width="78"
+                                    Height="30"
+                                    Command="{Binding AddHwndColumnCommand}" />
+                        </StackPanel>
+                    </StackPanel>
                 </Grid>
 
                 <Grid Grid.Row="6">
@@ -106,7 +151,7 @@
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
 
-                    <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="TRADE HWND A" FontWeight="SemiBold" />
+                    <TextBlock Grid.Column="0" VerticalAlignment="Top" Margin="0,8,0,0" Text="TRADE HWND A" FontWeight="SemiBold" />
                     <TextBox Grid.Column="1"
                              Height="32"
                              VerticalContentAlignment="Center"
@@ -166,11 +211,37 @@
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
 
-                    <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="CHART HWND B" FontWeight="SemiBold" />
-                    <TextBox Grid.Column="1"
-                             Height="32"
-                             VerticalContentAlignment="Center"
-                             Text="{Binding ChartHwndB, UpdateSourceTrigger=PropertyChanged}" />
+                    <TextBlock Grid.Column="0" VerticalAlignment="Top" Margin="0,8,0,0" Text="CHART HWND B" FontWeight="SemiBold" />
+                    <StackPanel Grid.Column="1">
+                        <ItemsControl ItemsSource="{Binding ManualHwndColumns}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBox Width="92"
+                                             Margin="0,0,10,0"
+                                             Height="32"
+                                             VerticalContentAlignment="Center"
+                                             Text="{Binding ChartHwndB, UpdateSourceTrigger=PropertyChanged}" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                            <Button Content="delete"
+                                    Width="78"
+                                    Height="30"
+                                    Margin="0,0,10,0"
+                                    Command="{Binding DeleteHwndColumnCommand}" />
+                            <Button Content="add"
+                                    Width="78"
+                                    Height="30"
+                                    Command="{Binding AddHwndColumnCommand}" />
+                        </StackPanel>
+                    </StackPanel>
                 </Grid>
 
                 <Grid Grid.Row="14">
@@ -179,7 +250,7 @@
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
 
-                    <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="TRADE HWND B" FontWeight="SemiBold" />
+                    <TextBlock Grid.Column="0" VerticalAlignment="Top" Margin="0,8,0,0" Text="TRADE HWND B" FontWeight="SemiBold" />
                     <TextBox Grid.Column="1"
                              Height="32"
                              VerticalContentAlignment="Center"

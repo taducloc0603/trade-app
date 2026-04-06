@@ -1,10 +1,13 @@
 using TradeDesktop.Application.Abstractions;
+using TradeDesktop.Application.Models;
 using TradeDesktop.Domain.Models;
 
 namespace TradeDesktop.App.State;
 
 public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigStateUpdater
 {
+    private readonly Random _random = new();
+
     public string CurrentMachineHostName { get; private set; } = string.Empty;
     public int CurrentPoint { get; private set; }
     public int CurrentOpenPts { get; private set; }
@@ -30,6 +33,7 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
     public string CurrentTradeHwndA { get; private set; } = string.Empty;
     public string CurrentChartHwndB { get; private set; } = string.Empty;
     public string CurrentTradeHwndB { get; private set; } = string.Empty;
+    public IReadOnlyList<ManualHwndColumnConfig> CurrentManualHwndColumns { get; private set; } = [ManualHwndColumnConfig.Empty];
     public DashboardMetrics? CurrentDashboardMetrics { get; private set; }
 
     // Backward-compatible aliases for existing bindings/usages.
@@ -224,11 +228,46 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
     }
 
     public void UpdateManualTradeHwnd(string chartHwndA, string tradeHwndA, string chartHwndB, string tradeHwndB)
+        => UpdateManualTradeHwnd([
+            new ManualHwndColumnConfig(chartHwndA, tradeHwndA, chartHwndB, tradeHwndB)
+        ]);
+
+    public void UpdateManualTradeHwnd(IReadOnlyList<ManualHwndColumnConfig>? columns)
     {
-        CurrentChartHwndA = (chartHwndA ?? string.Empty).Trim();
-        CurrentTradeHwndA = (tradeHwndA ?? string.Empty).Trim();
-        CurrentChartHwndB = (chartHwndB ?? string.Empty).Trim();
-        CurrentTradeHwndB = (tradeHwndB ?? string.Empty).Trim();
+        var normalizedColumns = (columns ?? [ManualHwndColumnConfig.Empty])
+            .Select(x => (x ?? ManualHwndColumnConfig.Empty).Normalize())
+            .ToList();
+
+        if (normalizedColumns.Count == 0)
+        {
+            normalizedColumns.Add(ManualHwndColumnConfig.Empty);
+        }
+
+        CurrentManualHwndColumns = normalizedColumns;
+
+        var first = normalizedColumns[0];
+        CurrentChartHwndA = first.ChartHwndA;
+        CurrentTradeHwndA = first.TradeHwndA;
+        CurrentChartHwndB = first.ChartHwndB;
+        CurrentTradeHwndB = first.TradeHwndB;
+
         StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public (int Index, ManualHwndColumnConfig Column) GetRandomManualHwndColumn()
+    {
+        var columns = CurrentManualHwndColumns;
+        if (columns.Count == 0)
+        {
+            return (0, ManualHwndColumnConfig.Empty);
+        }
+
+        if (columns.Count == 1)
+        {
+            return (0, columns[0]);
+        }
+
+        var index = _random.Next(0, columns.Count);
+        return (index, columns[index]);
     }
 }
