@@ -210,7 +210,6 @@ public sealed class DashboardViewModel : ObservableObject
     private string _exchangeBTime = "-";
     private string _exchangeBMaxLatMs = "-";
     private string _exchangeBAvgLatMs = "-";
-    private string _latencyDiffDisplay = "-";
     private bool _isTradingLogicEnabled;
     private string _lastSignalText = "-";
     private bool _isLoading = true;
@@ -357,7 +356,6 @@ public sealed class DashboardViewModel : ObservableObject
     public string ExchangeBTime { get => _exchangeBTime; private set => SetProperty(ref _exchangeBTime, value); }
     public string ExchangeBMaxLatMs { get => _exchangeBMaxLatMs; private set => SetProperty(ref _exchangeBMaxLatMs, value); }
     public string ExchangeBAvgLatMs { get => _exchangeBAvgLatMs; private set => SetProperty(ref _exchangeBAvgLatMs, value); }
-    public string LatencyDiffDisplay { get => _latencyDiffDisplay; private set => SetProperty(ref _latencyDiffDisplay, value); }
     public bool IsLoading { get => _isLoading; private set => SetProperty(ref _isLoading, value); }
     public string LoadingMessage { get => _loadingMessage; private set => SetProperty(ref _loadingMessage, value); }
     public string MachineHostName { get => _machineHostName; private set => SetProperty(ref _machineHostName, value); }
@@ -988,12 +986,6 @@ public sealed class DashboardViewModel : ObservableObject
         if (!string.IsNullOrWhiteSpace(selectionB.DiagnosticMessage))
         {
             SignalLogItems.Insert(0, $"    - [{now:HH:mm:ss.fff}] {selectionB.DiagnosticMessage}");
-        }
-
-        if (selectionA.Status == CloseSelectionStatus.NoOpenTrade &&
-            selectionB.Status == CloseSelectionStatus.NoOpenTrade)
-        {
-            SignalLogItems.Insert(0, $"    - [{now:HH:mm:ss.fff}] Close skipped: no open trade on both A and B");
         }
     }
 
@@ -1749,12 +1741,31 @@ public sealed class DashboardViewModel : ObservableObject
 
             if (needCheckA)
             {
-                if (!IsTicketStillOpen(state.TradeMapNameA, state.TicketA!.Value))
+                if (TryIsTicketStillOpen(state.TradeMapNameA, state.TicketA!.Value, out var isStillOpenA))
                 {
-                    state.CloseConfirmedA = true;
+                    if (!isStillOpenA)
+                    {
+                        state.CloseConfirmedA = true;
+                    }
+                    else if (!string.IsNullOrWhiteSpace(state.TradeMapNameA) &&
+                             state.PlatformA.HasValue &&
+                             !string.IsNullOrWhiteSpace(state.TradeHwndA))
+                    {
+                        actions.Add(new PendingCloseRetryAction(
+                            PairId: state.PairId,
+                            IsAutoFlow: state.IsAutoFlow,
+                            SlotNumber: state.SlotNumber,
+                            Exchange: "A",
+                            TradeMapName: state.TradeMapNameA!,
+                            Platform: state.PlatformA.Value,
+                            TradeHwnd: state.TradeHwndA!,
+                            Ticket: state.TicketA!.Value,
+                            TradeType: state.TradeTypeA,
+                            Symbol: state.SymbolA,
+                            Volume: state.VolumeA));
+                    }
                 }
-                else if (state.RetryChecks < 2 &&
-                         !string.IsNullOrWhiteSpace(state.TradeMapNameA) &&
+                else if (!string.IsNullOrWhiteSpace(state.TradeMapNameA) &&
                          state.PlatformA.HasValue &&
                          !string.IsNullOrWhiteSpace(state.TradeHwndA))
                 {
@@ -1775,12 +1786,31 @@ public sealed class DashboardViewModel : ObservableObject
 
             if (needCheckB)
             {
-                if (!IsTicketStillOpen(state.TradeMapNameB, state.TicketB!.Value))
+                if (TryIsTicketStillOpen(state.TradeMapNameB, state.TicketB!.Value, out var isStillOpenB))
                 {
-                    state.CloseConfirmedB = true;
+                    if (!isStillOpenB)
+                    {
+                        state.CloseConfirmedB = true;
+                    }
+                    else if (!string.IsNullOrWhiteSpace(state.TradeMapNameB) &&
+                             state.PlatformB.HasValue &&
+                             !string.IsNullOrWhiteSpace(state.TradeHwndB))
+                    {
+                        actions.Add(new PendingCloseRetryAction(
+                            PairId: state.PairId,
+                            IsAutoFlow: state.IsAutoFlow,
+                            SlotNumber: state.SlotNumber,
+                            Exchange: "B",
+                            TradeMapName: state.TradeMapNameB!,
+                            Platform: state.PlatformB.Value,
+                            TradeHwnd: state.TradeHwndB!,
+                            Ticket: state.TicketB!.Value,
+                            TradeType: state.TradeTypeB,
+                            Symbol: state.SymbolB,
+                            Volume: state.VolumeB));
+                    }
                 }
-                else if (state.RetryChecks < 2 &&
-                         !string.IsNullOrWhiteSpace(state.TradeMapNameB) &&
+                else if (!string.IsNullOrWhiteSpace(state.TradeMapNameB) &&
                          state.PlatformB.HasValue &&
                          !string.IsNullOrWhiteSpace(state.TradeHwndB))
                 {
@@ -1801,21 +1831,44 @@ public sealed class DashboardViewModel : ObservableObject
 
             if (state.CloseConfirmedA && state.CloseConfirmedB)
             {
+                TryBeginWaitAfterCloseFromPending(state);
                 state.IsResolved = true;
                 continue;
             }
 
-            if (state.RetryChecks >= 2 && !state.ExhaustedLogged)
-            {
-                state.ExhaustedLogged = true;
-                state.IsResolved = true;
-                SignalLogItems.Insert(0,
-                    $"    - [{DateTime.Now:HH:mm:ss.fff}] Close pending exhausted after 2 checks: pair={state.PairId}");
-                Debug.WriteLine($"[ExecClose][PendingExhausted] pairId={state.PairId}, retryChecks={state.RetryChecks}");
-            }
+            // Keep pending unresolved and continue retrying in subsequent checks
+            // until both legs are confirmed closed.
         }
 
         return actions;
+    }
+
+    private void TryBeginWaitAfterCloseFromPending(PendingClosePairState state)
+    {
+        if (!state.IsAutoFlow)
+        {
+            return;
+        }
+
+        var closeCompletedAtUtc = DateTime.UtcNow;
+        var closeCompletedAtLocal = closeCompletedAtUtc.ToLocalTime();
+        _tradingFlowEngine.BeginWaitAfterClose(
+            closeCompletedAtUtc,
+            _runtimeConfigState.CurrentStartWaitTime,
+            _runtimeConfigState.CurrentEndWaitTime);
+
+        if (_tradingFlowEngine.ClosedAtUtc != closeCompletedAtUtc)
+        {
+            return;
+        }
+
+        var waitSeconds = _tradingFlowEngine.CurrentWaitSeconds;
+        SignalLogItems.Insert(0,
+            $"    - [{DateTime.Now:HH:mm:ss.fff}] Close pending confirmed by ticket check: pair={state.PairId}");
+        SignalLogItems.Insert(0,
+            SignalLogFormatter.FormatRandomWaitingTime(closeCompletedAtLocal, waitSeconds));
+        OnPropertyChanged(nameof(CurrentPositionText));
+        OnPropertyChanged(nameof(CurrentPhaseText));
     }
 
     private async Task ExecutePendingCloseRetryActionsAsync(
@@ -1886,20 +1939,23 @@ public sealed class DashboardViewModel : ObservableObject
         Debug.WriteLine($"[ExecClose][PendingRetry] pairId={action.PairId}, exchange={action.Exchange}, retryChecks={state.RetryChecks}, success={closeResult.Success}");
     }
 
-    private bool IsTicketStillOpen(string? tradeMapName, ulong ticket)
+    private bool TryIsTicketStillOpen(string? tradeMapName, ulong ticket, out bool isStillOpen)
     {
+        isStillOpen = false;
+
         if (string.IsNullOrWhiteSpace(tradeMapName))
         {
             return false;
         }
 
         var result = _tradesSharedMemoryReader.ReadTrades(tradeMapName);
-        if (!result.IsMapAvailable || !result.IsParseSuccess || result.Records.Count == 0)
+        if (!result.IsMapAvailable || !result.IsParseSuccess)
         {
             return false;
         }
 
-        return result.Records.Any(x => x.Ticket == ticket);
+        isStillOpen = result.Records.Any(x => x.Ticket == ticket);
+        return true;
     }
 
     private bool ShouldApplyTradeResult(string mapName, SharedMapReadResult<TradeSharedRecord> result)
@@ -2931,8 +2987,6 @@ public sealed class DashboardViewModel : ObservableObject
         ExchangeBMaxLatMs = FormatNumberOrDash(metrics.ExchangeB.MaxLatMs, 0);
         ExchangeBAvgLatMs = FormatNumberOrDash(metrics.ExchangeB.AvgLatMs, 0);
 
-        LatencyDiffDisplay = FormatLatencyDiff(metrics.ExchangeA.LatencyMs, metrics.ExchangeB.LatencyMs);
-
         GapBuy = FormatIntegerOrDash(metrics.GapBuy);
         GapSell = FormatIntegerOrDash(metrics.GapSell);
     }
@@ -3007,18 +3061,5 @@ public sealed class DashboardViewModel : ObservableObject
 
     private static string FormatTextOrDash(string? value)
         => string.IsNullOrWhiteSpace(value) ? "-" : value;
-
-    private static string FormatLatencyDiff(decimal? latencyA, decimal? latencyB)
-    {
-        if (!latencyA.HasValue || !latencyB.HasValue)
-        {
-            return "-";
-        }
-
-        var a = latencyA.Value;
-        var b = latencyB.Value;
-        var result = a - b;
-        return $"({a:0} - {b:0}) = {result:0}";
-    }
 
 }
