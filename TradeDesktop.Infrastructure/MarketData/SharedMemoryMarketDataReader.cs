@@ -9,7 +9,7 @@ namespace TradeDesktop.Infrastructure.MarketData;
 
 public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
 {
-    private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(120);
+    private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(50);
     private static readonly decimal MaxReasonableLatencyMs = 86_400_000m; // 24h
 
     private const int ExpectedVersion = 1;
@@ -28,6 +28,8 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
     private readonly Dictionary<string, MapReaderHandle> _mapReaders = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, LatencyAccumulator> _latencyStatsByMap = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, TpsAccumulator> _tpsStatsByMap = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, long> _lastTimestampMsByMap = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, decimal?> _lastLatencyMsByMap = new(StringComparer.OrdinalIgnoreCase);
     private CancellationTokenSource? _cts;
     private Task? _worker;
 
@@ -141,9 +143,26 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
             Debug.WriteLine(
                 $"[SHM:{normalizedMapName}] version={tickRecord.Version} symbol={symbol} tsMs={tickRecord.TimestampMs} tickTimeMsc={tickRecord.TickTimeMsc} bid={tickRecord.Bid} ask={tickRecord.Ask} spread={tickRecord.Spread}");
 
-            var latencyMs = TryComputeLatencyMs(tickRecord.TimestampMs);
-            var (maxLatMs, avgLatMs) = UpdateLatencyStats(normalizedMapName, latencyMs);
-            var tps = UpdateTpsStats(normalizedMapName);
+            var isNewTick = MarkAndCheckNewTick(normalizedMapName, tickRecord.TimestampMs);
+            decimal? latencyMs;
+            decimal? maxLatMs;
+            decimal? avgLatMs;
+            float? tps;
+
+            if (isNewTick)
+            {
+                var receivedTickCountMs = Environment.TickCount64;
+                latencyMs = TryComputeLatencyMs(receivedTickCountMs, tickRecord.TimestampMs);
+                SetLastLatency(normalizedMapName, latencyMs);
+                (maxLatMs, avgLatMs) = UpdateLatencyStats(normalizedMapName, latencyMs);
+                tps = UpdateTpsStats(normalizedMapName);
+            }
+            else
+            {
+                latencyMs = GetLastLatency(normalizedMapName);
+                (maxLatMs, avgLatMs) = GetLatencyStats(normalizedMapName);
+                tps = GetLastTps(normalizedMapName);
+            }
 
             return new ExchangeMetrics(
                 Symbol: symbol,
@@ -210,6 +229,8 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
                 _mapReaders.Remove(key);
                 _latencyStatsByMap.Remove(key);
                 _tpsStatsByMap.Remove(key);
+                _lastTimestampMsByMap.Remove(key);
+                _lastLatencyMsByMap.Remove(key);
             }
         }
     }
@@ -227,6 +248,8 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
             _mapReaders.Remove(mapName);
             _latencyStatsByMap.Remove(mapName);
             _tpsStatsByMap.Remove(mapName);
+            _lastTimestampMsByMap.Remove(mapName);
+            _lastLatencyMsByMap.Remove(mapName);
         }
     }
 
@@ -242,6 +265,54 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
             _mapReaders.Clear();
             _latencyStatsByMap.Clear();
             _tpsStatsByMap.Clear();
+            _lastTimestampMsByMap.Clear();
+            _lastLatencyMsByMap.Clear();
+        }
+    }
+
+    private bool MarkAndCheckNewTick(string mapName, long timestampMs)
+    {
+        lock (_syncRoot)
+        {
+            if (_lastTimestampMsByMap.TryGetValue(mapName, out var lastTimestamp) &&
+                lastTimestamp == timestampMs)
+            {
+                return false;
+            }
+
+            _lastTimestampMsByMap[mapName] = timestampMs;
+            return true;
+        }
+    }
+
+    private void SetLastLatency(string mapName, decimal? latencyMs)
+    {
+        lock (_syncRoot)
+        {
+            _lastLatencyMsByMap[mapName] = latencyMs;
+        }
+    }
+
+    private decimal? GetLastLatency(string mapName)
+    {
+        lock (_syncRoot)
+        {
+            return _lastLatencyMsByMap.TryGetValue(mapName, out var latencyMs)
+                ? latencyMs
+                : null;
+        }
+    }
+
+    private (decimal? MaxLatMs, decimal? AvgLatMs) GetLatencyStats(string mapName)
+    {
+        lock (_syncRoot)
+        {
+            if (!_latencyStatsByMap.TryGetValue(mapName, out var accumulator))
+            {
+                return (null, null);
+            }
+
+            return (accumulator.Max, accumulator.Avg);
         }
     }
 
@@ -278,6 +349,19 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
             }
 
             return accumulator.Add(currentSecond);
+        }
+    }
+
+    private float? GetLastTps(string mapName)
+    {
+        lock (_syncRoot)
+        {
+            if (!_tpsStatsByMap.TryGetValue(mapName, out var accumulator))
+            {
+                return null;
+            }
+
+            return accumulator.LastTps;
         }
     }
 
@@ -378,11 +462,11 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
         }
     }
 
-    private static decimal? TryComputeLatencyMs(long tickCountMs)
+    private static decimal? TryComputeLatencyMs(long nowTickCountMs, long tickCountMs)
     {
         try
         {
-            var diff = Environment.TickCount64 - tickCountMs;
+            var diff = nowTickCountMs - tickCountMs;
             if (diff < 0)
             {
                 return 0;
@@ -449,6 +533,9 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
         private long? _currentSecond;
         private int _tickCountInCurrentSecond;
         private float _lastTps;
+        private bool _hasValue;
+
+        public float? LastTps => _hasValue ? _lastTps : null;
 
         public float Add(long second)
         {
@@ -457,6 +544,7 @@ public sealed class SharedMemoryMarketDataReader : ISharedMemoryReader
                 _currentSecond = second;
                 _tickCountInCurrentSecond = 1;
                 _lastTps = 1f;
+                _hasValue = true;
                 return _lastTps;
             }
 
