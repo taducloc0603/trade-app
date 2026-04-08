@@ -56,6 +56,7 @@ public sealed class DashboardViewModel : ObservableObject
     private SharedMapReadResult<TradeSharedRecord>? _latestTradeRightResult;
 
     private static readonly TimeSpan OrderInfoPollInterval = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan OpenPartialRecheckDelay = TimeSpan.FromSeconds(1);
 
     private sealed record PendingOpenRequest(
         string PairId,
@@ -156,6 +157,8 @@ public sealed class DashboardViewModel : ObservableObject
         public double? VolumeB { get; set; }
 
         public bool TimeoutCloseTriggered { get; set; }
+        public bool TimeoutRecheckPending { get; set; }
+        public DateTimeOffset? TimeoutRecheckRequestedAtLocal { get; set; }
         public bool IsResolved { get; set; }
     }
 
@@ -1607,14 +1610,34 @@ public sealed class DashboardViewModel : ObservableObject
 
             var hasOnlyA = state.OpenConfirmedA && !state.OpenConfirmedB && state.OpenedTicketA.HasValue;
             var hasOnlyB = state.OpenConfirmedB && !state.OpenConfirmedA && state.OpenedTicketB.HasValue;
+            var hasPartialOpen = hasOnlyA || hasOnlyB;
 
-            if (!hasOnlyA && !hasOnlyB)
+            if (!hasPartialOpen)
             {
+                state.TimeoutRecheckPending = false;
+                state.TimeoutRecheckRequestedAtLocal = null;
                 state.IsResolved = state.OpenConfirmedA && state.OpenConfirmedB;
                 continue;
             }
 
+            // Recheck once more after 1 second (aligned with poll cycle) before concluding
+            // the missing leg cannot be opened and triggering close for opened leg.
+            if (!state.TimeoutRecheckPending)
+            {
+                state.TimeoutRecheckPending = true;
+                state.TimeoutRecheckRequestedAtLocal = now;
+                continue;
+            }
+
+            var recheckElapsed = now - (state.TimeoutRecheckRequestedAtLocal ?? now);
+            if (recheckElapsed < OpenPartialRecheckDelay)
+            {
+                continue;
+            }
+
             state.TimeoutCloseTriggered = true;
+            state.TimeoutRecheckPending = false;
+            state.TimeoutRecheckRequestedAtLocal = null;
 
             if (hasOnlyA)
             {
