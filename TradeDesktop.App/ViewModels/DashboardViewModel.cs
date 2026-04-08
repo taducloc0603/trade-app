@@ -393,6 +393,7 @@ public sealed class DashboardViewModel : ObservableObject
 
     public ObservableCollection<string> SignalLogItems { get; } = [];
     public ObservableCollection<TradePairRealtimeProfitRowViewModel> TradeRealtimeProfitRows { get; } = [];
+    public ObservableCollection<HistoryPairProfitRowViewModel> HistoryRealtimeProfitRows { get; } = [];
     public IReadOnlyList<OrderInfoTabViewModel> OrderTabs { get; }
     public OrderInfoTabViewModel TradeTab { get; }
     public OrderInfoTabViewModel HistoryTab { get; }
@@ -1389,6 +1390,7 @@ public sealed class DashboardViewModel : ObservableObject
         _nextStt = 1;
         _profitSnapshotByTicket.Clear();
         TradeRealtimeProfitRows.Clear();
+        HistoryRealtimeProfitRows.Clear();
         OnPropertyChanged(nameof(CurrentPositionText));
         OnPropertyChanged(nameof(CurrentPhaseText));
     }
@@ -2135,24 +2137,28 @@ public sealed class DashboardViewModel : ObservableObject
         if (!result.IsMapAvailable)
         {
             panel.SetMapNotFound(panel.TargetMapName);
+            RebuildHistoryRealtimeProfitRows();
             return;
         }
 
         if (!result.IsParseSuccess)
         {
             panel.SetParseError(result.ErrorMessage ?? "Lỗi parse dữ liệu");
+            RebuildHistoryRealtimeProfitRows();
             return;
         }
 
         if (result.Count == 0)
         {
             panel.SetEmpty();
+            RebuildHistoryRealtimeProfitRows();
             return;
         }
 
         if (result.Records.Count == 0)
         {
             panel.SetParseError("Lỗi parse dữ liệu: count > 0 nhưng không có records");
+            RebuildHistoryRealtimeProfitRows();
             return;
         }
 
@@ -2164,11 +2170,67 @@ public sealed class DashboardViewModel : ObservableObject
         if (appGeneratedRecords.Count == 0)
         {
             panel.SetEmpty();
+            RebuildHistoryRealtimeProfitRows();
             return;
         }
 
         var rows = BuildHistoryRows(appGeneratedRecords, appGeneratedRecords.Count, result.Timestamp, point);
         panel.SetHistoryData(rows);
+        RebuildHistoryRealtimeProfitRows();
+    }
+
+    private void RebuildHistoryRealtimeProfitRows()
+    {
+        var sumByStt = new Dictionary<int, (double Profit, double ProfitDollar)>();
+
+        AccumulateHistoryProfitRows(HistoryTab.LeftPanel.HistoryRows, sumByStt);
+        AccumulateHistoryProfitRows(HistoryTab.RightPanel.HistoryRows, sumByStt);
+
+        var rebuilt = sumByStt
+            .OrderBy(x => x.Key)
+            .Select(x => new HistoryPairProfitRowViewModel(
+                stt: x.Key.ToString(CultureInfo.InvariantCulture),
+                profit: x.Value.Profit.ToString("0.00", CultureInfo.InvariantCulture),
+                profitDollar: x.Value.ProfitDollar.ToString("0.00", CultureInfo.InvariantCulture)))
+            .ToList();
+
+        HistoryRealtimeProfitRows.Clear();
+        foreach (var row in rebuilt)
+        {
+            HistoryRealtimeProfitRows.Add(row);
+        }
+    }
+
+    private static void AccumulateHistoryProfitRows(
+        IEnumerable<HistoryRowViewModel> rows,
+        Dictionary<int, (double Profit, double ProfitDollar)> sumByStt)
+    {
+        foreach (var row in rows)
+        {
+            if (!int.TryParse(row.Stt, NumberStyles.Integer, CultureInfo.InvariantCulture, out var stt) || stt <= 0)
+            {
+                continue;
+            }
+
+            if (!double.TryParse(row.Profit, NumberStyles.Float, CultureInfo.InvariantCulture, out var profit))
+            {
+                continue;
+            }
+
+            if (!double.TryParse(row.FeeSpread, NumberStyles.Float, CultureInfo.InvariantCulture, out var profitDollar))
+            {
+                continue;
+            }
+
+            if (sumByStt.TryGetValue(stt, out var existing))
+            {
+                sumByStt[stt] = (existing.Profit + profit, existing.ProfitDollar + profitDollar);
+            }
+            else
+            {
+                sumByStt[stt] = (profit, profitDollar);
+            }
+        }
     }
 
     private bool IsAppGeneratedTicket(ulong ticket)
