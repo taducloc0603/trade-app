@@ -308,10 +308,67 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="16" />
                                 <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="16" />
+                                <ColumnDefinition Width="0.8*" />
                             </Grid.ColumnDefinitions>
 
                             <views:OrderInfoPanel Grid.Column="0" DataContext="{Binding TradeTab.LeftPanel}" />
                             <views:OrderInfoPanel Grid.Column="2" DataContext="{Binding TradeTab.RightPanel}" />
+
+                            <Border Grid.Column="4"
+                                    CornerRadius="10"
+                                    Padding="10"
+                                    Background="#FAFBFC"
+                                    BorderBrush="#EEF1F5"
+                                    BorderThickness="1">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="8" />
+                                        <RowDefinition Height="*" />
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Text="Profit Realtime (A + B)"
+                                               FontWeight="SemiBold"
+                                               Foreground="#344054" />
+
+                                    <DataGrid Grid.Row="2"
+                                              ItemsSource="{Binding TradeRealtimeProfitRows}"
+                                              AutoGenerateColumns="False"
+                                              IsReadOnly="True"
+                                              CanUserAddRows="False"
+                                              CanUserDeleteRows="False"
+                                              CanUserReorderColumns="False"
+                                              CanUserResizeRows="False"
+                                              CanUserSortColumns="False"
+                                              EnableColumnVirtualization="False"
+                                              EnableRowVirtualization="False"
+                                              HeadersVisibility="Column"
+                                              GridLinesVisibility="Horizontal"
+                                              RowHeaderWidth="0"
+                                              BorderThickness="0"
+                                              Background="Transparent"
+                                              Foreground="#101828"
+                                              FontFamily="Consolas"
+                                              FontSize="11"
+                                              ScrollViewer.CanContentScroll="False"
+                                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                              ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                        <DataGrid.ColumnHeaderStyle>
+                                            <Style TargetType="DataGridColumnHeader">
+                                                <Setter Property="FontWeight" Value="SemiBold" />
+                                                <Setter Property="Foreground" Value="#475467" />
+                                                <Setter Property="Background" Value="#FAFBFC" />
+                                            </Style>
+                                        </DataGrid.ColumnHeaderStyle>
+
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="STT" Binding="{Binding Stt}" Width="70" />
+                                            <DataGridTextColumn Header="Profit realtime" Binding="{Binding ProfitRealtime}" Width="*" />
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </Grid>
+                            </Border>
                         </Grid>
                     </TabItem>
 

@@ -3,6 +3,7 @@ namespace TradeDesktop.App.ViewModels;
 public sealed class TradeRowViewModel
 {
     public TradeRowViewModel(
+        string stt,
         string pairId,
         string timestamp,
         string count,
@@ -20,6 +21,7 @@ public sealed class TradeRowViewModel
         string openEaTimeLocal,
         string openExecution)
     {
+        Stt = stt;
         PairId = pairId;
         Timestamp = timestamp;
         Count = count;
@@ -38,6 +40,7 @@ public sealed class TradeRowViewModel
         OpenExecution = openExecution;
     }
 
+    public string Stt { get; }
     public string PairId { get; }
     public string Timestamp { get; }
     public string Count { get; }

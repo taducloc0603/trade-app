@@ -44,8 +44,10 @@ public sealed class DashboardViewModel : ObservableObject
     private readonly Dictionary<ulong, double> _openSlippageByTicket = [];
     private readonly Dictionary<ulong, long> _openExecutionMsByTicket = [];
     private readonly Dictionary<ulong, long> _closeExecutionMsByTicket = [];
+    private readonly Dictionary<string, int> _sttByPairId = new(StringComparer.Ordinal);
     private readonly Dictionary<string, PendingOpenPairState> _pendingOpenPairById = new(StringComparer.Ordinal);
     private readonly Dictionary<string, PendingClosePairState> _pendingClosePairById = new(StringComparer.Ordinal);
+    private int _nextStt = 1;
     private int _manualSlot;
     private int _autoSlot;
     private readonly Queue<SignalEntryGuard.PriceHistoryEntry> _priceHistory = new();
@@ -386,6 +388,7 @@ public sealed class DashboardViewModel : ObservableObject
     }
 
     public ObservableCollection<string> SignalLogItems { get; } = [];
+    public ObservableCollection<TradePairRealtimeProfitRowViewModel> TradeRealtimeProfitRows { get; } = [];
     public IReadOnlyList<OrderInfoTabViewModel> OrderTabs { get; }
     public OrderInfoTabViewModel TradeTab { get; }
     public OrderInfoTabViewModel HistoryTab { get; }
@@ -1371,6 +1374,9 @@ public sealed class DashboardViewModel : ObservableObject
         _tradingFlowEngine.Reset();
         _manualSlot = 0;
         _autoSlot = 0;
+        _sttByPairId.Clear();
+        _nextStt = 1;
+        TradeRealtimeProfitRows.Clear();
         OnPropertyChanged(nameof(CurrentPositionText));
         OnPropertyChanged(nameof(CurrentPhaseText));
     }
@@ -2004,24 +2010,28 @@ public sealed class DashboardViewModel : ObservableObject
         if (!result.IsMapAvailable)
         {
             panel.SetMapNotFound(panel.TargetMapName);
+            RebuildTradeRealtimeProfitRows();
             return;
         }
 
         if (!result.IsParseSuccess)
         {
             panel.SetParseError(result.ErrorMessage ?? "Lỗi parse dữ liệu");
+            RebuildTradeRealtimeProfitRows();
             return;
         }
 
         if (result.Count == 0)
         {
             panel.SetEmpty();
+            RebuildTradeRealtimeProfitRows();
             return;
         }
 
         if (result.Records.Count == 0)
         {
             panel.SetParseError("Lỗi parse dữ liệu: count > 0 nhưng không có records");
+            RebuildTradeRealtimeProfitRows();
             return;
         }
 
@@ -2033,11 +2043,56 @@ public sealed class DashboardViewModel : ObservableObject
         if (appGeneratedRecords.Count == 0)
         {
             panel.SetEmpty();
+            RebuildTradeRealtimeProfitRows();
             return;
         }
 
         var rows = BuildTradeRows(appGeneratedRecords, appGeneratedRecords.Count, result.Timestamp, snapshot, isExchangeA, point);
         panel.SetTradeData(rows);
+        RebuildTradeRealtimeProfitRows();
+    }
+
+    private void RebuildTradeRealtimeProfitRows()
+    {
+        var sumByStt = new Dictionary<int, double>();
+
+        AccumulateTradeProfitRows(TradeTab.LeftPanel.TradeRows, sumByStt);
+        AccumulateTradeProfitRows(TradeTab.RightPanel.TradeRows, sumByStt);
+
+        var rebuilt = sumByStt
+            .OrderBy(x => x.Key)
+            .Select(x => new TradePairRealtimeProfitRowViewModel(
+                stt: x.Key.ToString(CultureInfo.InvariantCulture),
+                profitRealtime: x.Value.ToString("0.00", CultureInfo.InvariantCulture)))
+            .ToList();
+
+        TradeRealtimeProfitRows.Clear();
+        foreach (var row in rebuilt)
+        {
+            TradeRealtimeProfitRows.Add(row);
+        }
+    }
+
+    private static void AccumulateTradeProfitRows(
+        IEnumerable<TradeRowViewModel> rows,
+        Dictionary<int, double> sumByStt)
+    {
+        foreach (var row in rows)
+        {
+            if (!int.TryParse(row.Stt, NumberStyles.Integer, CultureInfo.InvariantCulture, out var stt) || stt <= 0)
+            {
+                continue;
+            }
+
+            if (!double.TryParse(row.Profit, NumberStyles.Float, CultureInfo.InvariantCulture, out var profit))
+            {
+                continue;
+            }
+
+            sumByStt[stt] = sumByStt.TryGetValue(stt, out var existing)
+                ? existing + profit
+                : profit;
+        }
     }
 
     private void ApplyHistoryResult(
@@ -2320,9 +2375,11 @@ public sealed class DashboardViewModel : ObservableObject
             var openExecutionMs = _openExecutionMsByTicket.ContainsKey(record.Ticket) ? openExecutionMsValue : (long?)null;
             _openRequestByTicket.TryGetValue(record.Ticket, out var openRequest);
             var pairId = _pairIdByTicket.TryGetValue(record.Ticket, out var value) ? value : "-";
+            var stt = ResolveStt(pairId);
             var tradeOpenSlippage = CalculateTradeOpenSlippage(record, point);
 
             return new TradeRowViewModel(
+                stt: stt,
                 pairId: pairId,
                 timestamp: FormatRawTimestamp(timestamp),
                 count: count.ToString(CultureInfo.InvariantCulture),
@@ -2354,9 +2411,11 @@ public sealed class DashboardViewModel : ObservableObject
             var closeExecutionMs = _closeExecutionMsByTicket.ContainsKey(record.Ticket) ? closeExecutionMsValue : (long?)null;
             _closeRequestByTicket.TryGetValue(record.Ticket, out var closeRequest);
             var pairId = _pairIdByTicket.TryGetValue(record.Ticket, out var value) ? value : "-";
+            var stt = ResolveStt(pairId);
             var historyCloseSlippage = CalculateHistoryCloseSlippage(record, point);
 
             return new HistoryRowViewModel(
+                stt: stt,
                 pairId: pairId,
                 timestamp: FormatRawTimestamp(timestamp),
                 count: count.ToString(CultureInfo.InvariantCulture),
@@ -2379,6 +2438,23 @@ public sealed class DashboardViewModel : ObservableObject
                 openExecution: FormatExecutionMs(openExecutionMs),
                 closeExecution: FormatCloseExecutionDebug(record.CloseEaTimeLocal, closeRequest?.AppCloseRequestRawMs, closeExecutionMs));
         });
+
+    private string ResolveStt(string pairId)
+    {
+        if (string.IsNullOrWhiteSpace(pairId) || string.Equals(pairId, "-", StringComparison.Ordinal))
+        {
+            return "-";
+        }
+
+        if (_sttByPairId.TryGetValue(pairId, out var existing))
+        {
+            return existing.ToString(CultureInfo.InvariantCulture);
+        }
+
+        var next = _nextStt++;
+        _sttByPairId[pairId] = next;
+        return next.ToString(CultureInfo.InvariantCulture);
+    }
 
     private static string FormatOpenExecutionDebug(ulong openEaTimeLocal, long? appOpenRequestRawMs, long? openExecutionMs)
     {
