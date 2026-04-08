@@ -241,6 +241,68 @@ public sealed class TradingFlowEngineTests
         Assert.InRange(sut.CurrentHoldingSeconds, 4, 9);
     }
 
+    [Fact]
+    public void BeginWaitAfterClose_WhenPendingWasClearedButStillWaitingClose_CanStillTransitionToWaitingOpen()
+    {
+        var sut = new TradingFlowEngine(new GapSignalConfirmationEngine(), new CloseSignalEngine());
+        var start = new DateTime(2026, 3, 18, 16, 25, 0, DateTimeKind.Utc);
+
+        _ = Process(sut, start.AddMilliseconds(0), gapBuy: 5, gapSell: null);
+        _ = Process(sut, start.AddMilliseconds(200), gapBuy: 6, gapSell: null);
+        var open = Process(sut, start.AddMilliseconds(550), gapBuy: 8, gapSell: null);
+        Assert.NotNull(open);
+        Assert.Equal(TradingFlowPhase.WaitingCloseFromGapBuy, sut.CurrentPhase);
+
+        _ = Process(sut, start.AddMilliseconds(700), gapBuy: 20, gapSell: -5);
+        _ = Process(sut, start.AddMilliseconds(860), gapBuy: 20, gapSell: -6);
+        var close = Process(sut, start.AddMilliseconds(1110), gapBuy: 20, gapSell: -8);
+        Assert.NotNull(close);
+
+        // Simulate a premature abort path that clears pending flag,
+        // while engine is still in waiting-close phase.
+        sut.AbortPendingCloseExecution();
+        Assert.Equal(TradingFlowPhase.WaitingCloseFromGapBuy, sut.CurrentPhase);
+
+        // External confirmation still needs to complete the cycle.
+        sut.BeginWaitAfterClose(close!.TriggeredAtUtc, startWaitSeconds: 0, endWaitSeconds: 0);
+
+        Assert.Equal(TradingFlowPhase.WaitingOpen, sut.CurrentPhase);
+        Assert.Equal(TradingOpenMode.None, sut.CurrentOpenMode);
+        Assert.Equal(TradingPositionSide.None, sut.CurrentPositionSide);
+    }
+
+    [Fact]
+    public void ProcessSnapshot_WhenSnapshotTimestampStaleNearNow_WaitGateCanProgressByWallClock()
+    {
+        var sut = new TradingFlowEngine(new GapSignalConfirmationEngine(), new CloseSignalEngine());
+        var nowUtc = DateTime.UtcNow;
+
+        // Move to waiting-open with wait gate = 1 second.
+        _ = Process(sut, nowUtc.AddMilliseconds(-600), gapBuy: 5, gapSell: null, ConfigWithTimeGuards);
+        _ = Process(sut, nowUtc.AddMilliseconds(-400), gapBuy: 6, gapSell: null, ConfigWithTimeGuards);
+        var open = Process(sut, nowUtc.AddMilliseconds(-100), gapBuy: 8, gapSell: null, ConfigWithTimeGuards);
+        Assert.NotNull(open);
+
+        _ = Process(sut, nowUtc.AddMilliseconds(2200), gapBuy: null, gapSell: -5, ConfigWithTimeGuards);
+        _ = Process(sut, nowUtc.AddMilliseconds(2400), gapBuy: null, gapSell: -6, ConfigWithTimeGuards);
+        var close = Process(sut, nowUtc.AddMilliseconds(2800), gapBuy: null, gapSell: -8, ConfigWithTimeGuards);
+        Assert.NotNull(close);
+        sut.BeginWaitAfterClose(DateTime.UtcNow, startWaitSeconds: 1, endWaitSeconds: 1);
+
+        // Feed a stale snapshot timestamp (frozen around "now").
+        var staleSnapshotTs = nowUtc;
+        Assert.Null(Process(sut, staleSnapshotTs, gapBuy: 10, gapSell: null, ConfigWithTimeGuards));
+
+        Thread.Sleep(1200);
+
+        // With wall-clock fallback, open checks should proceed even when snapshot timestamp is stale.
+        Assert.Null(Process(sut, staleSnapshotTs, gapBuy: 5, gapSell: null, ConfigWithTimeGuards));
+        Assert.Null(Process(sut, staleSnapshotTs, gapBuy: 6, gapSell: null, ConfigWithTimeGuards));
+        var nextOpen = Process(sut, staleSnapshotTs, gapBuy: 8, gapSell: null, ConfigWithTimeGuards);
+        Assert.NotNull(nextOpen);
+        Assert.Equal(GapSignalAction.Open, nextOpen!.Action);
+    }
+
     private static GapSignalTriggerResult? Process(
         TradingFlowEngine sut,
         DateTime timestampUtc,

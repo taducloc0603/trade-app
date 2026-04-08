@@ -8,7 +8,10 @@ public sealed class TradingFlowEngine(
     ICloseSignalEngine closeSignalEngine) : ITradingFlowEngine
 {
     private readonly Random _random = new();
+    private static readonly TimeSpan SnapshotWallClockTolerance = TimeSpan.FromMinutes(5);
     private bool _isCloseExecutionPending;
+    private DateTime? _openedAtRuntimeUtc;
+    private DateTime? _closedAtRuntimeUtc;
 
     public TradingFlowPhase CurrentPhase { get; private set; } = TradingFlowPhase.WaitingOpen;
     public TradingOpenMode CurrentOpenMode { get; private set; } = TradingOpenMode.None;
@@ -47,10 +50,13 @@ public sealed class TradingFlowEngine(
                 : TradingPositionSide.Sell;
 
             OpenedAtUtc = openTrigger.TriggeredAtUtc;
+            _openedAtRuntimeUtc = DateTime.UtcNow;
+            _closedAtRuntimeUtc = null;
             CurrentHoldingSeconds = NextSecondsInRange(config.StartTimeHold, config.EndTimeHold);
             CurrentPhase = CurrentOpenMode == TradingOpenMode.GapBuy
                 ? TradingFlowPhase.WaitingCloseFromGapBuy
                 : TradingFlowPhase.WaitingCloseFromGapSell;
+            _isCloseExecutionPending = false;
             closeSignalEngine.Reset();
             openSignalEngine.Reset();
             return openTrigger;
@@ -87,7 +93,13 @@ public sealed class TradingFlowEngine(
         int startWaitSeconds,
         int endWaitSeconds)
     {
-        if (!_isCloseExecutionPending)
+        var isWaitingClosePhase = CurrentPhase == TradingFlowPhase.WaitingCloseFromGapBuy
+            || CurrentPhase == TradingFlowPhase.WaitingCloseFromGapSell;
+
+        // Keep this transition idempotent and resilient: even if the pending flag was cleared
+        // by a race/path outside normal happy-flow, external close confirmation should still be
+        // able to move the state machine back to WaitingOpen.
+        if (!_isCloseExecutionPending && (!isWaitingClosePhase || CurrentOpenMode == TradingOpenMode.None))
         {
             return;
         }
@@ -97,8 +109,10 @@ public sealed class TradingFlowEngine(
         CurrentOpenMode = TradingOpenMode.None;
         CurrentPositionSide = TradingPositionSide.None;
         OpenedAtUtc = null;
+        _openedAtRuntimeUtc = null;
         CurrentHoldingSeconds = 0;
         ClosedAtUtc = closeCompletedAtUtc;
+        _closedAtRuntimeUtc = DateTime.UtcNow;
         CurrentWaitSeconds = NextSecondsInRange(startWaitSeconds, endWaitSeconds);
         openSignalEngine.Reset();
         closeSignalEngine.Reset();
@@ -113,6 +127,7 @@ public sealed class TradingFlowEngine(
 
         _isCloseExecutionPending = false;
         ClosedAtUtc = null;
+        _closedAtRuntimeUtc = null;
         CurrentWaitSeconds = 0;
         closeSignalEngine.Reset();
     }
@@ -124,7 +139,9 @@ public sealed class TradingFlowEngine(
         CurrentOpenMode = TradingOpenMode.None;
         CurrentPositionSide = TradingPositionSide.None;
         OpenedAtUtc = null;
+        _openedAtRuntimeUtc = null;
         ClosedAtUtc = null;
+        _closedAtRuntimeUtc = null;
         CurrentHoldingSeconds = 0;
         CurrentWaitSeconds = 0;
         openSignalEngine.Reset();
@@ -138,7 +155,9 @@ public sealed class TradingFlowEngine(
             return true;
         }
 
-        var elapsed = snapshotTimestampUtc - ClosedAtUtc.Value;
+        var effectiveNow = ResolveEffectiveNowUtc(snapshotTimestampUtc);
+        var baseline = _closedAtRuntimeUtc ?? ClosedAtUtc.Value;
+        var elapsed = effectiveNow - baseline;
         return elapsed >= TimeSpan.FromSeconds(CurrentWaitSeconds);
     }
 
@@ -154,8 +173,33 @@ public sealed class TradingFlowEngine(
             return true;
         }
 
-        var elapsed = snapshotTimestampUtc - OpenedAtUtc.Value;
+        var effectiveNow = ResolveEffectiveNowUtc(snapshotTimestampUtc);
+        var baseline = _openedAtRuntimeUtc ?? OpenedAtUtc.Value;
+        var elapsed = effectiveNow - baseline;
         return elapsed >= TimeSpan.FromSeconds(CurrentHoldingSeconds);
+    }
+
+    private static DateTime ResolveEffectiveNowUtc(DateTime snapshotTimestampUtc)
+    {
+        var snapshotUtc = snapshotTimestampUtc.Kind switch
+        {
+            DateTimeKind.Utc => snapshotTimestampUtc,
+            DateTimeKind.Local => snapshotTimestampUtc.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(snapshotTimestampUtc, DateTimeKind.Utc)
+        };
+
+        var wallUtc = DateTime.UtcNow;
+        var delta = snapshotUtc - wallUtc;
+
+        // For live streams (timestamp close to wall clock), protect against stale/frozen snapshot time
+        // by advancing with wall clock. For synthetic/backtest timestamps far from wall clock,
+        // keep original behavior to preserve deterministic test scenarios.
+        if (Math.Abs(delta.TotalMinutes) <= SnapshotWallClockTolerance.TotalMinutes)
+        {
+            return snapshotUtc > wallUtc ? snapshotUtc : wallUtc;
+        }
+
+        return snapshotUtc;
     }
 
     private int NextSecondsInRange(int minSeconds, int maxSeconds)
