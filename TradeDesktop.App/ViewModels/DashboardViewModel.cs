@@ -103,6 +103,15 @@ public sealed class DashboardViewModel : ObservableObject
         public bool WaitingStarted { get; set; }
     }
 
+    private enum LivePairTradeState
+    {
+        BothFlat,
+        OnlyAOpen,
+        OnlyBOpen,
+        BothOpen,
+        MapUnavailableOrParseError
+    }
+
     private sealed class PendingClosePairState
     {
         public string PairId { get; init; } = string.Empty;
@@ -814,7 +823,14 @@ public sealed class DashboardViewModel : ObservableObject
             || (successByExchange.TryGetValue("B", out var successB) && successB);
         var hasCloseSuccessBoth = hadCloseCandidateBoth && closeSuccessA && closeSuccessB;
 
-        if (!hasCloseSuccessBoth)
+        var pairState = GetLivePairTradeState();
+        var reconciledToWaitingOpen = false;
+
+        if (pairState == LivePairTradeState.BothFlat)
+        {
+            reconciledToWaitingOpen = FinalizeCloseFlowIfPairFlat("auto-close/MMF reconcile");
+        }
+        else
         {
             _tradingFlowEngine.AbortPendingCloseExecution();
         }
@@ -855,6 +871,16 @@ public sealed class DashboardViewModel : ObservableObject
             }
 
             AppendCloseSelectionDiagnostics(selectA, selectB);
+
+            LogFlowRecoveryState(
+                pairState,
+                context: "Auto close reconcile",
+                hadCloseCandidateA,
+                hadCloseCandidateB,
+                closeSuccessA,
+                closeSuccessB,
+                hasCloseSuccessBoth,
+                reconciledToWaitingOpen);
 
             OnPropertyChanged(nameof(CurrentPositionText));
             OnPropertyChanged(nameof(CurrentPhaseText));
@@ -1546,6 +1572,7 @@ public sealed class DashboardViewModel : ObservableObject
             var shouldApplyHistoryRight = ShouldApplyHistoryResult(HistoryTab.RightPanel.TargetMapName, historyRightResult);
             var snapshot = _runtimeConfigState.CurrentDashboardMetrics;
             var point = _runtimeConfigState.CurrentPoint;
+            var livePairStateFromPoll = GetLivePairTradeState(tradeLeftResult, tradeRightResult);
 
             System.Windows.Application.Current.Dispatcher.Invoke(() =>
             {
@@ -1570,6 +1597,8 @@ public sealed class DashboardViewModel : ObservableObject
                 {
                     ApplyHistoryResult(HistoryTab.RightPanel, historyRightResult, point);
                 }
+
+                TryRecoverWaitingCloseFromPolling(livePairStateFromPoll);
 
                 timeoutActions = CollectPendingOpenTimeoutActions();
                 closeRetryActions = CollectPendingCloseRetryActions();
@@ -1909,6 +1938,141 @@ public sealed class DashboardViewModel : ObservableObject
             SignalLogFormatter.FormatRandomWaitingTime(closeCompletedAtLocal, waitSeconds));
         OnPropertyChanged(nameof(CurrentPositionText));
         OnPropertyChanged(nameof(CurrentPhaseText));
+    }
+
+    private LivePairTradeState GetLivePairTradeState()
+    {
+        var tradeLeftResult = _tradesSharedMemoryReader.ReadTrades(TradeTab.LeftPanel.TargetMapName);
+        var tradeRightResult = _tradesSharedMemoryReader.ReadTrades(TradeTab.RightPanel.TargetMapName);
+        return GetLivePairTradeState(tradeLeftResult, tradeRightResult);
+    }
+
+    private static LivePairTradeState GetLivePairTradeState(
+        SharedMapReadResult<TradeSharedRecord> tradeLeftResult,
+        SharedMapReadResult<TradeSharedRecord> tradeRightResult)
+    {
+        if (!tradeLeftResult.IsMapAvailable
+            || !tradeRightResult.IsMapAvailable
+            || !tradeLeftResult.IsParseSuccess
+            || !tradeRightResult.IsParseSuccess)
+        {
+            return LivePairTradeState.MapUnavailableOrParseError;
+        }
+
+        var hasOpenA = tradeLeftResult.Count > 0 && tradeLeftResult.Records.Count > 0;
+        var hasOpenB = tradeRightResult.Count > 0 && tradeRightResult.Records.Count > 0;
+
+        if (!hasOpenA && !hasOpenB)
+        {
+            return LivePairTradeState.BothFlat;
+        }
+
+        if (hasOpenA && hasOpenB)
+        {
+            return LivePairTradeState.BothOpen;
+        }
+
+        return hasOpenA
+            ? LivePairTradeState.OnlyAOpen
+            : LivePairTradeState.OnlyBOpen;
+    }
+
+    private bool FinalizeCloseFlowIfPairFlat(string source)
+    {
+        var closeCompletedAtUtc = DateTime.UtcNow;
+        var closeCompletedAtLocal = closeCompletedAtUtc.ToLocalTime();
+        _tradingFlowEngine.BeginWaitAfterClose(
+            closeCompletedAtUtc,
+            _runtimeConfigState.CurrentStartWaitTime,
+            _runtimeConfigState.CurrentEndWaitTime);
+
+        if (_tradingFlowEngine.ClosedAtUtc != closeCompletedAtUtc)
+        {
+            return false;
+        }
+
+        var waitSeconds = _tradingFlowEngine.CurrentWaitSeconds;
+        SignalLogItems.Insert(0,
+            $"    - [{DateTime.Now:HH:mm:ss.fff}] Flow -> WaitingOpen after close confirmed ({source})");
+        SignalLogItems.Insert(0,
+            SignalLogFormatter.FormatRandomWaitingTime(closeCompletedAtLocal, waitSeconds));
+        OnPropertyChanged(nameof(CurrentPositionText));
+        OnPropertyChanged(nameof(CurrentPhaseText));
+        return true;
+    }
+
+    private void TryRecoverWaitingCloseFromPolling(LivePairTradeState pairState)
+    {
+        var phase = _tradingFlowEngine.CurrentPhase;
+        var isWaitingClosePhase = phase == TradingFlowPhase.WaitingCloseFromGapBuy
+            || phase == TradingFlowPhase.WaitingCloseFromGapSell;
+
+        if (!isWaitingClosePhase || pairState != LivePairTradeState.BothFlat)
+        {
+            return;
+        }
+
+        var reconciled = FinalizeCloseFlowIfPairFlat("polling watchdog/MMF");
+        if (!reconciled)
+        {
+            return;
+        }
+
+        SignalLogItems.Insert(0,
+            $"    - [{DateTime.Now:HH:mm:ss.fff}] Close reconcile result: BothFlat (polling recovery)");
+    }
+
+    private void LogFlowRecoveryState(
+        LivePairTradeState pairState,
+        string context,
+        bool hadCloseCandidateA,
+        bool hadCloseCandidateB,
+        bool closeSuccessA,
+        bool closeSuccessB,
+        bool hasCloseSuccessBoth,
+        bool reconciledToWaitingOpen)
+    {
+        var now = DateTime.Now;
+        var pairStateText = pairState switch
+        {
+            LivePairTradeState.BothFlat => "BothFlat",
+            LivePairTradeState.OnlyAOpen => "OnlyAOpen",
+            LivePairTradeState.OnlyBOpen => "OnlyBOpen",
+            LivePairTradeState.BothOpen => "BothOpen",
+            _ => "MapUnavailableOrParseError"
+        };
+
+        SignalLogItems.Insert(0,
+            $"    - [{now:HH:mm:ss.fff}] {context}: candidates(A={hadCloseCandidateA},B={hadCloseCandidateB}), routerSuccess(A={closeSuccessA},B={closeSuccessB},both={hasCloseSuccessBoth})");
+        SignalLogItems.Insert(0,
+            $"    - [{now:HH:mm:ss.fff}] Close reconcile result: {pairStateText}");
+
+        if (reconciledToWaitingOpen)
+        {
+            return;
+        }
+
+        if (pairState == LivePairTradeState.OnlyAOpen || pairState == LivePairTradeState.OnlyBOpen)
+        {
+            var desyncText = pairState == LivePairTradeState.OnlyAOpen
+                ? "Auto close desync: B flat, A still open"
+                : "Auto close desync: A flat, B still open";
+            SignalLogItems.Insert(0,
+                $"    - [{now:HH:mm:ss.fff}] {desyncText}");
+            SignalLogItems.Insert(0,
+                $"    - [{now:HH:mm:ss.fff}] Close recovery: pending close aborted, pair still not flat");
+            return;
+        }
+
+        if (pairState == LivePairTradeState.BothOpen)
+        {
+            SignalLogItems.Insert(0,
+                $"    - [{now:HH:mm:ss.fff}] Close recovery: pending close aborted, pair still not flat");
+            return;
+        }
+
+        SignalLogItems.Insert(0,
+            $"    - [{now:HH:mm:ss.fff}] Close recovery: reconcile unavailable (map/parse), pending close aborted");
     }
 
     private async Task ExecutePendingCloseRetryActionsAsync(
