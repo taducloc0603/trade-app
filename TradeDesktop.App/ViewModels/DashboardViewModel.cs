@@ -42,6 +42,7 @@ public sealed class DashboardViewModel : ObservableObject
     private readonly Dictionary<int, OpenConfirmCycleState> _openConfirmBySlot = [];
     private readonly Dictionary<int, CloseConfirmCycleState> _closeConfirmBySlot = [];
     private readonly Dictionary<ulong, double> _openSlippageByTicket = [];
+    private readonly Dictionary<ulong, double> _profitSnapshotByTicket = [];
     private readonly Dictionary<ulong, long> _openExecutionMsByTicket = [];
     private readonly Dictionary<ulong, long> _closeExecutionMsByTicket = [];
     private readonly Dictionary<string, int> _sttByPairId = new(StringComparer.Ordinal);
@@ -1383,6 +1384,7 @@ public sealed class DashboardViewModel : ObservableObject
         _autoSlot = 0;
         _sttByPairId.Clear();
         _nextStt = 1;
+        _profitSnapshotByTicket.Clear();
         TradeRealtimeProfitRows.Clear();
         OnPropertyChanged(nameof(CurrentPositionText));
         OnPropertyChanged(nameof(CurrentPhaseText));
@@ -2162,9 +2164,17 @@ public sealed class DashboardViewModel : ObservableObject
 
         var currentTickets = records.Select(r => r.Ticket).ToHashSet();
         var newRecords = records.Where(r => !knownTickets.Contains(r.Ticket)).OrderBy(r => r.TimeMsc).ToList();
+        var removedTickets = knownTickets.Where(ticket => !currentTickets.Contains(ticket)).ToList();
+
+        foreach (var removedTicket in removedTickets)
+        {
+            _profitSnapshotByTicket.Remove(removedTicket);
+        }
 
         foreach (var newRecord in newRecords)
         {
+            _profitSnapshotByTicket.TryAdd(newRecord.Ticket, newRecord.Profit);
+
             if (!TryConsumePendingOpenRequest(key, newRecord, out var pendingRequest, out var matchKey))
             {
                 continue;
@@ -2399,11 +2409,22 @@ public sealed class DashboardViewModel : ObservableObject
                 tp: FormatPrice(record.Tp),
                 slippage: FormatTradeOpenSlippageDebug(record, openRequest, point, tradeOpenSlippage),
                 profit: FormatProfit(CalculateTradeProfit(record, snapshot, isExchangeA, point)),
-                feeSpread: FormatProfit(record.Profit),
+                feeSpread: ResolveTradeProfitSnapshot(record.Ticket, record.Profit),
                 time: FormatTradeTime(record.TimeMsc),
                 openEaTimeLocal: FormatEaLocalTime(record.OpenEaTimeLocal),
                 openExecution: FormatOpenExecutionDebug(record.OpenEaTimeLocal, openRequest?.AppOpenRequestRawMs, openExecutionMs));
         });
+
+    private string ResolveTradeProfitSnapshot(ulong ticket, double currentProfit)
+    {
+        if (!_profitSnapshotByTicket.TryGetValue(ticket, out var snapshotProfit))
+        {
+            snapshotProfit = currentProfit;
+            _profitSnapshotByTicket[ticket] = snapshotProfit;
+        }
+
+        return FormatProfit(snapshotProfit);
+    }
 
     private IEnumerable<HistoryRowViewModel> BuildHistoryRows(
         IReadOnlyList<HistorySharedRecord> records,
