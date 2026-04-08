@@ -655,9 +655,16 @@ public sealed class DashboardViewModel : ObservableObject
             {
                 _tradingFlowEngine.AbortPendingCloseExecution();
             }
+            else if (trigger.Action == GapSignalAction.Open)
+            {
+                // Open execution failed before confirmation -> rollback transient WaitingClose state.
+                _tradingFlowEngine.Reset();
+            }
 
             System.Windows.Application.Current.Dispatcher.Invoke(() =>
             {
+                OnPropertyChanged(nameof(CurrentPositionText));
+                OnPropertyChanged(nameof(CurrentPhaseText));
                 SignalLogItems.Insert(0,
                     $"    - [{DateTime.Now:HH:mm:ss.fff}] Auto trade error: {ex.Message}");
             });
@@ -2980,6 +2987,15 @@ public sealed class DashboardViewModel : ObservableObject
                 {
                     _tradingFlowEngine.AbortPendingCloseExecution();
                 }
+                else if (trigger.Action == GapSignalAction.Open)
+                {
+                    // Open phase is switched to WaitingClose immediately when trigger is produced.
+                    // If guard rejects execution, rollback to WaitingOpen to keep UI/state consistent.
+                    _tradingFlowEngine.Reset();
+                }
+
+                OnPropertyChanged(nameof(CurrentPositionText));
+                OnPropertyChanged(nameof(CurrentPhaseText));
 
                 return;
             }
