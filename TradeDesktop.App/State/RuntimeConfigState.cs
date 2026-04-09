@@ -23,6 +23,8 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
     public int CurrentConfirmLatencyMs { get; private set; }
     public int CurrentMaxGap { get; private set; }
     public int CurrentMaxSpread { get; private set; }
+    public int CurrentOpenMaxTimesTick { get; private set; }
+    public int CurrentCloseMaxTimesTick { get; private set; }
     public int CurrentOpenPendingTimeMs { get; private set; } = 1000;
     public int CurrentClosePendingTimeMs { get; private set; } = 1000;
     public string CurrentMapName1 { get; private set; } = string.Empty;
@@ -59,6 +61,8 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
     public int ConfirmLatencyMs => CurrentConfirmLatencyMs;
     public int MaxGap => CurrentMaxGap;
     public int MaxSpread => CurrentMaxSpread;
+    public int OpenMaxTimesTick => CurrentOpenMaxTimesTick;
+    public int CloseMaxTimesTick => CurrentCloseMaxTimesTick;
     public int OpenPendingTimeMs => CurrentOpenPendingTimeMs;
     public int ClosePendingTimeMs => CurrentClosePendingTimeMs;
 
@@ -82,6 +86,8 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
         int confirmLatencyMs = 0,
         int maxGap = 0,
         int maxSpread = 0,
+        int openMaxTimesTick = 0,
+        int closeMaxTimesTick = 0,
         int openPendingTimeMs = -1,
         int closePendingTimeMs = -1)
         => Update(
@@ -104,6 +110,8 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
             confirmLatencyMs,
             maxGap,
             maxSpread,
+            openMaxTimesTick,
+            closeMaxTimesTick,
             openPendingTimeMs,
             closePendingTimeMs);
 
@@ -127,6 +135,8 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
         int confirmLatencyMs = 0,
         int maxGap = 0,
         int maxSpread = 0,
+        int openMaxTimesTick = 0,
+        int closeMaxTimesTick = 0,
         int openPendingTimeMs = -1,
         int closePendingTimeMs = -1)
     {
@@ -145,6 +155,8 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
         CurrentConfirmLatencyMs = Math.Max(0, confirmLatencyMs);
         CurrentMaxGap = Math.Max(0, maxGap);
         CurrentMaxSpread = Math.Max(0, maxSpread);
+        CurrentOpenMaxTimesTick = Math.Max(0, openMaxTimesTick);
+        CurrentCloseMaxTimesTick = Math.Max(0, closeMaxTimesTick);
         if (openPendingTimeMs >= 0)
         {
             CurrentOpenPendingTimeMs = Math.Max(0, openPendingTimeMs);
@@ -187,6 +199,8 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
             CurrentConfirmLatencyMs,
             CurrentMaxGap,
             CurrentMaxSpread,
+            CurrentOpenMaxTimesTick,
+            CurrentCloseMaxTimesTick,
             CurrentOpenPendingTimeMs,
             CurrentClosePendingTimeMs);
 
@@ -211,6 +225,8 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
             CurrentConfirmLatencyMs,
             CurrentMaxGap,
             CurrentMaxSpread,
+            CurrentOpenMaxTimesTick,
+            CurrentCloseMaxTimesTick,
             CurrentOpenPendingTimeMs,
             CurrentClosePendingTimeMs);
 

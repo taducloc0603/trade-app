@@ -120,6 +120,62 @@ public sealed class GapSignalConfirmationEngineTests
         Assert.Equal(new[] { 0, 0 }, trigger.SellGaps);
     }
 
+    [Fact]
+    public void ProcessSnapshot_DoesNotTriggerOpen_WhenTickCountExceedsOpenMaxTimesTick()
+    {
+        var sut = new GapSignalConfirmationEngine();
+        var config = new GapSignalConfirmationConfig(
+            ConfirmGapPts: 5,
+            OpenPts: 8,
+            HoldConfirmMs: 300,
+            OpenMaxTimesTick: 2);
+        var start = new DateTime(2026, 3, 17, 4, 40, 0, DateTimeKind.Utc);
+
+        Assert.Empty(sut.ProcessSnapshot(
+            new GapSignalSnapshot(start.AddMilliseconds(0), 2945.12m, 2945.34m, 2945.56m, 2945.78m, 5, 0, 1),
+            config));
+
+        Assert.Empty(sut.ProcessSnapshot(
+            new GapSignalSnapshot(start.AddMilliseconds(150), 2945.12m, 2945.34m, 2945.56m, 2945.78m, 6, 0, 1),
+            config));
+
+        // elapsed >= hold, but collected 3 ticks > 2 => blocked.
+        var results = sut.ProcessSnapshot(
+            new GapSignalSnapshot(start.AddMilliseconds(300), 2945.12m, 2945.34m, 2945.56m, 2945.78m, 8, 0, 1),
+            config);
+
+        Assert.Empty(results);
+    }
+
+    [Fact]
+    public void ProcessSnapshot_TriggersOpen_WhenTickCountWithinOpenMaxTimesTick()
+    {
+        var sut = new GapSignalConfirmationEngine();
+        var config = new GapSignalConfirmationConfig(
+            ConfirmGapPts: 5,
+            OpenPts: 8,
+            HoldConfirmMs: 300,
+            OpenMaxTimesTick: 3);
+        var start = new DateTime(2026, 3, 17, 4, 41, 0, DateTimeKind.Utc);
+
+        Assert.Empty(sut.ProcessSnapshot(
+            new GapSignalSnapshot(start.AddMilliseconds(0), 2945.12m, 2945.34m, 2945.56m, 2945.78m, 5, 0, 1),
+            config));
+
+        Assert.Empty(sut.ProcessSnapshot(
+            new GapSignalSnapshot(start.AddMilliseconds(150), 2945.12m, 2945.34m, 2945.56m, 2945.78m, 6, 0, 1),
+            config));
+
+        // elapsed >= hold, collected 3 ticks == max => allow.
+        var results = sut.ProcessSnapshot(
+            new GapSignalSnapshot(start.AddMilliseconds(300), 2945.12m, 2945.34m, 2945.56m, 2945.78m, 8, 0, 1),
+            config);
+
+        var trigger = Assert.Single(results);
+        Assert.Equal(GapSignalAction.Open, trigger.Action);
+        Assert.Equal(new[] { 5, 6, 8 }, trigger.BuyGaps);
+    }
+
     private static IReadOnlyList<GapSignalTriggerResult> Process(
         GapSignalConfirmationEngine sut,
         DateTime timestampUtc,

@@ -19,6 +19,8 @@ public interface IRuntimeConfigProvider
     int CurrentConfirmLatencyMs { get; }
     int CurrentMaxGap { get; }
     int CurrentMaxSpread { get; }
+    int CurrentOpenMaxTimesTick { get; }
+    int CurrentCloseMaxTimesTick { get; }
     int CurrentOpenPendingTimeMs { get; }
     int CurrentClosePendingTimeMs { get; }
     string CurrentMapName1 { get; }

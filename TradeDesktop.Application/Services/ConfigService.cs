@@ -64,6 +64,8 @@ public sealed class ConfigService(
             record.ConfirmLatencyMs,
             record.MaxGap,
             record.MaxSpread,
+            record.OpenMaxTimesTick,
+            record.CloseMaxTimesTick,
             record.OpenPendingTimeMs,
             record.ClosePendingTimeMs);
     }
@@ -141,6 +143,8 @@ public sealed record ConfigLoadResult(
     int ConfirmLatencyMs,
     int MaxGap,
     int MaxSpread,
+    int OpenMaxTimesTick,
+    int CloseMaxTimesTick,
     int OpenPendingTimeMs,
     int ClosePendingTimeMs)
 {
@@ -167,6 +171,8 @@ public sealed record ConfigLoadResult(
         int confirmLatencyMs = 0,
         int maxGap = 0,
         int maxSpread = 0,
+        int openMaxTimesTick = 0,
+        int closeMaxTimesTick = 0,
         int openPendingTimeMs = 0,
         int closePendingTimeMs = 0) =>
         new(
@@ -195,14 +201,16 @@ public sealed record ConfigLoadResult(
             Math.Max(0, confirmLatencyMs),
             Math.Max(0, maxGap),
             Math.Max(0, maxSpread),
+            Math.Max(0, openMaxTimesTick),
+            Math.Max(0, closeMaxTimesTick),
             Math.Max(0, openPendingTimeMs),
             Math.Max(0, closePendingTimeMs));
 
     public static ConfigLoadResult NotFound(string machineHostName) =>
-        new(false, false, machineHostName, [ManualHwndColumnConfig.Empty], "mt5", "mt5", 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", null, 0, 0, 0, 0, 0);
+        new(false, false, machineHostName, [ManualHwndColumnConfig.Empty], "mt5", "mt5", 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", null, 0, 0, 0, 0, 0, 0, 0);
 
     public static ConfigLoadResult Failed(string machineHostName, string error) =>
-        new(false, true, machineHostName, [ManualHwndColumnConfig.Empty], "mt5", "mt5", 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", error, 0, 0, 0, 0, 0);
+        new(false, true, machineHostName, [ManualHwndColumnConfig.Empty], "mt5", "mt5", 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", error, 0, 0, 0, 0, 0, 0, 0);
 
     private static IReadOnlyList<ManualHwndColumnConfig> NormalizeColumns(IReadOnlyList<ManualHwndColumnConfig>? columns)
     {

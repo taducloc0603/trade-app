@@ -15,6 +15,7 @@ public sealed class GapSignalConfirmationEngine : IGapSignalConfirmationEngine, 
         var normalizedConfirm = Math.Abs(config.ConfirmGapPts);
         var normalizedOpen = Math.Abs(config.OpenPts);
         var normalizedHoldMs = Math.Max(0, config.HoldConfirmMs);
+        var normalizedOpenMaxTimesTick = Math.Max(0, config.OpenMaxTimesTick);
 
         var results = new List<GapSignalTriggerResult>(capacity: 2);
 
@@ -33,6 +34,7 @@ public sealed class GapSignalConfirmationEngine : IGapSignalConfirmationEngine, 
             timestampUtc: snapshot.TimestampUtc,
             state: _buyState,
             holdConfirmMs: normalizedHoldMs,
+            maxTimesTick: normalizedOpenMaxTimesTick,
             isConfirmSatisfied: value => value >= normalizedConfirm,
             isOpenSatisfied: value => value >= normalizedOpen);
         if (buyResult is not null)
@@ -55,6 +57,7 @@ public sealed class GapSignalConfirmationEngine : IGapSignalConfirmationEngine, 
             timestampUtc: snapshot.TimestampUtc,
             state: _sellState,
             holdConfirmMs: normalizedHoldMs,
+            maxTimesTick: normalizedOpenMaxTimesTick,
             isConfirmSatisfied: value => value <= -normalizedConfirm,
             isOpenSatisfied: value => value <= -normalizedOpen);
         if (sellResult is not null)
@@ -86,6 +89,7 @@ public sealed class GapSignalConfirmationEngine : IGapSignalConfirmationEngine, 
         DateTime timestampUtc,
         SideWindowState state,
         int holdConfirmMs,
+        int maxTimesTick,
         Func<int, bool> isConfirmSatisfied,
         Func<int, bool> isOpenSatisfied)
     {
@@ -116,6 +120,12 @@ public sealed class GapSignalConfirmationEngine : IGapSignalConfirmationEngine, 
         }
 
         var primaryGaps = side == GapSignalSide.Buy ? state.BuyGaps : state.SellGaps;
+        if (maxTimesTick > 0 && primaryGaps.Count > maxTimesTick)
+        {
+            state.Reset();
+            return null;
+        }
+
         if (primaryGaps.Count == 0 || primaryGaps.Any(v => !isConfirmSatisfied(v)))
         {
             state.Reset();

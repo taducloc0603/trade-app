@@ -401,6 +401,8 @@ public sealed class ConfigViewModel : ObservableObject
                 loadResult.ConfirmLatencyMs,
                 loadResult.MaxGap,
                 loadResult.MaxSpread,
+                loadResult.OpenMaxTimesTick,
+                loadResult.CloseMaxTimesTick,
                 loadResult.OpenPendingTimeMs,
                 loadResult.ClosePendingTimeMs);
             _runtimeConfigState.UpdateManualTradeHwnd(BuildManualHwndColumns());

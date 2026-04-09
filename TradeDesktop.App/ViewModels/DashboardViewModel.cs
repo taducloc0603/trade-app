@@ -1758,7 +1758,7 @@ public sealed class DashboardViewModel : ObservableObject
             : $"Sàn B ({_runtimeConfigState.MapName2})";
 
         RuntimeSummary =
-            $"Host Name: {_runtimeConfigState.CurrentMachineHostName}  |  Point: {_runtimeConfigState.CurrentPoint}  |  OpenPts: {_runtimeConfigState.CurrentOpenPts}  |  ConfirmGapPts: {_runtimeConfigState.CurrentConfirmGapPts}  |  ClosePts: {_runtimeConfigState.CurrentClosePts}  |  CloseConfirmGapPts: {_runtimeConfigState.CurrentCloseConfirmGapPts}  |  StartTimeHold: {_runtimeConfigState.CurrentStartTimeHold}  |  EndTimeHold: {_runtimeConfigState.CurrentEndTimeHold}  |  StartWaitTime: {_runtimeConfigState.CurrentStartWaitTime}  |  EndWaitTime: {_runtimeConfigState.CurrentEndWaitTime}  |  ConfirmLatencyMs: {_runtimeConfigState.CurrentConfirmLatencyMs}  |  MaxGap: {_runtimeConfigState.CurrentMaxGap}  |  MaxSpread: {_runtimeConfigState.CurrentMaxSpread}  |  Map 1: {_runtimeConfigState.CurrentMapName1}  |  Map 2: {_runtimeConfigState.CurrentMapName2}";
+            $"Host Name: {_runtimeConfigState.CurrentMachineHostName}  |  Point: {_runtimeConfigState.CurrentPoint}  |  OpenPts: {_runtimeConfigState.CurrentOpenPts}  |  ConfirmGapPts: {_runtimeConfigState.CurrentConfirmGapPts}  |  ClosePts: {_runtimeConfigState.CurrentClosePts}  |  CloseConfirmGapPts: {_runtimeConfigState.CurrentCloseConfirmGapPts}  |  OpenMaxTimesTick: {_runtimeConfigState.CurrentOpenMaxTimesTick}  |  CloseMaxTimesTick: {_runtimeConfigState.CurrentCloseMaxTimesTick}  |  StartTimeHold: {_runtimeConfigState.CurrentStartTimeHold}  |  EndTimeHold: {_runtimeConfigState.CurrentEndTimeHold}  |  StartWaitTime: {_runtimeConfigState.CurrentStartWaitTime}  |  EndWaitTime: {_runtimeConfigState.CurrentEndWaitTime}  |  ConfirmLatencyMs: {_runtimeConfigState.CurrentConfirmLatencyMs}  |  MaxGap: {_runtimeConfigState.CurrentMaxGap}  |  MaxSpread: {_runtimeConfigState.CurrentMaxSpread}  |  Map 1: {_runtimeConfigState.CurrentMapName1}  |  Map 2: {_runtimeConfigState.CurrentMapName2}";
 
         HasManualTradeHwndConfig = _runtimeConfigState.CurrentManualHwndColumns.Any(x => x.IsComplete);
 
@@ -3511,6 +3511,8 @@ public sealed class DashboardViewModel : ObservableObject
                     result.ConfirmLatencyMs,
                     result.MaxGap,
                     result.MaxSpread,
+                    result.OpenMaxTimesTick,
+                    result.CloseMaxTimesTick,
                     result.OpenPendingTimeMs,
                     result.ClosePendingTimeMs);
                 _runtimeConfigState.UpdateManualTradeHwnd(result.ManualHwndColumns);
@@ -3519,7 +3521,7 @@ public sealed class DashboardViewModel : ObservableObject
                 if (string.Equals(result.MachineHostName, InlineDbHostName, StringComparison.OrdinalIgnoreCase))
                 {
                     DbInlineData =
-                        $"[DB] id={result.ConfigId} | hostname={result.MachineHostName} | point={result.Point} | open_pts={result.OpenPts} | open_confirm_gap_pts={result.ConfirmGapPts} | open_hold_confirm_ms={result.HoldConfirmMs} | close_pts={result.ClosePts} | close_confirm_gap_pts={result.CloseConfirmGapPts} | close_hold_confirm_ms={result.CloseHoldConfirmMs} | start_time_hold={result.StartTimeHold} | end_time_hold={result.EndTimeHold} | start_wait_time={result.StartWaitTime} | end_wait_time={result.EndWaitTime} | sans={result.SansJson}";
+                        $"[DB] id={result.ConfigId} | hostname={result.MachineHostName} | point={result.Point} | open_pts={result.OpenPts} | open_confirm_gap_pts={result.ConfirmGapPts} | open_hold_confirm_ms={result.HoldConfirmMs} | open_max_times_tick={result.OpenMaxTimesTick} | close_pts={result.ClosePts} | close_confirm_gap_pts={result.CloseConfirmGapPts} | close_hold_confirm_ms={result.CloseHoldConfirmMs} | close_max_times_tick={result.CloseMaxTimesTick} | start_time_hold={result.StartTimeHold} | end_time_hold={result.EndTimeHold} | start_wait_time={result.StartWaitTime} | end_wait_time={result.EndWaitTime} | sans={result.SansJson}";
                     IsDbInlineDataVisible = true;
                 }
                 else
@@ -3625,7 +3627,9 @@ public sealed class DashboardViewModel : ObservableObject
                     StartTimeHold: _runtimeConfigState.CurrentStartTimeHold,
                     EndTimeHold: _runtimeConfigState.CurrentEndTimeHold,
                     StartWaitTime: _runtimeConfigState.CurrentStartWaitTime,
-                    EndWaitTime: _runtimeConfigState.CurrentEndWaitTime));
+                    EndWaitTime: _runtimeConfigState.CurrentEndWaitTime,
+                    OpenMaxTimesTick: _runtimeConfigState.CurrentOpenMaxTimesTick,
+                    CloseMaxTimesTick: _runtimeConfigState.CurrentCloseMaxTimesTick));
 
             OnPropertyChanged(nameof(CurrentPositionText));
             OnPropertyChanged(nameof(CurrentPhaseText));

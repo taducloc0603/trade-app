@@ -16,6 +16,7 @@ public sealed class CloseSignalEngine : ICloseSignalEngine
         var normalizedCloseConfirm = Math.Abs(config.CloseConfirmGapPts);
         var normalizedClose = Math.Abs(config.ClosePts);
         var normalizedHoldMs = Math.Max(0, config.CloseHoldConfirmMs);
+        var normalizedCloseMaxTimesTick = Math.Max(0, config.CloseMaxTimesTick);
 
         return openMode switch
         {
@@ -34,6 +35,7 @@ public sealed class CloseSignalEngine : ICloseSignalEngine
                 timestampUtc: snapshot.TimestampUtc,
                 state: _buyState,
                 holdConfirmMs: normalizedHoldMs,
+                maxTimesTick: normalizedCloseMaxTimesTick,
                 isConfirmSatisfied: value => value <= -normalizedCloseConfirm,
                 isOpenSatisfied: value => value <= -normalizedClose),
 
@@ -52,6 +54,7 @@ public sealed class CloseSignalEngine : ICloseSignalEngine
                 timestampUtc: snapshot.TimestampUtc,
                 state: _sellState,
                 holdConfirmMs: normalizedHoldMs,
+                maxTimesTick: normalizedCloseMaxTimesTick,
                 isConfirmSatisfied: value => value >= normalizedCloseConfirm,
                 isOpenSatisfied: value => value >= normalizedClose),
 
