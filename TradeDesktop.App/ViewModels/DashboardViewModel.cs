@@ -51,12 +51,18 @@ public sealed class DashboardViewModel : ObservableObject
     private int _nextStt = 1;
     private int _manualSlot;
     private int _autoSlot;
+    private int _autoOpenInFlight;
+    private int _closeBothFlatPollStreak;
+    private bool _isAutoOpenPausedByInvariant;
+    private ActiveAutoCycleState? _activeAutoCycle;
+    private ActiveAutoCycleState? _activeAutoCloseRecoveryCycle;
     private readonly Queue<SignalEntryGuard.PriceHistoryEntry> _priceHistory = new();
     private SharedMapReadResult<TradeSharedRecord>? _latestTradeLeftResult;
     private SharedMapReadResult<TradeSharedRecord>? _latestTradeRightResult;
 
     private static readonly TimeSpan OrderInfoPollInterval = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan OpenPartialRecheckDelay = TimeSpan.FromSeconds(1);
+    private const int StableBothFlatPollsRequired = 2;
 
     private sealed record PendingOpenRequest(
         string PairId,
@@ -101,6 +107,16 @@ public sealed class DashboardViewModel : ObservableObject
         public bool HasA { get; set; }
         public bool HasB { get; set; }
         public bool WaitingStarted { get; set; }
+    }
+
+    private sealed class ActiveAutoCycleState
+    {
+        public int Slot { get; init; }
+        public DateTimeOffset OpenedAtLocal { get; set; }
+        public string? PairIdA { get; set; }
+        public string? PairIdB { get; set; }
+        public ulong? TicketA { get; set; }
+        public ulong? TicketB { get; set; }
     }
 
     private enum LivePairTradeState
@@ -687,86 +703,168 @@ public sealed class DashboardViewModel : ObservableObject
 
     private async Task AutoBuyAsync(GapSignalTriggerResult trigger)
     {
-        var (_, hwndColumn) = _runtimeConfigState.GetRandomManualHwndColumn();
-        var appOpenRequestTimeLocal = DateTimeOffset.Now;
-        var appOpenRequestRawMs = Environment.TickCount64;
-        var slot = _autoSlot;
-        _openConfirmBySlot.Remove(slot);
-
-        // Capture pending request BEFORE executing click to avoid race with shared-memory polling.
-        CapturePendingOpenRequestFromTrigger(TradeTab.LeftPanel.TargetMapName, trigger, isExchangeA: true, tradeType: 0, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
-        CapturePendingOpenRequestFromTrigger(TradeTab.RightPanel.TargetMapName, trigger, isExchangeA: false, tradeType: 1, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
-
-        await _tradeExecutionRouter.OpenPairAsync(
-            new TradeOpenPairRequest(
-                new TradeOpenLegRequest(
-                    Exchange: "A",
-                    Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformA),
-                    ChartHwnd: hwndColumn.ChartHwndA,
-                    Action: TradeLegAction.Buy),
-                new TradeOpenLegRequest(
-                    Exchange: "B",
-                    Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformB),
-                    ChartHwnd: hwndColumn.ChartHwndB,
-                    Action: TradeLegAction.Sell)));
-
-        System.Windows.Application.Current.Dispatcher.Invoke(() =>
+        if (_isAutoOpenPausedByInvariant)
         {
-            // Phase 1 Auto Open log: A buy, B sell — trigger is OpenByGapBuy
-            var now = DateTime.Now;
-            var symbolA = _runtimeConfigState.CurrentDashboardMetrics?.ExchangeA.Symbol ?? "-";
-            var symbolB = _runtimeConfigState.CurrentDashboardMetrics?.ExchangeB.Symbol ?? "-";
-            var priceA = trigger.LastAAsk;
-            var priceB = trigger.LastBBid;
-            var triggerGapLabel = "Gap BUY";
-            var triggerLastGap = trigger.LastBuyGap;
-            var triggerAllGaps = trigger.BuyGaps;
-            SignalLogItems.Insert(0, SignalLogFormatter.FormatAutoOpen(now, slot, "B", "SELL", symbolB, priceB, triggerGapLabel, triggerLastGap, triggerAllGaps));
-            SignalLogItems.Insert(0, SignalLogFormatter.FormatAutoOpen(now, slot, "A", "BUY", symbolA, priceA, triggerGapLabel, triggerLastGap, triggerAllGaps));
-            _autoSlot++;
-        });
+            System.Windows.Application.Current.Dispatcher.Invoke(() =>
+            {
+                SignalLogItems.Insert(0,
+                    $"    - [{DateTime.Now:HH:mm:ss.fff}] Open blocked: invariant watchdog is active (auto-open paused)");
+            });
+            return;
+        }
+
+        if (Interlocked.CompareExchange(ref _autoOpenInFlight, 1, 0) != 0)
+        {
+            System.Windows.Application.Current.Dispatcher.Invoke(() =>
+            {
+                SignalLogItems.Insert(0,
+                    $"    - [{DateTime.Now:HH:mm:ss.fff}] Open blocked: another auto-open is in flight");
+            });
+            return;
+        }
+
+        try
+        {
+            var (_, hwndColumn) = _runtimeConfigState.GetRandomManualHwndColumn();
+            var appOpenRequestTimeLocal = DateTimeOffset.Now;
+            var appOpenRequestRawMs = Environment.TickCount64;
+            var slot = _autoSlot;
+
+            var pairState = GetLivePairTradeStateStrict();
+            if (pairState != LivePairTradeState.BothFlat)
+            {
+                System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                {
+                    SignalLogItems.Insert(0,
+                        $"    - [{DateTime.Now:HH:mm:ss.fff}] Open blocked: live pair not flat ({FormatLivePairTradeState(pairState)})");
+                });
+                return;
+            }
+
+            BeginActiveAutoCycle(slot, appOpenRequestTimeLocal, appOpenRequestRawMs);
+
+            _openConfirmBySlot.Remove(slot);
+
+            // Capture pending request BEFORE executing click to avoid race with shared-memory polling.
+            CapturePendingOpenRequestFromTrigger(TradeTab.LeftPanel.TargetMapName, trigger, isExchangeA: true, tradeType: 0, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
+            CapturePendingOpenRequestFromTrigger(TradeTab.RightPanel.TargetMapName, trigger, isExchangeA: false, tradeType: 1, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
+
+            await _tradeExecutionRouter.OpenPairAsync(
+                new TradeOpenPairRequest(
+                    new TradeOpenLegRequest(
+                        Exchange: "A",
+                        Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformA),
+                        ChartHwnd: hwndColumn.ChartHwndA,
+                        Action: TradeLegAction.Buy),
+                    new TradeOpenLegRequest(
+                        Exchange: "B",
+                        Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformB),
+                        ChartHwnd: hwndColumn.ChartHwndB,
+                        Action: TradeLegAction.Sell)));
+
+            System.Windows.Application.Current.Dispatcher.Invoke(() =>
+            {
+                // Phase 1 Auto Open log: A buy, B sell — trigger is OpenByGapBuy
+                var now = DateTime.Now;
+                var symbolA = _runtimeConfigState.CurrentDashboardMetrics?.ExchangeA.Symbol ?? "-";
+                var symbolB = _runtimeConfigState.CurrentDashboardMetrics?.ExchangeB.Symbol ?? "-";
+                var priceA = trigger.LastAAsk;
+                var priceB = trigger.LastBBid;
+                var triggerGapLabel = "Gap BUY";
+                var triggerLastGap = trigger.LastBuyGap;
+                var triggerAllGaps = trigger.BuyGaps;
+                SignalLogItems.Insert(0, SignalLogFormatter.FormatAutoOpen(now, slot, "B", "SELL", symbolB, priceB, triggerGapLabel, triggerLastGap, triggerAllGaps));
+                SignalLogItems.Insert(0, SignalLogFormatter.FormatAutoOpen(now, slot, "A", "BUY", symbolA, priceA, triggerGapLabel, triggerLastGap, triggerAllGaps));
+                _autoSlot++;
+            });
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _autoOpenInFlight, 0);
+        }
     }
 
     private async Task AutoSellAsync(GapSignalTriggerResult trigger)
     {
-        var (_, hwndColumn) = _runtimeConfigState.GetRandomManualHwndColumn();
-        var appOpenRequestTimeLocal = DateTimeOffset.Now;
-        var appOpenRequestRawMs = Environment.TickCount64;
-        var slot = _autoSlot;
-        _openConfirmBySlot.Remove(slot);
-
-        // Capture pending request BEFORE executing click to avoid race with shared-memory polling.
-        CapturePendingOpenRequestFromTrigger(TradeTab.LeftPanel.TargetMapName, trigger, isExchangeA: true, tradeType: 1, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
-        CapturePendingOpenRequestFromTrigger(TradeTab.RightPanel.TargetMapName, trigger, isExchangeA: false, tradeType: 0, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
-
-        await _tradeExecutionRouter.OpenPairAsync(
-            new TradeOpenPairRequest(
-                new TradeOpenLegRequest(
-                    Exchange: "A",
-                    Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformA),
-                    ChartHwnd: hwndColumn.ChartHwndA,
-                    Action: TradeLegAction.Sell),
-                new TradeOpenLegRequest(
-                    Exchange: "B",
-                    Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformB),
-                    ChartHwnd: hwndColumn.ChartHwndB,
-                    Action: TradeLegAction.Buy)));
-
-        System.Windows.Application.Current.Dispatcher.Invoke(() =>
+        if (_isAutoOpenPausedByInvariant)
         {
-            // Phase 1 Auto Open log: A sell, B buy — trigger is OpenByGapSell
-            var now = DateTime.Now;
-            var symbolA = _runtimeConfigState.CurrentDashboardMetrics?.ExchangeA.Symbol ?? "-";
-            var symbolB = _runtimeConfigState.CurrentDashboardMetrics?.ExchangeB.Symbol ?? "-";
-            var priceA = trigger.LastABid;
-            var priceB = trigger.LastBAsk;
-            var triggerGapLabel = "Gap SELL";
-            var triggerLastGap = trigger.LastSellGap;
-            var triggerAllGaps = trigger.SellGaps;
-            SignalLogItems.Insert(0, SignalLogFormatter.FormatAutoOpen(now, slot, "B", "BUY", symbolB, priceB, triggerGapLabel, triggerLastGap, triggerAllGaps));
-            SignalLogItems.Insert(0, SignalLogFormatter.FormatAutoOpen(now, slot, "A", "SELL", symbolA, priceA, triggerGapLabel, triggerLastGap, triggerAllGaps));
-            _autoSlot++;
-        });
+            System.Windows.Application.Current.Dispatcher.Invoke(() =>
+            {
+                SignalLogItems.Insert(0,
+                    $"    - [{DateTime.Now:HH:mm:ss.fff}] Open blocked: invariant watchdog is active (auto-open paused)");
+            });
+            return;
+        }
+
+        if (Interlocked.CompareExchange(ref _autoOpenInFlight, 1, 0) != 0)
+        {
+            System.Windows.Application.Current.Dispatcher.Invoke(() =>
+            {
+                SignalLogItems.Insert(0,
+                    $"    - [{DateTime.Now:HH:mm:ss.fff}] Open blocked: another auto-open is in flight");
+            });
+            return;
+        }
+
+        try
+        {
+            var (_, hwndColumn) = _runtimeConfigState.GetRandomManualHwndColumn();
+            var appOpenRequestTimeLocal = DateTimeOffset.Now;
+            var appOpenRequestRawMs = Environment.TickCount64;
+            var slot = _autoSlot;
+
+            var pairState = GetLivePairTradeStateStrict();
+            if (pairState != LivePairTradeState.BothFlat)
+            {
+                System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                {
+                    SignalLogItems.Insert(0,
+                        $"    - [{DateTime.Now:HH:mm:ss.fff}] Open blocked: live pair not flat ({FormatLivePairTradeState(pairState)})");
+                });
+                return;
+            }
+
+            BeginActiveAutoCycle(slot, appOpenRequestTimeLocal, appOpenRequestRawMs);
+
+            _openConfirmBySlot.Remove(slot);
+
+            // Capture pending request BEFORE executing click to avoid race with shared-memory polling.
+            CapturePendingOpenRequestFromTrigger(TradeTab.LeftPanel.TargetMapName, trigger, isExchangeA: true, tradeType: 1, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
+            CapturePendingOpenRequestFromTrigger(TradeTab.RightPanel.TargetMapName, trigger, isExchangeA: false, tradeType: 0, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
+
+            await _tradeExecutionRouter.OpenPairAsync(
+                new TradeOpenPairRequest(
+                    new TradeOpenLegRequest(
+                        Exchange: "A",
+                        Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformA),
+                        ChartHwnd: hwndColumn.ChartHwndA,
+                        Action: TradeLegAction.Sell),
+                    new TradeOpenLegRequest(
+                        Exchange: "B",
+                        Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformB),
+                        ChartHwnd: hwndColumn.ChartHwndB,
+                        Action: TradeLegAction.Buy)));
+
+            System.Windows.Application.Current.Dispatcher.Invoke(() =>
+            {
+                // Phase 1 Auto Open log: A sell, B buy — trigger is OpenByGapSell
+                var now = DateTime.Now;
+                var symbolA = _runtimeConfigState.CurrentDashboardMetrics?.ExchangeA.Symbol ?? "-";
+                var symbolB = _runtimeConfigState.CurrentDashboardMetrics?.ExchangeB.Symbol ?? "-";
+                var priceA = trigger.LastABid;
+                var priceB = trigger.LastBAsk;
+                var triggerGapLabel = "Gap SELL";
+                var triggerLastGap = trigger.LastSellGap;
+                var triggerAllGaps = trigger.SellGaps;
+                SignalLogItems.Insert(0, SignalLogFormatter.FormatAutoOpen(now, slot, "B", "BUY", symbolB, priceB, triggerGapLabel, triggerLastGap, triggerAllGaps));
+                SignalLogItems.Insert(0, SignalLogFormatter.FormatAutoOpen(now, slot, "A", "SELL", symbolA, priceA, triggerGapLabel, triggerLastGap, triggerAllGaps));
+                _autoSlot++;
+            });
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _autoOpenInFlight, 0);
+        }
     }
 
     private async Task AutoCloseOrderAsync(GapSignalTriggerResult trigger)
@@ -785,6 +883,7 @@ public sealed class DashboardViewModel : ObservableObject
 
         var appCloseRequestTimeLocal = DateTimeOffset.Now;
         var appCloseRequestRawMs = Environment.TickCount64;
+        _activeAutoCloseRecoveryCycle = BuildActiveCloseRecoveryCycle(slot, selectA, selectB);
 
         // Capture pending request BEFORE executing close to avoid race with shared-memory polling.
         CapturePendingCloseRequestFromTrigger(selectA, trigger, isExchangeA: true, appCloseRequestTimeLocal, appCloseRequestRawMs, slot);
@@ -823,16 +922,22 @@ public sealed class DashboardViewModel : ObservableObject
             || (successByExchange.TryGetValue("B", out var successB) && successB);
         var hasCloseSuccessBoth = hadCloseCandidateBoth && closeSuccessA && closeSuccessB;
 
-        var pairState = GetLivePairTradeState();
-        var reconciledToWaitingOpen = false;
+        var reconcileTradeLeft = _tradesSharedMemoryReader.ReadTrades(TradeTab.LeftPanel.TargetMapName);
+        var reconcileTradeRight = _tradesSharedMemoryReader.ReadTrades(TradeTab.RightPanel.TargetMapName);
+        var pairState = GetLivePairTradeState(reconcileTradeLeft, reconcileTradeRight);
+        var immediateFlatObserved = false;
 
-        if (pairState == LivePairTradeState.BothFlat)
+        if (pairState == LivePairTradeState.BothFlat
+            && IsActiveCloseRecoveryCycleClosed(reconcileTradeLeft, reconcileTradeRight, out _))
         {
-            reconciledToWaitingOpen = FinalizeCloseFlowIfPairFlat("auto-close/MMF reconcile");
+            // Hardening: do NOT finalize close immediately from a single MMF read.
+            // Prime streak and wait polling to confirm stable BothFlat.
+            _closeBothFlatPollStreak = Math.Max(_closeBothFlatPollStreak, 1);
+            immediateFlatObserved = true;
         }
         else
         {
-            _tradingFlowEngine.AbortPendingCloseExecution();
+            _closeBothFlatPollStreak = 0;
         }
 
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
@@ -880,7 +985,7 @@ public sealed class DashboardViewModel : ObservableObject
                 closeSuccessA,
                 closeSuccessB,
                 hasCloseSuccessBoth,
-                reconciledToWaitingOpen);
+                immediateFlatObserved);
 
             OnPropertyChanged(nameof(CurrentPositionText));
             OnPropertyChanged(nameof(CurrentPhaseText));
@@ -1340,6 +1445,152 @@ public sealed class DashboardViewModel : ObservableObject
         return exchange.Ask.HasValue ? (double)exchange.Ask.Value : null;
     }
 
+    private void BeginActiveAutoCycle(int slot, DateTimeOffset openedAtLocal, long appOpenRequestRawMs)
+    {
+        var pairId = BuildPairId(slot, appOpenRequestRawMs, isAutoFlow: true);
+        _activeAutoCycle = new ActiveAutoCycleState
+        {
+            Slot = slot,
+            OpenedAtLocal = openedAtLocal,
+            PairIdA = pairId,
+            PairIdB = pairId,
+            TicketA = null,
+            TicketB = null
+        };
+
+        _activeAutoCloseRecoveryCycle = null;
+        _closeBothFlatPollStreak = 0;
+    }
+
+    private ActiveAutoCycleState? BuildActiveCloseRecoveryCycle(
+        int slot,
+        CloseSelectionResult selectA,
+        CloseSelectionResult selectB)
+    {
+        var active = _activeAutoCycle;
+        if (active is null || active.Slot != slot)
+        {
+            return null;
+        }
+
+        var pairIdA = ResolvePairIdFromCloseSelection(selectA) ?? active.PairIdA;
+        var pairIdB = ResolvePairIdFromCloseSelection(selectB) ?? active.PairIdB;
+
+        return new ActiveAutoCycleState
+        {
+            Slot = active.Slot,
+            OpenedAtLocal = active.OpenedAtLocal,
+            PairIdA = pairIdA,
+            PairIdB = pairIdB,
+            TicketA = selectA.Request?.Ticket ?? active.TicketA,
+            TicketB = selectB.Request?.Ticket ?? active.TicketB
+        };
+    }
+
+    private string? ResolvePairIdFromCloseSelection(CloseSelectionResult selection)
+    {
+        if (selection.Request is null)
+        {
+            return null;
+        }
+
+        return _pairIdByTicket.TryGetValue(selection.Request.Ticket, out var pairId)
+            ? pairId
+            : null;
+    }
+
+    private bool IsActiveCloseRecoveryCycleClosed(
+        SharedMapReadResult<TradeSharedRecord> tradeLeftResult,
+        SharedMapReadResult<TradeSharedRecord> tradeRightResult,
+        out string reason)
+    {
+        reason = string.Empty;
+        var cycle = _activeAutoCloseRecoveryCycle;
+        if (cycle is null)
+        {
+            reason = "no active close recovery cycle";
+            return false;
+        }
+
+        if (!tradeLeftResult.IsMapAvailable || !tradeLeftResult.IsParseSuccess
+            || !tradeRightResult.IsMapAvailable || !tradeRightResult.IsParseSuccess)
+        {
+            reason = "map unavailable/parse";
+            return false;
+        }
+
+        var hasTrackedA = cycle.TicketA.HasValue || !string.IsNullOrWhiteSpace(cycle.PairIdA);
+        var hasTrackedB = cycle.TicketB.HasValue || !string.IsNullOrWhiteSpace(cycle.PairIdB);
+        if (!hasTrackedA && !hasTrackedB)
+        {
+            reason = "active cycle has no tracked legs";
+            return false;
+        }
+
+        var aStillOpen = hasTrackedA && IsTrackedLegStillOpen(tradeLeftResult.Records, cycle.TicketA, cycle.PairIdA);
+        var bStillOpen = hasTrackedB && IsTrackedLegStillOpen(tradeRightResult.Records, cycle.TicketB, cycle.PairIdB);
+
+        if (aStillOpen || bStillOpen)
+        {
+            reason = aStillOpen && bStillOpen
+                ? "both active legs still open"
+                : aStillOpen
+                    ? "active leg A still open"
+                    : "active leg B still open";
+            return false;
+        }
+
+        return true;
+    }
+
+    private bool IsTrackedLegStillOpen(
+        IReadOnlyList<TradeSharedRecord> records,
+        ulong? trackedTicket,
+        string? trackedPairId)
+    {
+        if (trackedTicket.HasValue && records.Any(x => x.Ticket == trackedTicket.Value))
+        {
+            return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(trackedPairId))
+        {
+            foreach (var record in records)
+            {
+                if (_pairIdByTicket.TryGetValue(record.Ticket, out var pairId)
+                    && string.Equals(pairId, trackedPairId, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private void ClearActiveAutoCycleOnCloseFinalize()
+    {
+        _activeAutoCloseRecoveryCycle = null;
+        _activeAutoCycle = null;
+    }
+
+    private bool IsPendingCloseStateForActiveCycle(PendingClosePairState state)
+    {
+        var active = _activeAutoCycle;
+        if (active is null)
+        {
+            return false;
+        }
+
+        if (state.SlotNumber != active.Slot)
+        {
+            return false;
+        }
+
+        return string.Equals(state.PairId, active.PairIdA, StringComparison.Ordinal)
+            || string.Equals(state.PairId, active.PairIdB, StringComparison.Ordinal);
+    }
+
     private void ShowManualTradeFeedback(string actionName, ManualTradeResult result)
     {
         var detail = BuildManualTradeFeedbackText(actionName, result);
@@ -1412,6 +1663,10 @@ public sealed class DashboardViewModel : ObservableObject
         _tradingFlowEngine.Reset();
         _manualSlot = 0;
         _autoSlot = 0;
+        _isAutoOpenPausedByInvariant = false;
+        _activeAutoCycle = null;
+        _activeAutoCloseRecoveryCycle = null;
+        _closeBothFlatPollStreak = 0;
         _sttByPairId.Clear();
         _nextStt = 1;
         _profitSnapshotByTicket.Clear();
@@ -1598,6 +1853,8 @@ public sealed class DashboardViewModel : ObservableObject
                     ApplyHistoryResult(HistoryTab.RightPanel, historyRightResult, point);
                 }
 
+                EvaluateAndApplyAutoOpenInvariantWatchdog(tradeLeftResult, tradeRightResult);
+
                 TryRecoverWaitingCloseFromPolling(livePairStateFromPoll);
 
                 timeoutActions = CollectPendingOpenTimeoutActions();
@@ -1612,6 +1869,70 @@ public sealed class DashboardViewModel : ObservableObject
             if (closeRetryActions.Count > 0)
             {
                 await ExecutePendingCloseRetryActionsAsync(closeRetryActions, cancellationToken);
+            }
+        }
+    }
+
+    private void EvaluateAndApplyAutoOpenInvariantWatchdog(
+        SharedMapReadResult<TradeSharedRecord> tradeLeftResult,
+        SharedMapReadResult<TradeSharedRecord> tradeRightResult)
+    {
+        var openRowsA = GetOpenRowCount(tradeLeftResult);
+        var openRowsB = GetOpenRowCount(tradeRightResult);
+        var liveAutoPairCount = CountLiveAutoPairCount(tradeLeftResult, tradeRightResult);
+
+        var hasInvariantViolation = liveAutoPairCount > 1 || openRowsA > 1 || openRowsB > 1;
+        if (!hasInvariantViolation)
+        {
+            return;
+        }
+
+        if (_isAutoOpenPausedByInvariant)
+        {
+            return;
+        }
+
+        _isAutoOpenPausedByInvariant = true;
+        SignalLogItems.Insert(0,
+            $"    - [{DateTime.Now:HH:mm:ss.fff}] Invariant violation: multiple live auto pairs detected (A={openRowsA},B={openRowsB}). Auto-open paused.");
+    }
+
+    private static int GetOpenRowCount(SharedMapReadResult<TradeSharedRecord> tradeResult)
+    {
+        if (!tradeResult.IsMapAvailable || !tradeResult.IsParseSuccess)
+        {
+            return 0;
+        }
+
+        return tradeResult.Records.Count;
+    }
+
+    private int CountLiveAutoPairCount(
+        SharedMapReadResult<TradeSharedRecord> tradeLeftResult,
+        SharedMapReadResult<TradeSharedRecord> tradeRightResult)
+    {
+        var pairIds = new HashSet<string>(StringComparer.Ordinal);
+        AddLiveAutoPairIds(tradeLeftResult, pairIds);
+        AddLiveAutoPairIds(tradeRightResult, pairIds);
+        return pairIds.Count;
+    }
+
+    private void AddLiveAutoPairIds(
+        SharedMapReadResult<TradeSharedRecord> tradeResult,
+        HashSet<string> pairIds)
+    {
+        if (!tradeResult.IsMapAvailable || !tradeResult.IsParseSuccess)
+        {
+            return;
+        }
+
+        foreach (var record in tradeResult.Records)
+        {
+            if (_pairIdByTicket.TryGetValue(record.Ticket, out var pairId)
+                && !string.IsNullOrWhiteSpace(pairId)
+                && pairId.StartsWith("AUTO-", StringComparison.OrdinalIgnoreCase))
+            {
+                pairIds.Add(pairId);
             }
         }
     }
@@ -1919,6 +2240,13 @@ public sealed class DashboardViewModel : ObservableObject
             return;
         }
 
+        if (!IsPendingCloseStateForActiveCycle(state))
+        {
+            SignalLogItems.Insert(0,
+                $"    - [{DateTime.Now:HH:mm:ss.fff}] Close pending ignored: pair does not match active auto cycle ({state.PairId})");
+            return;
+        }
+
         var closeCompletedAtUtc = DateTime.UtcNow;
         var closeCompletedAtLocal = closeCompletedAtUtc.ToLocalTime();
         _tradingFlowEngine.BeginWaitAfterClose(
@@ -1936,6 +2264,7 @@ public sealed class DashboardViewModel : ObservableObject
             $"    - [{DateTime.Now:HH:mm:ss.fff}] Close pending confirmed by ticket check: pair={state.PairId}");
         SignalLogItems.Insert(0,
             SignalLogFormatter.FormatRandomWaitingTime(closeCompletedAtLocal, waitSeconds));
+        ClearActiveAutoCycleOnCloseFinalize();
         OnPropertyChanged(nameof(CurrentPositionText));
         OnPropertyChanged(nameof(CurrentPhaseText));
     }
@@ -1945,6 +2274,20 @@ public sealed class DashboardViewModel : ObservableObject
         var tradeLeftResult = _tradesSharedMemoryReader.ReadTrades(TradeTab.LeftPanel.TargetMapName);
         var tradeRightResult = _tradesSharedMemoryReader.ReadTrades(TradeTab.RightPanel.TargetMapName);
         return GetLivePairTradeState(tradeLeftResult, tradeRightResult);
+    }
+
+    private LivePairTradeState GetLivePairTradeStateStrict()
+    {
+        try
+        {
+            var tradeLeftResult = _tradesSharedMemoryReader.ReadTrades(TradeTab.LeftPanel.TargetMapName);
+            var tradeRightResult = _tradesSharedMemoryReader.ReadTrades(TradeTab.RightPanel.TargetMapName);
+            return GetLivePairTradeState(tradeLeftResult, tradeRightResult);
+        }
+        catch
+        {
+            return LivePairTradeState.MapUnavailableOrParseError;
+        }
     }
 
     private static LivePairTradeState GetLivePairTradeState(
@@ -1979,6 +2322,16 @@ public sealed class DashboardViewModel : ObservableObject
 
     private bool FinalizeCloseFlowIfPairFlat(string source)
     {
+        var tradeLeftResult = _tradesSharedMemoryReader.ReadTrades(TradeTab.LeftPanel.TargetMapName);
+        var tradeRightResult = _tradesSharedMemoryReader.ReadTrades(TradeTab.RightPanel.TargetMapName);
+        if (!IsActiveCloseRecoveryCycleClosed(tradeLeftResult, tradeRightResult, out var blockReason))
+        {
+            SignalLogItems.Insert(0,
+                $"    - [{DateTime.Now:HH:mm:ss.fff}] Close finalize blocked: active cycle not fully closed ({blockReason})");
+            _closeBothFlatPollStreak = 0;
+            return false;
+        }
+
         var closeCompletedAtUtc = DateTime.UtcNow;
         var closeCompletedAtLocal = closeCompletedAtUtc.ToLocalTime();
         _tradingFlowEngine.BeginWaitAfterClose(
@@ -1996,6 +2349,8 @@ public sealed class DashboardViewModel : ObservableObject
             $"    - [{DateTime.Now:HH:mm:ss.fff}] Flow -> WaitingOpen after close confirmed ({source})");
         SignalLogItems.Insert(0,
             SignalLogFormatter.FormatRandomWaitingTime(closeCompletedAtLocal, waitSeconds));
+        ClearActiveAutoCycleOnCloseFinalize();
+        _closeBothFlatPollStreak = 0;
         OnPropertyChanged(nameof(CurrentPositionText));
         OnPropertyChanged(nameof(CurrentPhaseText));
         return true;
@@ -2007,7 +2362,30 @@ public sealed class DashboardViewModel : ObservableObject
         var isWaitingClosePhase = phase == TradingFlowPhase.WaitingCloseFromGapBuy
             || phase == TradingFlowPhase.WaitingCloseFromGapSell;
 
-        if (!isWaitingClosePhase || pairState != LivePairTradeState.BothFlat)
+        if (!isWaitingClosePhase)
+        {
+            _closeBothFlatPollStreak = 0;
+            return;
+        }
+
+        if (pairState != LivePairTradeState.BothFlat)
+        {
+            _closeBothFlatPollStreak = 0;
+            return;
+        }
+
+        if (!IsActiveCloseRecoveryCycleClosed(_latestTradeLeftResult ?? _tradesSharedMemoryReader.ReadTrades(TradeTab.LeftPanel.TargetMapName),
+                _latestTradeRightResult ?? _tradesSharedMemoryReader.ReadTrades(TradeTab.RightPanel.TargetMapName),
+                out var closeBlockReason))
+        {
+            _closeBothFlatPollStreak = 0;
+            SignalLogItems.Insert(0,
+                $"    - [{DateTime.Now:HH:mm:ss.fff}] Close reconcile blocked: active cycle not matched ({closeBlockReason})");
+            return;
+        }
+
+        _closeBothFlatPollStreak++;
+        if (_closeBothFlatPollStreak < StableBothFlatPollsRequired)
         {
             return;
         }
@@ -2019,7 +2397,7 @@ public sealed class DashboardViewModel : ObservableObject
         }
 
         SignalLogItems.Insert(0,
-            $"    - [{DateTime.Now:HH:mm:ss.fff}] Close reconcile result: BothFlat (polling recovery)");
+            $"    - [{DateTime.Now:HH:mm:ss.fff}] Close reconcile result: BothFlat (stable polling {StableBothFlatPollsRequired}/{StableBothFlatPollsRequired})");
     }
 
     private void LogFlowRecoveryState(
@@ -2030,50 +2408,50 @@ public sealed class DashboardViewModel : ObservableObject
         bool closeSuccessA,
         bool closeSuccessB,
         bool hasCloseSuccessBoth,
-        bool reconciledToWaitingOpen)
+        bool immediateFlatObserved)
     {
         var now = DateTime.Now;
-        var pairStateText = pairState switch
-        {
-            LivePairTradeState.BothFlat => "BothFlat",
-            LivePairTradeState.OnlyAOpen => "OnlyAOpen",
-            LivePairTradeState.OnlyBOpen => "OnlyBOpen",
-            LivePairTradeState.BothOpen => "BothOpen",
-            _ => "MapUnavailableOrParseError"
-        };
+        var pairStateText = FormatLivePairTradeState(pairState);
 
         SignalLogItems.Insert(0,
             $"    - [{now:HH:mm:ss.fff}] {context}: candidates(A={hadCloseCandidateA},B={hadCloseCandidateB}), routerSuccess(A={closeSuccessA},B={closeSuccessB},both={hasCloseSuccessBoth})");
         SignalLogItems.Insert(0,
             $"    - [{now:HH:mm:ss.fff}] Close reconcile result: {pairStateText}");
 
-        if (reconciledToWaitingOpen)
+        if (immediateFlatObserved)
         {
+            SignalLogItems.Insert(0,
+                $"    - [{now:HH:mm:ss.fff}] Post-close reconcile sees BothFlat (1/{StableBothFlatPollsRequired}); waiting for polling confirmation");
             return;
         }
 
         if (pairState == LivePairTradeState.OnlyAOpen || pairState == LivePairTradeState.OnlyBOpen)
         {
-            var desyncText = pairState == LivePairTradeState.OnlyAOpen
-                ? "Auto close desync: B flat, A still open"
-                : "Auto close desync: A flat, B still open";
             SignalLogItems.Insert(0,
-                $"    - [{now:HH:mm:ss.fff}] {desyncText}");
-            SignalLogItems.Insert(0,
-                $"    - [{now:HH:mm:ss.fff}] Close recovery: pending close aborted, pair still not flat");
+                $"    - [{now:HH:mm:ss.fff}] Post-close reconcile sees partial open trades; waiting for polling confirmation");
             return;
         }
 
         if (pairState == LivePairTradeState.BothOpen)
         {
             SignalLogItems.Insert(0,
-                $"    - [{now:HH:mm:ss.fff}] Close recovery: pending close aborted, pair still not flat");
+                $"    - [{now:HH:mm:ss.fff}] Post-close reconcile still sees open trades; waiting for polling confirmation");
             return;
         }
 
         SignalLogItems.Insert(0,
-            $"    - [{now:HH:mm:ss.fff}] Close recovery: reconcile unavailable (map/parse), pending close aborted");
+            $"    - [{now:HH:mm:ss.fff}] Post-close reconcile unavailable (map/parse); waiting for polling confirmation");
     }
+
+    private static string FormatLivePairTradeState(LivePairTradeState pairState)
+        => pairState switch
+        {
+            LivePairTradeState.BothFlat => "BothFlat",
+            LivePairTradeState.OnlyAOpen => "OnlyAOpen",
+            LivePairTradeState.OnlyBOpen => "OnlyBOpen",
+            LivePairTradeState.BothOpen => "BothOpen",
+            _ => "Unknown/Error"
+        };
 
     private async Task ExecutePendingCloseRetryActionsAsync(
         IReadOnlyList<PendingCloseRetryAction> actions,
@@ -2517,6 +2895,22 @@ public sealed class DashboardViewModel : ObservableObject
             state.VolumeB ??= volume;
             state.TradeMapNameB ??= pendingRequest.TradeMapName;
             state.TradeTypeB ??= pendingRequest.TradeType;
+        }
+
+        if (_activeAutoCycle is not null
+            && pendingRequest.IsAutoFlow
+            && pendingRequest.SlotNumber == _activeAutoCycle.Slot)
+        {
+            if (string.Equals(pendingRequest.ExchangeLabel, "A", StringComparison.OrdinalIgnoreCase))
+            {
+                _activeAutoCycle.PairIdA = pendingRequest.PairId;
+                _activeAutoCycle.TicketA = ticket;
+            }
+            else if (string.Equals(pendingRequest.ExchangeLabel, "B", StringComparison.OrdinalIgnoreCase))
+            {
+                _activeAutoCycle.PairIdB = pendingRequest.PairId;
+                _activeAutoCycle.TicketB = ticket;
+            }
         }
 
         if (state.OpenConfirmedA && state.OpenConfirmedB)
