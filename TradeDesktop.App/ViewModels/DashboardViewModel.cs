@@ -3174,6 +3174,7 @@ public sealed class DashboardViewModel : ObservableObject
             .Where(x => IsNullOrVolumeMatch(x.Volume, tradeRecord.Lot))
             .ToList();
 
+        var matchMode = "strict";
         var selected = strictCandidates
             .OrderBy(x => Math.Abs(tradeRecord.TimeMsc > long.MaxValue
                 ? long.MaxValue - x.AppOpenRequestUnixMs
@@ -3191,19 +3192,11 @@ public sealed class DashboardViewModel : ObservableObject
                     ? long.MaxValue - x.AppOpenRequestUnixMs
                     : (long)tradeRecord.TimeMsc - x.AppOpenRequestUnixMs))
                 .FirstOrDefault();
-        }
 
-        if (selected is null)
-        {
-            var fallbackCandidates = pendingList
-                .Where(x => Math.Abs(x.AppOpenRequestUnixMs - DateTimeOffset.Now.ToUnixTimeMilliseconds()) <= 30_000)
-                .ToList();
-
-            selected = fallbackCandidates
-                .OrderBy(x => Math.Abs(tradeRecord.TimeMsc > long.MaxValue
-                    ? long.MaxValue - x.AppOpenRequestUnixMs
-                    : (long)tradeRecord.TimeMsc - x.AppOpenRequestUnixMs))
-                .FirstOrDefault();
+            if (selected is not null)
+            {
+                matchMode = "type_only";
+            }
         }
 
         if (selected is null)
@@ -3224,7 +3217,7 @@ public sealed class DashboardViewModel : ObservableObject
         }
 
         pendingRequest = selected;
-        matchKey = $"map={tradeMapName};symbol={tradeRecord.Symbol};type={tradeRecord.TradeType};volume={tradeRecord.Lot.ToString(CultureInfo.InvariantCulture)};mode=best_effort";
+        matchKey = $"map={tradeMapName};symbol={tradeRecord.Symbol};type={tradeRecord.TradeType};volume={tradeRecord.Lot.ToString(CultureInfo.InvariantCulture)};mode={matchMode}";
         return true;
     }
 
