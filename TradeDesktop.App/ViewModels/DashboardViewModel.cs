@@ -247,6 +247,8 @@ public sealed class DashboardViewModel : ObservableObject
     private string _loadingMessage = "Đang chờ dữ liệu shared memory...";
     private string _machineHostName = string.Empty;
     private bool _hasManualTradeHwndConfig;
+    private bool _isManualOpenInFlight;
+    private LivePairTradeState _manualOpenGatePairState = LivePairTradeState.MapUnavailableOrParseError;
     private OrderTabType _selectedOrderTab = OrderTabType.Trade;
     private int _selectedOrderTabIndex;
 
@@ -287,8 +289,8 @@ public sealed class DashboardViewModel : ObservableObject
         CopyHostNameCommand = new AsyncRelayCommand(CopyHostNameAsync);
         StartTradingLogicCommand = new AsyncRelayCommand(StartTradingLogicAsync, CanStartTradingLogic);
         StopTradingLogicCommand = new AsyncRelayCommand(StopTradingLogicAsync, CanStopTradingLogic);
-        BuyCommand = new AsyncRelayCommand(BuyAsync);
-        SellCommand = new AsyncRelayCommand(SellAsync);
+        BuyCommand = new AsyncRelayCommand(BuyAsync, CanManualOpen);
+        SellCommand = new AsyncRelayCommand(SellAsync, CanManualOpen);
         CloseOrderCommand = new AsyncRelayCommand(CloseOrderAsync);
 
         TradeTab = new OrderInfoTabViewModel(
@@ -402,6 +404,7 @@ public sealed class DashboardViewModel : ObservableObject
             }
 
             OnPropertyChanged(nameof(IsManualTradeWarningVisible));
+            RaiseManualOpenCanExecuteChanged();
         }
     }
 
@@ -489,6 +492,27 @@ public sealed class DashboardViewModel : ObservableObject
 
     private bool CanStartTradingLogic() => !IsTradingLogicEnabled;
     private bool CanStopTradingLogic() => IsTradingLogicEnabled;
+    private bool CanManualOpen()
+        => HasManualTradeHwndConfig
+           && !_isManualOpenInFlight
+           && _manualOpenGatePairState == LivePairTradeState.BothFlat;
+
+    private void RaiseManualOpenCanExecuteChanged()
+    {
+        BuyCommand.RaiseCanExecuteChanged();
+        SellCommand.RaiseCanExecuteChanged();
+    }
+
+    private void RefreshManualOpenAvailability(LivePairTradeState pairState)
+    {
+        if (_manualOpenGatePairState == pairState)
+        {
+            return;
+        }
+
+        _manualOpenGatePairState = pairState;
+        RaiseManualOpenCanExecuteChanged();
+    }
 
     private Task StartTradingLogicAsync()
     {
@@ -530,80 +554,104 @@ public sealed class DashboardViewModel : ObservableObject
 
     private async Task BuyAsync()
     {
-        var (_, hwndColumn) = _runtimeConfigState.GetRandomManualHwndColumn();
-        var snapshot = _runtimeConfigState.CurrentDashboardMetrics;
-        var appOpenRequestTimeLocal = DateTimeOffset.Now;
-        var appOpenRequestRawMs = Environment.TickCount64;
-        var slot = _manualSlot;
+        _isManualOpenInFlight = true;
+        RaiseManualOpenCanExecuteChanged();
 
-        // Capture pending request BEFORE executing click to avoid race with shared-memory polling.
-        CapturePendingOpenRequest(TradeTab.LeftPanel.TargetMapName, snapshot, isExchangeA: true, tradeType: 0, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
-        CapturePendingOpenRequest(TradeTab.RightPanel.TargetMapName, snapshot, isExchangeA: false, tradeType: 1, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
+        try
+        {
+            var (_, hwndColumn) = _runtimeConfigState.GetRandomManualHwndColumn();
+            var snapshot = _runtimeConfigState.CurrentDashboardMetrics;
+            var appOpenRequestTimeLocal = DateTimeOffset.Now;
+            var appOpenRequestRawMs = Environment.TickCount64;
+            var slot = _manualSlot;
 
-        var result = await _tradeExecutionRouter.OpenPairAsync(
-            new TradeOpenPairRequest(
-                new TradeOpenLegRequest(
-                    Exchange: "A",
-                    Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformA),
-                    ChartHwnd: hwndColumn.ChartHwndA,
-                    Action: TradeLegAction.Buy),
-                new TradeOpenLegRequest(
-                    Exchange: "B",
-                    Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformB),
-                    ChartHwnd: hwndColumn.ChartHwndB,
-                    Action: TradeLegAction.Sell)));
+            // Capture pending request BEFORE executing click to avoid race with shared-memory polling.
+            CapturePendingOpenRequest(TradeTab.LeftPanel.TargetMapName, snapshot, isExchangeA: true, tradeType: 0, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
+            CapturePendingOpenRequest(TradeTab.RightPanel.TargetMapName, snapshot, isExchangeA: false, tradeType: 1, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
 
-        // Phase 1 Manual Open log: A buy, B sell
-        var now = DateTime.Now;
-        var gap = _runtimeConfigState.CurrentDashboardMetrics?.GapBuy;
-        var symbolA = snapshot?.ExchangeA.Symbol ?? "-";
-        var symbolB = snapshot?.ExchangeB.Symbol ?? "-";
-        var priceA = SignalLogFormatter.ResolveOpenPrice(snapshot?.ExchangeA.Bid, snapshot?.ExchangeA.Ask, isBuy: true);
-        var priceB = SignalLogFormatter.ResolveOpenPrice(snapshot?.ExchangeB.Bid, snapshot?.ExchangeB.Ask, isBuy: false);
-        SignalLogItems.Insert(0, SignalLogFormatter.FormatManualOpen(now, slot, "B", "SELL", symbolB, priceB, gap));
-        SignalLogItems.Insert(0, SignalLogFormatter.FormatManualOpen(now, slot, "A", "BUY", symbolA, priceA, gap));
+            var result = await _tradeExecutionRouter.OpenPairAsync(
+                new TradeOpenPairRequest(
+                    new TradeOpenLegRequest(
+                        Exchange: "A",
+                        Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformA),
+                        ChartHwnd: hwndColumn.ChartHwndA,
+                        Action: TradeLegAction.Buy),
+                    new TradeOpenLegRequest(
+                        Exchange: "B",
+                        Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformB),
+                        ChartHwnd: hwndColumn.ChartHwndB,
+                        Action: TradeLegAction.Sell)));
 
-        _manualSlot++;
-        ShowManualTradeFeedback("BUY", result);
+            // Phase 1 Manual Open log: A buy, B sell
+            var now = DateTime.Now;
+            var gap = _runtimeConfigState.CurrentDashboardMetrics?.GapBuy;
+            var symbolA = snapshot?.ExchangeA.Symbol ?? "-";
+            var symbolB = snapshot?.ExchangeB.Symbol ?? "-";
+            var priceA = SignalLogFormatter.ResolveOpenPrice(snapshot?.ExchangeA.Bid, snapshot?.ExchangeA.Ask, isBuy: true);
+            var priceB = SignalLogFormatter.ResolveOpenPrice(snapshot?.ExchangeB.Bid, snapshot?.ExchangeB.Ask, isBuy: false);
+            SignalLogItems.Insert(0, SignalLogFormatter.FormatManualOpen(now, slot, "B", "SELL", symbolB, priceB, gap));
+            SignalLogItems.Insert(0, SignalLogFormatter.FormatManualOpen(now, slot, "A", "BUY", symbolA, priceA, gap));
+
+            _manualSlot++;
+            ShowManualTradeFeedback("BUY", result);
+        }
+        finally
+        {
+            _isManualOpenInFlight = false;
+            RefreshManualOpenAvailability(GetLivePairTradeStateStrict());
+            RaiseManualOpenCanExecuteChanged();
+        }
     }
 
     private async Task SellAsync()
     {
-        var (_, hwndColumn) = _runtimeConfigState.GetRandomManualHwndColumn();
-        var snapshot = _runtimeConfigState.CurrentDashboardMetrics;
-        var appOpenRequestTimeLocal = DateTimeOffset.Now;
-        var appOpenRequestRawMs = Environment.TickCount64;
-        var slot = _manualSlot;
+        _isManualOpenInFlight = true;
+        RaiseManualOpenCanExecuteChanged();
 
-        // Capture pending request BEFORE executing click to avoid race with shared-memory polling.
-        CapturePendingOpenRequest(TradeTab.LeftPanel.TargetMapName, snapshot, isExchangeA: true, tradeType: 1, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
-        CapturePendingOpenRequest(TradeTab.RightPanel.TargetMapName, snapshot, isExchangeA: false, tradeType: 0, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
+        try
+        {
+            var (_, hwndColumn) = _runtimeConfigState.GetRandomManualHwndColumn();
+            var snapshot = _runtimeConfigState.CurrentDashboardMetrics;
+            var appOpenRequestTimeLocal = DateTimeOffset.Now;
+            var appOpenRequestRawMs = Environment.TickCount64;
+            var slot = _manualSlot;
 
-        var result = await _tradeExecutionRouter.OpenPairAsync(
-            new TradeOpenPairRequest(
-                new TradeOpenLegRequest(
-                    Exchange: "A",
-                    Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformA),
-                    ChartHwnd: hwndColumn.ChartHwndA,
-                    Action: TradeLegAction.Sell),
-                new TradeOpenLegRequest(
-                    Exchange: "B",
-                    Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformB),
-                    ChartHwnd: hwndColumn.ChartHwndB,
-                    Action: TradeLegAction.Buy)));
+            // Capture pending request BEFORE executing click to avoid race with shared-memory polling.
+            CapturePendingOpenRequest(TradeTab.LeftPanel.TargetMapName, snapshot, isExchangeA: true, tradeType: 1, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
+            CapturePendingOpenRequest(TradeTab.RightPanel.TargetMapName, snapshot, isExchangeA: false, tradeType: 0, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
 
-        // Phase 1 Manual Open log: A sell, B buy
-        var now = DateTime.Now;
-        var gap = _runtimeConfigState.CurrentDashboardMetrics?.GapSell;
-        var symbolA = snapshot?.ExchangeA.Symbol ?? "-";
-        var symbolB = snapshot?.ExchangeB.Symbol ?? "-";
-        var priceA = SignalLogFormatter.ResolveOpenPrice(snapshot?.ExchangeA.Bid, snapshot?.ExchangeA.Ask, isBuy: false);
-        var priceB = SignalLogFormatter.ResolveOpenPrice(snapshot?.ExchangeB.Bid, snapshot?.ExchangeB.Ask, isBuy: true);
-        SignalLogItems.Insert(0, SignalLogFormatter.FormatManualOpen(now, slot, "B", "BUY", symbolB, priceB, gap));
-        SignalLogItems.Insert(0, SignalLogFormatter.FormatManualOpen(now, slot, "A", "SELL", symbolA, priceA, gap));
+            var result = await _tradeExecutionRouter.OpenPairAsync(
+                new TradeOpenPairRequest(
+                    new TradeOpenLegRequest(
+                        Exchange: "A",
+                        Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformA),
+                        ChartHwnd: hwndColumn.ChartHwndA,
+                        Action: TradeLegAction.Sell),
+                    new TradeOpenLegRequest(
+                        Exchange: "B",
+                        Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformB),
+                        ChartHwnd: hwndColumn.ChartHwndB,
+                        Action: TradeLegAction.Buy)));
 
-        _manualSlot++;
-        ShowManualTradeFeedback("SELL", result);
+            // Phase 1 Manual Open log: A sell, B buy
+            var now = DateTime.Now;
+            var gap = _runtimeConfigState.CurrentDashboardMetrics?.GapSell;
+            var symbolA = snapshot?.ExchangeA.Symbol ?? "-";
+            var symbolB = snapshot?.ExchangeB.Symbol ?? "-";
+            var priceA = SignalLogFormatter.ResolveOpenPrice(snapshot?.ExchangeA.Bid, snapshot?.ExchangeA.Ask, isBuy: false);
+            var priceB = SignalLogFormatter.ResolveOpenPrice(snapshot?.ExchangeB.Bid, snapshot?.ExchangeB.Ask, isBuy: true);
+            SignalLogItems.Insert(0, SignalLogFormatter.FormatManualOpen(now, slot, "B", "BUY", symbolB, priceB, gap));
+            SignalLogItems.Insert(0, SignalLogFormatter.FormatManualOpen(now, slot, "A", "SELL", symbolA, priceA, gap));
+
+            _manualSlot++;
+            ShowManualTradeFeedback("SELL", result);
+        }
+        finally
+        {
+            _isManualOpenInFlight = false;
+            RefreshManualOpenAvailability(GetLivePairTradeStateStrict());
+            RaiseManualOpenCanExecuteChanged();
+        }
     }
 
     private async Task CloseOrderAsync()
@@ -1674,6 +1722,8 @@ public sealed class DashboardViewModel : ObservableObject
         _tradingFlowEngine.Reset();
         _manualSlot = 0;
         _autoSlot = 0;
+        _isManualOpenInFlight = false;
+        _manualOpenGatePairState = LivePairTradeState.MapUnavailableOrParseError;
         _isAutoOpenPausedByInvariant = false;
         _activeAutoCycle = null;
         _activeAutoCloseRecoveryCycle = null;
@@ -1685,6 +1735,7 @@ public sealed class DashboardViewModel : ObservableObject
         HistoryRealtimeProfitRows.Clear();
         OnPropertyChanged(nameof(CurrentPositionText));
         OnPropertyChanged(nameof(CurrentPhaseText));
+        RaiseManualOpenCanExecuteChanged();
     }
 
     private Task CopyHostNameAsync()
@@ -1772,6 +1823,7 @@ public sealed class DashboardViewModel : ObservableObject
             $"Host Name: {_runtimeConfigState.CurrentMachineHostName}  |  Point: {_runtimeConfigState.CurrentPoint}  |  OpenPts: {_runtimeConfigState.CurrentOpenPts}  |  ConfirmGapPts: {_runtimeConfigState.CurrentConfirmGapPts}  |  ClosePts: {_runtimeConfigState.CurrentClosePts}  |  CloseConfirmGapPts: {_runtimeConfigState.CurrentCloseConfirmGapPts}  |  StartTimeHold: {_runtimeConfigState.CurrentStartTimeHold}  |  EndTimeHold: {_runtimeConfigState.CurrentEndTimeHold}  |  StartWaitTime: {_runtimeConfigState.CurrentStartWaitTime}  |  EndWaitTime: {_runtimeConfigState.CurrentEndWaitTime}  |  ConfirmLatencyMs: {_runtimeConfigState.CurrentConfirmLatencyMs}  |  MaxGap: {_runtimeConfigState.CurrentMaxGap}  |  MaxSpread: {_runtimeConfigState.CurrentMaxSpread}  |  Map 1: {_runtimeConfigState.CurrentMapName1}  |  Map 2: {_runtimeConfigState.CurrentMapName2}";
 
         HasManualTradeHwndConfig = _runtimeConfigState.CurrentManualHwndColumns.Any(x => x.IsComplete);
+        RefreshManualOpenAvailability(GetLivePairTradeStateStrict());
 
         RefreshOrderInfoTabs();
     }
@@ -1863,6 +1915,8 @@ public sealed class DashboardViewModel : ObservableObject
                 {
                     ApplyHistoryResult(HistoryTab.RightPanel, historyRightResult, point);
                 }
+
+                RefreshManualOpenAvailability(livePairStateFromPoll);
 
                 EvaluateAndApplyAutoOpenInvariantWatchdog(tradeLeftResult, tradeRightResult);
 
