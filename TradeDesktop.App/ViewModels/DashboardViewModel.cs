@@ -3844,9 +3844,47 @@ public sealed class DashboardViewModel : ObservableObject
             // Keep latest signal summary, but do not append legacy multiline signal format into SignalLogItems.
             LastSignalText = BuildAutoSignalSummary(trigger);
 
+            if (trigger.Action == GapSignalAction.Open
+                && !TryAllowAutoOpenByToggle(trigger, out var blockedReason))
+            {
+                // Open trigger already moved flow to WaitingClose inside engine.
+                // Rollback to WaitingOpen when user toggle disables this open side.
+                _tradingFlowEngine.Reset();
+                OnPropertyChanged(nameof(CurrentPositionText));
+                OnPropertyChanged(nameof(CurrentPhaseText));
+
+                SignalLogItems.Insert(0,
+                    $"    - [{DateTime.Now:HH:mm:ss.fff}] Open blocked by toggle: {blockedReason}");
+                return;
+            }
+
             // Auto-execute trade from signal trigger
             _ = DispatchSignalTradeAsync(trigger);
         });
+    }
+
+    private bool TryAllowAutoOpenByToggle(GapSignalTriggerResult trigger, out string blockedReason)
+    {
+        blockedReason = string.Empty;
+
+        if (trigger.Action != GapSignalAction.Open)
+        {
+            return true;
+        }
+
+        if (trigger.PrimarySide == GapSignalSide.Buy && !IsOpenGapBuyEnabled)
+        {
+            blockedReason = "GAP_BUY is OFF";
+            return false;
+        }
+
+        if (trigger.PrimarySide == GapSignalSide.Sell && !IsOpenGapSellEnabled)
+        {
+            blockedReason = "GAP_SELL is OFF";
+            return false;
+        }
+
+        return true;
     }
 
     private void RefreshTradeRowsFromSnapshot(DashboardMetrics metrics, int point)
