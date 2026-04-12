@@ -97,6 +97,52 @@ public sealed class CloseSignalEngineTests
         Assert.Equal(new[] { -5, -8, -8 }, trigger!.SellGaps);
     }
 
+    [Fact]
+    public void ProcessSnapshot_DoesNotTrigger_WhenCloseMaxTimesTickExceeded()
+    {
+        var sut = new CloseSignalEngine();
+        var config = new GapSignalConfirmationConfig(
+            ConfirmGapPts: 5,
+            OpenPts: 8,
+            HoldConfirmMs: 500,
+            CloseConfirmGapPts: 5,
+            ClosePts: 8,
+            CloseHoldConfirmMs: 400,
+            CloseMaxTimesTick: 3);
+        var start = new DateTime(2026, 3, 18, 15, 20, 0, DateTimeKind.Utc);
+
+        Assert.Null(Process(sut, start.AddMilliseconds(0), gapBuy: null, gapSell: -5, config, TradingOpenMode.GapBuy));
+        Assert.Null(Process(sut, start.AddMilliseconds(120), gapBuy: null, gapSell: -6, config, TradingOpenMode.GapBuy));
+        Assert.Null(Process(sut, start.AddMilliseconds(250), gapBuy: null, gapSell: -7, config, TradingOpenMode.GapBuy));
+
+        var trigger = Process(sut, start.AddMilliseconds(520), gapBuy: null, gapSell: -8, config, TradingOpenMode.GapBuy);
+
+        Assert.Null(trigger);
+    }
+
+    [Fact]
+    public void ProcessSnapshot_StillTriggers_WhenCloseMaxTimesTickIsZero()
+    {
+        var sut = new CloseSignalEngine();
+        var config = new GapSignalConfirmationConfig(
+            ConfirmGapPts: 5,
+            OpenPts: 8,
+            HoldConfirmMs: 500,
+            CloseConfirmGapPts: 5,
+            ClosePts: 8,
+            CloseHoldConfirmMs: 400,
+            CloseMaxTimesTick: 0);
+        var start = new DateTime(2026, 3, 18, 15, 25, 0, DateTimeKind.Utc);
+
+        Assert.Null(Process(sut, start.AddMilliseconds(0), gapBuy: null, gapSell: -5, config, TradingOpenMode.GapBuy));
+        Assert.Null(Process(sut, start.AddMilliseconds(120), gapBuy: null, gapSell: -6, config, TradingOpenMode.GapBuy));
+        Assert.Null(Process(sut, start.AddMilliseconds(250), gapBuy: null, gapSell: -7, config, TradingOpenMode.GapBuy));
+
+        var trigger = Process(sut, start.AddMilliseconds(520), gapBuy: null, gapSell: -8, config, TradingOpenMode.GapBuy);
+
+        Assert.NotNull(trigger);
+    }
+
     private static GapSignalTriggerResult? Process(
         CloseSignalEngine sut,
         DateTime timestampUtc,

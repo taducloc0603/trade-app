@@ -34,6 +34,7 @@ public sealed class CloseSignalEngine : ICloseSignalEngine
                 timestampUtc: snapshot.TimestampUtc,
                 state: _buyState,
                 holdConfirmMs: normalizedHoldMs,
+                maxTimesTick: config.CloseMaxTimesTick,
                 isConfirmSatisfied: value => value <= -normalizedCloseConfirm,
                 isOpenSatisfied: value => value <= -normalizedClose),
 
@@ -52,6 +53,7 @@ public sealed class CloseSignalEngine : ICloseSignalEngine
                 timestampUtc: snapshot.TimestampUtc,
                 state: _sellState,
                 holdConfirmMs: normalizedHoldMs,
+                maxTimesTick: config.CloseMaxTimesTick,
                 isConfirmSatisfied: value => value >= normalizedCloseConfirm,
                 isOpenSatisfied: value => value >= normalizedClose),
 

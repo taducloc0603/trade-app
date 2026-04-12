@@ -33,6 +33,7 @@ public sealed class GapSignalConfirmationEngine : IGapSignalConfirmationEngine, 
             timestampUtc: snapshot.TimestampUtc,
             state: _buyState,
             holdConfirmMs: normalizedHoldMs,
+            maxTimesTick: config.OpenMaxTimesTick,
             isConfirmSatisfied: value => value >= normalizedConfirm,
             isOpenSatisfied: value => value >= normalizedOpen);
         if (buyResult is not null)
@@ -55,6 +56,7 @@ public sealed class GapSignalConfirmationEngine : IGapSignalConfirmationEngine, 
             timestampUtc: snapshot.TimestampUtc,
             state: _sellState,
             holdConfirmMs: normalizedHoldMs,
+            maxTimesTick: config.OpenMaxTimesTick,
             isConfirmSatisfied: value => value <= -normalizedConfirm,
             isOpenSatisfied: value => value <= -normalizedOpen);
         if (sellResult is not null)
@@ -86,6 +88,7 @@ public sealed class GapSignalConfirmationEngine : IGapSignalConfirmationEngine, 
         DateTime timestampUtc,
         SideWindowState state,
         int holdConfirmMs,
+        int maxTimesTick,
         Func<int, bool> isConfirmSatisfied,
         Func<int, bool> isOpenSatisfied)
     {
@@ -124,6 +127,13 @@ public sealed class GapSignalConfirmationEngine : IGapSignalConfirmationEngine, 
 
         var lastGap = primaryGaps[^1];
         if (!isOpenSatisfied(lastGap))
+        {
+            state.Reset();
+            return null;
+        }
+
+        var normalizedMaxTimesTick = Math.Max(0, maxTimesTick);
+        if (normalizedMaxTimesTick > 0 && primaryGaps.Count > normalizedMaxTimesTick)
         {
             state.Reset();
             return null;

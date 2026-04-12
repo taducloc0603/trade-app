@@ -120,12 +120,53 @@ public sealed class GapSignalConfirmationEngineTests
         Assert.Equal(new[] { 0, 0 }, trigger.SellGaps);
     }
 
+    [Fact]
+    public void ProcessSnapshot_DoesNotTrigger_WhenOpenMaxTimesTickExceeded()
+    {
+        var sut = new GapSignalConfirmationEngine();
+        var config = new GapSignalConfirmationConfig(
+            ConfirmGapPts: 5,
+            OpenPts: 8,
+            HoldConfirmMs: 500,
+            OpenMaxTimesTick: 3);
+        var start = new DateTime(2026, 3, 17, 5, 0, 0, DateTimeKind.Utc);
+
+        Assert.Empty(Process(sut, start.AddMilliseconds(0), gapBuy: 5, gapSell: null, config));
+        Assert.Empty(Process(sut, start.AddMilliseconds(120), gapBuy: 6, gapSell: null, config));
+        Assert.Empty(Process(sut, start.AddMilliseconds(250), gapBuy: 7, gapSell: null, config));
+
+        var results = Process(sut, start.AddMilliseconds(520), gapBuy: 8, gapSell: null, config);
+
+        Assert.Empty(results);
+    }
+
+    [Fact]
+    public void ProcessSnapshot_StillTriggers_WhenOpenMaxTimesTickIsZero()
+    {
+        var sut = new GapSignalConfirmationEngine();
+        var config = new GapSignalConfirmationConfig(
+            ConfirmGapPts: 5,
+            OpenPts: 8,
+            HoldConfirmMs: 500,
+            OpenMaxTimesTick: 0);
+        var start = new DateTime(2026, 3, 17, 5, 5, 0, DateTimeKind.Utc);
+
+        Assert.Empty(Process(sut, start.AddMilliseconds(0), gapBuy: 5, gapSell: null, config));
+        Assert.Empty(Process(sut, start.AddMilliseconds(120), gapBuy: 6, gapSell: null, config));
+        Assert.Empty(Process(sut, start.AddMilliseconds(250), gapBuy: 7, gapSell: null, config));
+
+        var results = Process(sut, start.AddMilliseconds(520), gapBuy: 8, gapSell: null, config);
+
+        Assert.Single(results);
+    }
+
     private static IReadOnlyList<GapSignalTriggerResult> Process(
         GapSignalConfirmationEngine sut,
         DateTime timestampUtc,
         int? gapBuy,
-        int? gapSell)
+        int? gapSell,
+        GapSignalConfirmationConfig? config = null)
         => sut.ProcessSnapshot(
             new GapSignalSnapshot(timestampUtc, 2945.12m, 2945.34m, 2945.56m, 2945.78m, gapBuy ?? 0, gapSell ?? 0, 1),
-            DefaultConfig);
+            config ?? DefaultConfig);
 }

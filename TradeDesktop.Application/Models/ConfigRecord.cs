@@ -20,5 +20,7 @@ public sealed record ConfigRecord(
     int ConfirmLatencyMs,
     int MaxGap,
     int MaxSpread,
+    int OpenMaxTimesTick,
+    int CloseMaxTimesTick,
     int OpenPendingTimeMs,
     int ClosePendingTimeMs);
