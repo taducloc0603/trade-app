@@ -303,6 +303,49 @@ public sealed class TradingFlowEngineTests
         Assert.Equal(GapSignalAction.Open, nextOpen!.Action);
     }
 
+    [Fact]
+    public void ForceWaitingClose_WhenBuy_SetsWaitingCloseFromGapBuy()
+    {
+        var sut = new TradingFlowEngine(new GapSignalConfirmationEngine(), new CloseSignalEngine());
+
+        sut.ForceWaitingClose(TradingPositionSide.Buy);
+
+        Assert.Equal(TradingFlowPhase.WaitingCloseFromGapBuy, sut.CurrentPhase);
+        Assert.Equal(TradingOpenMode.GapBuy, sut.CurrentOpenMode);
+        Assert.Equal(TradingPositionSide.Buy, sut.CurrentPositionSide);
+        Assert.NotNull(sut.OpenedAtUtc);
+    }
+
+    [Fact]
+    public void ForceWaitingClose_WhenSell_SetsWaitingCloseFromGapSell()
+    {
+        var sut = new TradingFlowEngine(new GapSignalConfirmationEngine(), new CloseSignalEngine());
+
+        sut.ForceWaitingClose(TradingPositionSide.Sell);
+
+        Assert.Equal(TradingFlowPhase.WaitingCloseFromGapSell, sut.CurrentPhase);
+        Assert.Equal(TradingOpenMode.GapSell, sut.CurrentOpenMode);
+        Assert.Equal(TradingPositionSide.Sell, sut.CurrentPositionSide);
+        Assert.NotNull(sut.OpenedAtUtc);
+    }
+
+    [Fact]
+    public void ForceWaitingOpen_ClearsPositionAndReturnsToWaitingOpen()
+    {
+        var sut = new TradingFlowEngine(new GapSignalConfirmationEngine(), new CloseSignalEngine());
+        sut.ForceWaitingClose(TradingPositionSide.Buy);
+
+        sut.ForceWaitingOpen();
+
+        Assert.Equal(TradingFlowPhase.WaitingOpen, sut.CurrentPhase);
+        Assert.Equal(TradingOpenMode.None, sut.CurrentOpenMode);
+        Assert.Equal(TradingPositionSide.None, sut.CurrentPositionSide);
+        Assert.Null(sut.OpenedAtUtc);
+        Assert.Null(sut.ClosedAtUtc);
+        Assert.Equal(0, sut.CurrentHoldingSeconds);
+        Assert.Equal(0, sut.CurrentWaitSeconds);
+    }
+
     private static GapSignalTriggerResult? Process(
         TradingFlowEngine sut,
         DateTime timestampUtc,

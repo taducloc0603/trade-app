@@ -132,7 +132,35 @@ public sealed class TradingFlowEngine(
         closeSignalEngine.Reset();
     }
 
-    public void Reset()
+    public void ForceWaitingClose(TradingPositionSide positionSide)
+    {
+        if (positionSide == TradingPositionSide.None)
+        {
+            return;
+        }
+
+        _isCloseExecutionPending = false;
+        CurrentWaitSeconds = 0;
+        ClosedAtUtc = null;
+        _closedAtRuntimeUtc = null;
+
+        CurrentPositionSide = positionSide;
+        CurrentOpenMode = positionSide == TradingPositionSide.Buy
+            ? TradingOpenMode.GapBuy
+            : TradingOpenMode.GapSell;
+        CurrentPhase = CurrentOpenMode == TradingOpenMode.GapBuy
+            ? TradingFlowPhase.WaitingCloseFromGapBuy
+            : TradingFlowPhase.WaitingCloseFromGapSell;
+
+        OpenedAtUtc ??= DateTime.UtcNow;
+        _openedAtRuntimeUtc ??= DateTime.UtcNow;
+        CurrentHoldingSeconds = 0;
+
+        openSignalEngine.Reset();
+        closeSignalEngine.Reset();
+    }
+
+    public void ForceWaitingOpen()
     {
         _isCloseExecutionPending = false;
         CurrentPhase = TradingFlowPhase.WaitingOpen;
@@ -146,6 +174,11 @@ public sealed class TradingFlowEngine(
         CurrentWaitSeconds = 0;
         openSignalEngine.Reset();
         closeSignalEngine.Reset();
+    }
+
+    public void Reset()
+    {
+        ForceWaitingOpen();
     }
 
     private bool CanCheckOpen(DateTime snapshotTimestampUtc)

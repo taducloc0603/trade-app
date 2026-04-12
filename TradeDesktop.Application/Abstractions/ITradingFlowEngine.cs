@@ -23,5 +23,9 @@ public interface ITradingFlowEngine
 
     void AbortPendingCloseExecution();
 
+    void ForceWaitingClose(TradingPositionSide positionSide);
+
+    void ForceWaitingOpen();
+
     void Reset();
 }

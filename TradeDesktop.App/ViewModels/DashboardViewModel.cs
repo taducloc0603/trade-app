@@ -534,6 +534,7 @@ public sealed class DashboardViewModel : ObservableObject
 
         ResetTradingLogicState();
         IsTradingLogicEnabled = true;
+        SyncTradingFlowWithLivePairState(GetLivePairTradeStateStrict());
         LastSignalText = "-";
         SignalLogItems.Clear();
         return Task.CompletedTask;
@@ -594,10 +595,18 @@ public sealed class DashboardViewModel : ObservableObject
 
             _manualSlot++;
             ShowManualTradeFeedback("BUY", result);
+
+            if (result.Success || result.Legs.Any(x => x.Success))
+            {
+                _tradingFlowEngine.ForceWaitingClose(TradingPositionSide.Buy);
+                OnPropertyChanged(nameof(CurrentPositionText));
+                OnPropertyChanged(nameof(CurrentPhaseText));
+            }
         }
         finally
         {
             _isManualOpenInFlight = false;
+            SyncTradingFlowWithLivePairState(GetLivePairTradeStateStrict());
             RefreshManualOpenAvailability(GetLivePairTradeStateStrict());
             RaiseManualOpenCanExecuteChanged();
         }
@@ -645,10 +654,18 @@ public sealed class DashboardViewModel : ObservableObject
 
             _manualSlot++;
             ShowManualTradeFeedback("SELL", result);
+
+            if (result.Success || result.Legs.Any(x => x.Success))
+            {
+                _tradingFlowEngine.ForceWaitingClose(TradingPositionSide.Sell);
+                OnPropertyChanged(nameof(CurrentPositionText));
+                OnPropertyChanged(nameof(CurrentPhaseText));
+            }
         }
         finally
         {
             _isManualOpenInFlight = false;
+            SyncTradingFlowWithLivePairState(GetLivePairTradeStateStrict());
             RefreshManualOpenAvailability(GetLivePairTradeStateStrict());
             RaiseManualOpenCanExecuteChanged();
         }
@@ -716,6 +733,7 @@ public sealed class DashboardViewModel : ObservableObject
 
         AppendCloseSelectionDiagnostics(selectA, selectB);
         ShowManualTradeFeedback("CLOSE", result);
+        SyncTradingFlowWithLivePairState(GetLivePairTradeStateStrict());
     }
 
     private async Task DispatchSignalTradeAsync(GapSignalTriggerResult trigger)
@@ -1917,6 +1935,7 @@ public sealed class DashboardViewModel : ObservableObject
                 }
 
                 RefreshManualOpenAvailability(livePairStateFromPoll);
+                SyncTradingFlowWithLivePairState(livePairStateFromPoll);
 
                 EvaluateAndApplyAutoOpenInvariantWatchdog(tradeLeftResult, tradeRightResult);
 
@@ -2383,6 +2402,76 @@ public sealed class DashboardViewModel : ObservableObject
         return hasOpenA
             ? LivePairTradeState.OnlyAOpen
             : LivePairTradeState.OnlyBOpen;
+    }
+
+    private void SyncTradingFlowWithLivePairState(LivePairTradeState pairState)
+    {
+        if (!IsTradingLogicEnabled)
+        {
+            return;
+        }
+
+        if (pairState == LivePairTradeState.BothFlat)
+        {
+            if (_tradingFlowEngine.CurrentPhase != TradingFlowPhase.WaitingOpen)
+            {
+                _tradingFlowEngine.ForceWaitingOpen();
+                OnPropertyChanged(nameof(CurrentPositionText));
+                OnPropertyChanged(nameof(CurrentPhaseText));
+            }
+
+            return;
+        }
+
+        if (pairState == LivePairTradeState.MapUnavailableOrParseError)
+        {
+            return;
+        }
+
+        var side = ResolveLivePositionSideFromMaps();
+        if (side == TradingPositionSide.None)
+        {
+            return;
+        }
+
+        if (_tradingFlowEngine.CurrentPhase != TradingFlowPhase.WaitingCloseFromGapBuy
+            && _tradingFlowEngine.CurrentPhase != TradingFlowPhase.WaitingCloseFromGapSell)
+        {
+            _tradingFlowEngine.ForceWaitingClose(side);
+            OnPropertyChanged(nameof(CurrentPositionText));
+            OnPropertyChanged(nameof(CurrentPhaseText));
+            return;
+        }
+
+        if (_tradingFlowEngine.CurrentPositionSide != side)
+        {
+            _tradingFlowEngine.ForceWaitingClose(side);
+            OnPropertyChanged(nameof(CurrentPositionText));
+            OnPropertyChanged(nameof(CurrentPhaseText));
+        }
+    }
+
+    private TradingPositionSide ResolveLivePositionSideFromMaps()
+    {
+        try
+        {
+            var left = _latestTradeLeftResult ?? _tradesSharedMemoryReader.ReadTrades(TradeTab.LeftPanel.TargetMapName);
+            var right = _latestTradeRightResult ?? _tradesSharedMemoryReader.ReadTrades(TradeTab.RightPanel.TargetMapName);
+
+            var candidate = left.Records.FirstOrDefault() ?? right.Records.FirstOrDefault();
+            if (candidate is null)
+            {
+                return TradingPositionSide.None;
+            }
+
+            return candidate.TradeType == 0
+                ? TradingPositionSide.Buy
+                : TradingPositionSide.Sell;
+        }
+        catch
+        {
+            return TradingPositionSide.None;
+        }
     }
 
     private bool FinalizeCloseFlowIfPairFlat(string source)
