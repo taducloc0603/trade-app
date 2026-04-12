@@ -242,6 +242,8 @@ public sealed class DashboardViewModel : ObservableObject
     private string _exchangeBMaxLatMs = "-";
     private string _exchangeBAvgLatMs = "-";
     private bool _isTradingLogicEnabled;
+    private bool _isOpenGapBuyEnabled = true;
+    private bool _isOpenGapSellEnabled = true;
     private string _lastSignalText = "-";
     private bool _isLoading = true;
     private string _loadingMessage = "Đang chờ dữ liệu shared memory...";
@@ -291,7 +293,7 @@ public sealed class DashboardViewModel : ObservableObject
         StopTradingLogicCommand = new AsyncRelayCommand(StopTradingLogicAsync, CanStopTradingLogic);
         BuyCommand = new AsyncRelayCommand(BuyAsync, CanManualOpen);
         SellCommand = new AsyncRelayCommand(SellAsync, CanManualOpen);
-        CloseOrderCommand = new AsyncRelayCommand(CloseOrderAsync);
+        CloseOrderCommand = new AsyncRelayCommand(CloseOrderAsync, CanManualClose);
 
         TradeTab = new OrderInfoTabViewModel(
             OrderTabType.Trade,
@@ -480,6 +482,17 @@ public sealed class DashboardViewModel : ObservableObject
     public Brush TradingLogicStatusBrush => IsTradingLogicEnabled ? Brushes.ForestGreen : Brushes.Gray;
     public string CurrentPositionText => ResolveCurrentPositionText();
     public string CurrentPhaseText => ResolveCurrentPhaseText();
+    public bool IsOpenGapBuyEnabled
+    {
+        get => _isOpenGapBuyEnabled;
+        set => SetProperty(ref _isOpenGapBuyEnabled, value);
+    }
+
+    public bool IsOpenGapSellEnabled
+    {
+        get => _isOpenGapSellEnabled;
+        set => SetProperty(ref _isOpenGapSellEnabled, value);
+    }
 
     public AsyncRelayCommand OpenConfigCommand { get; }
     public AsyncRelayCommand ReconnectConfigCommand { get; }
@@ -493,14 +506,20 @@ public sealed class DashboardViewModel : ObservableObject
     private bool CanStartTradingLogic() => !IsTradingLogicEnabled;
     private bool CanStopTradingLogic() => IsTradingLogicEnabled;
     private bool CanManualOpen()
-        => HasManualTradeHwndConfig
+        => IsTradingLogicEnabled
+           && HasManualTradeHwndConfig
            && !_isManualOpenInFlight
            && _manualOpenGatePairState == LivePairTradeState.BothFlat;
+
+    private bool CanManualClose()
+        => IsTradingLogicEnabled
+           && HasManualTradeHwndConfig;
 
     private void RaiseManualOpenCanExecuteChanged()
     {
         BuyCommand.RaiseCanExecuteChanged();
         SellCommand.RaiseCanExecuteChanged();
+        CloseOrderCommand.RaiseCanExecuteChanged();
     }
 
     private void RefreshManualOpenAvailability(LivePairTradeState pairState)

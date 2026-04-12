@@ -234,7 +234,27 @@
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
-                    <TextBlock Text="Trading Signal" FontSize="18" FontWeight="SemiBold" />
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Text="Trading Signal" FontSize="18" FontWeight="SemiBold" />
+
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                            <TextBlock Text="Open Gap Buy" VerticalAlignment="Center" Foreground="#344054" Margin="0,0,6,0" />
+                            <ToggleButton Width="46"
+                                          Height="24"
+                                          Margin="0,0,16,0"
+                                          IsChecked="{Binding IsOpenGapBuyEnabled, Mode=TwoWay}" />
+
+                            <TextBlock Text="Open Gap Sell" VerticalAlignment="Center" Foreground="#344054" Margin="0,0,6,0" />
+                            <ToggleButton Width="46"
+                                          Height="24"
+                                          IsChecked="{Binding IsOpenGapSellEnabled, Mode=TwoWay}" />
+                        </StackPanel>
+                    </Grid>
 
                     <Border Grid.Row="2" BorderBrush="#EEF1F5" BorderThickness="1" CornerRadius="8" Padding="12" Background="#FAFBFC">
                         <Grid>
