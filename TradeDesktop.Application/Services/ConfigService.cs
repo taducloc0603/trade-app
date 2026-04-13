@@ -67,7 +67,9 @@ public sealed class ConfigService(
             record.OpenMaxTimesTick,
             record.CloseMaxTimesTick,
             record.OpenPendingTimeMs,
-            record.ClosePendingTimeMs);
+            record.ClosePendingTimeMs,
+            record.DelayOpenAMs,
+            record.DelayOpenBMs);
     }
 
     public async Task<ConfigSaveResult> SaveByMachineHostNameAsync(
@@ -146,7 +148,9 @@ public sealed record ConfigLoadResult(
     int OpenMaxTimesTick,
     int CloseMaxTimesTick,
     int OpenPendingTimeMs,
-    int ClosePendingTimeMs)
+    int ClosePendingTimeMs,
+    int DelayOpenAMs,
+    int DelayOpenBMs)
 {
     public static ConfigLoadResult Success(
         string machineHostName,
@@ -174,7 +178,9 @@ public sealed record ConfigLoadResult(
         int openMaxTimesTick = 0,
         int closeMaxTimesTick = 0,
         int openPendingTimeMs = 0,
-        int closePendingTimeMs = 0) =>
+        int closePendingTimeMs = 0,
+        int delayOpenAMs = 0,
+        int delayOpenBMs = 0) =>
         new(
             true,
             true,
@@ -204,13 +210,15 @@ public sealed record ConfigLoadResult(
             Math.Max(0, openMaxTimesTick),
             Math.Max(0, closeMaxTimesTick),
             Math.Max(0, openPendingTimeMs),
-            Math.Max(0, closePendingTimeMs));
+            Math.Max(0, closePendingTimeMs),
+            Math.Max(0, delayOpenAMs),
+            Math.Max(0, delayOpenBMs));
 
     public static ConfigLoadResult NotFound(string machineHostName) =>
-        new(false, false, machineHostName, [ManualHwndColumnConfig.Empty], "mt5", "mt5", 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", null, 0, 0, 0, 0, 0, 0, 0);
+        new(false, false, machineHostName, [ManualHwndColumnConfig.Empty], "mt5", "mt5", 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", null, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 
     public static ConfigLoadResult Failed(string machineHostName, string error) =>
-        new(false, true, machineHostName, [ManualHwndColumnConfig.Empty], "mt5", "mt5", 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", error, 0, 0, 0, 0, 0, 0, 0);
+        new(false, true, machineHostName, [ManualHwndColumnConfig.Empty], "mt5", "mt5", 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", error, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 
     private static IReadOnlyList<ManualHwndColumnConfig> NormalizeColumns(IReadOnlyList<ManualHwndColumnConfig>? columns)
     {

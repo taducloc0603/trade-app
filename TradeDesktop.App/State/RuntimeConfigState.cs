@@ -27,6 +27,8 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
     public int CurrentCloseMaxTimesTick { get; private set; }
     public int CurrentOpenPendingTimeMs { get; private set; } = 1000;
     public int CurrentClosePendingTimeMs { get; private set; } = 1000;
+    public int CurrentDelayOpenAMs { get; private set; }
+    public int CurrentDelayOpenBMs { get; private set; }
     public string CurrentMapName1 { get; private set; } = string.Empty;
     public string CurrentMapName2 { get; private set; } = string.Empty;
     public string CurrentPlatformA { get; private set; } = "mt5";
@@ -65,6 +67,8 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
     public int CloseMaxTimesTick => CurrentCloseMaxTimesTick;
     public int OpenPendingTimeMs => CurrentOpenPendingTimeMs;
     public int ClosePendingTimeMs => CurrentClosePendingTimeMs;
+    public int DelayOpenAMs => CurrentDelayOpenAMs;
+    public int DelayOpenBMs => CurrentDelayOpenBMs;
 
     public event EventHandler? StateChanged;
 
@@ -89,7 +93,9 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
         int openMaxTimesTick = 0,
         int closeMaxTimesTick = 0,
         int openPendingTimeMs = -1,
-        int closePendingTimeMs = -1)
+        int closePendingTimeMs = -1,
+        int delayOpenAMs = -1,
+        int delayOpenBMs = -1)
         => Update(
             machineHostName,
             mapName1,
@@ -113,7 +119,9 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
             openMaxTimesTick,
             closeMaxTimesTick,
             openPendingTimeMs,
-            closePendingTimeMs);
+            closePendingTimeMs,
+            delayOpenAMs,
+            delayOpenBMs);
 
     public void Update(
         string machineHostName,
@@ -138,7 +146,9 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
         int openMaxTimesTick = 0,
         int closeMaxTimesTick = 0,
         int openPendingTimeMs = -1,
-        int closePendingTimeMs = -1)
+        int closePendingTimeMs = -1,
+        int delayOpenAMs = -1,
+        int delayOpenBMs = -1)
     {
         CurrentMachineHostName = (machineHostName ?? string.Empty).Trim().ToLower();
         CurrentPoint = point > 0 ? point : 1;
@@ -164,6 +174,14 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
         if (closePendingTimeMs >= 0)
         {
             CurrentClosePendingTimeMs = Math.Max(0, closePendingTimeMs);
+        }
+        if (delayOpenAMs >= 0)
+        {
+            CurrentDelayOpenAMs = Math.Max(0, delayOpenAMs);
+        }
+        if (delayOpenBMs >= 0)
+        {
+            CurrentDelayOpenBMs = Math.Max(0, delayOpenBMs);
         }
         CurrentMapName1 = (mapName1 ?? string.Empty).Trim();
         CurrentMapName2 = (mapName2 ?? string.Empty).Trim();
@@ -202,7 +220,9 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
             CurrentOpenMaxTimesTick,
             CurrentCloseMaxTimesTick,
             CurrentOpenPendingTimeMs,
-            CurrentClosePendingTimeMs);
+            CurrentClosePendingTimeMs,
+            CurrentDelayOpenAMs,
+            CurrentDelayOpenBMs);
 
     public void Update(string machineHostName, string mapName1, string mapName2)
         => Update(
@@ -228,7 +248,9 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
             CurrentOpenMaxTimesTick,
             CurrentCloseMaxTimesTick,
             CurrentOpenPendingTimeMs,
-            CurrentClosePendingTimeMs);
+            CurrentClosePendingTimeMs,
+            CurrentDelayOpenAMs,
+            CurrentDelayOpenBMs);
 
     public void UpdatePlatform(string platformA, string platformB)
     {

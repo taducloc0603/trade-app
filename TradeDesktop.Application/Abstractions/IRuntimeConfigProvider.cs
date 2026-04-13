@@ -23,6 +23,8 @@ public interface IRuntimeConfigProvider
     int CurrentCloseMaxTimesTick { get; }
     int CurrentOpenPendingTimeMs { get; }
     int CurrentClosePendingTimeMs { get; }
+    int CurrentDelayOpenAMs { get; }
+    int CurrentDelayOpenBMs { get; }
     string CurrentMapName1 { get; }
     string CurrentMapName2 { get; }
     DashboardMetrics? CurrentDashboardMetrics { get; }

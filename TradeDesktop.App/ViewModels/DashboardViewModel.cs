@@ -841,6 +841,16 @@ public sealed class DashboardViewModel : ObservableObject
 
             _openConfirmBySlot.Remove(slot);
 
+            var delayOpenAMs = Math.Max(0, _runtimeConfigState.CurrentDelayOpenAMs);
+            var delayOpenBMs = Math.Max(0, _runtimeConfigState.CurrentDelayOpenBMs);
+            System.Windows.Application.Current.Dispatcher.Invoke(() =>
+            {
+                SignalLogItems.Insert(0,
+                    $"    - [{DateTime.Now:HH:mm:ss.fff}] Time delay open A {delayOpenAMs} ms khi open ở sàn A");
+                SignalLogItems.Insert(0,
+                    $"    - [{DateTime.Now:HH:mm:ss.fff}] Time delay open B {delayOpenBMs} ms khi open ở sàn B");
+            });
+
             // Capture pending request BEFORE executing click to avoid race with shared-memory polling.
             CapturePendingOpenRequestFromTrigger(TradeTab.LeftPanel.TargetMapName, trigger, isExchangeA: true, tradeType: 0, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
             CapturePendingOpenRequestFromTrigger(TradeTab.RightPanel.TargetMapName, trigger, isExchangeA: false, tradeType: 1, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
@@ -851,12 +861,14 @@ public sealed class DashboardViewModel : ObservableObject
                         Exchange: "A",
                         Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformA),
                         ChartHwnd: hwndColumn.ChartHwndA,
-                        Action: TradeLegAction.Buy),
+                        Action: TradeLegAction.Buy,
+                        DelayMs: delayOpenAMs),
                     new TradeOpenLegRequest(
                         Exchange: "B",
                         Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformB),
                         ChartHwnd: hwndColumn.ChartHwndB,
-                        Action: TradeLegAction.Sell)));
+                        Action: TradeLegAction.Sell,
+                        DelayMs: delayOpenBMs)));
 
             System.Windows.Application.Current.Dispatcher.Invoke(() =>
             {
@@ -924,6 +936,16 @@ public sealed class DashboardViewModel : ObservableObject
 
             _openConfirmBySlot.Remove(slot);
 
+            var delayOpenAMs = Math.Max(0, _runtimeConfigState.CurrentDelayOpenAMs);
+            var delayOpenBMs = Math.Max(0, _runtimeConfigState.CurrentDelayOpenBMs);
+            System.Windows.Application.Current.Dispatcher.Invoke(() =>
+            {
+                SignalLogItems.Insert(0,
+                    $"    - [{DateTime.Now:HH:mm:ss.fff}] Time delay open A {delayOpenAMs} ms khi open ở sàn A");
+                SignalLogItems.Insert(0,
+                    $"    - [{DateTime.Now:HH:mm:ss.fff}] Time delay open B {delayOpenBMs} ms khi open ở sàn B");
+            });
+
             // Capture pending request BEFORE executing click to avoid race with shared-memory polling.
             CapturePendingOpenRequestFromTrigger(TradeTab.LeftPanel.TargetMapName, trigger, isExchangeA: true, tradeType: 1, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
             CapturePendingOpenRequestFromTrigger(TradeTab.RightPanel.TargetMapName, trigger, isExchangeA: false, tradeType: 0, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
@@ -934,12 +956,14 @@ public sealed class DashboardViewModel : ObservableObject
                         Exchange: "A",
                         Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformA),
                         ChartHwnd: hwndColumn.ChartHwndA,
-                        Action: TradeLegAction.Sell),
+                        Action: TradeLegAction.Sell,
+                        DelayMs: delayOpenAMs),
                     new TradeOpenLegRequest(
                         Exchange: "B",
                         Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformB),
                         ChartHwnd: hwndColumn.ChartHwndB,
-                        Action: TradeLegAction.Buy)));
+                        Action: TradeLegAction.Buy,
+                        DelayMs: delayOpenBMs)));
 
             System.Windows.Application.Current.Dispatcher.Invoke(() =>
             {
@@ -3687,7 +3711,9 @@ public sealed class DashboardViewModel : ObservableObject
                     result.OpenMaxTimesTick,
                     result.CloseMaxTimesTick,
                     result.OpenPendingTimeMs,
-                    result.ClosePendingTimeMs);
+                    result.ClosePendingTimeMs,
+                    result.DelayOpenAMs,
+                    result.DelayOpenBMs);
                 _runtimeConfigState.UpdateManualTradeHwnd(result.ManualHwndColumns);
                 ResetTradingLogicState();
 

@@ -23,7 +23,8 @@ public sealed record TradeOpenLegRequest(
     string Exchange,
     TradeLegPlatform Platform,
     string ChartHwnd,
-    TradeLegAction Action);
+    TradeLegAction Action,
+    int DelayMs = 0);
 
 public sealed record TradeCloseLegRequest(
     string Exchange,

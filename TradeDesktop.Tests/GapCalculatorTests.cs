@@ -79,6 +79,8 @@ public sealed class GapCalculatorTests
         public int CurrentCloseMaxTimesTick => 0;
         public int CurrentOpenPendingTimeMs => 0;
         public int CurrentClosePendingTimeMs => 0;
+        public int CurrentDelayOpenAMs => 0;
+        public int CurrentDelayOpenBMs => 0;
         public string CurrentMapName1 => "A";
         public string CurrentMapName2 => "B";
         public DashboardMetrics? CurrentDashboardMetrics => null;

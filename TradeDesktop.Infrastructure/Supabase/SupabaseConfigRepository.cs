@@ -62,7 +62,9 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
             OpenMaxTimesTick: row.OpenMaxTimesTick,
             CloseMaxTimesTick: row.CloseMaxTimesTick,
             OpenPendingTimeMs: row.OpenPendingTimeMs,
-            ClosePendingTimeMs: row.ClosePendingTimeMs);
+            ClosePendingTimeMs: row.ClosePendingTimeMs,
+            DelayOpenAMs: row.DelayOpenAMs,
+            DelayOpenBMs: row.DelayOpenBMs);
     }
 
     public async Task<bool> UpdateSansAndHostNameByHostNameAsync(
@@ -160,6 +162,8 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
         first.TryGetProperty("close_max_times_tick", out var closeMaxTimesTickElement);
         first.TryGetProperty("open_pending_time_ms", out var openPendingTimeMsElement);
         first.TryGetProperty("close_pending_time_ms", out var closePendingTimeMsElement);
+        first.TryGetProperty("delay_open_a_ms", out var delayOpenAMsElement);
+        first.TryGetProperty("delay_open_b_ms", out var delayOpenBMsElement);
         first.TryGetProperty("platform_a", out var platformAElement);
         first.TryGetProperty("platform_b", out var platformBElement);
 
@@ -196,6 +200,8 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
             CloseMaxTimesTick = closeMaxTimesTickElement.ValueKind == JsonValueKind.Number && closeMaxTimesTickElement.TryGetInt32(out var closeMaxTimesTick) ? closeMaxTimesTick : 0,
             OpenPendingTimeMs = openPendingTimeMsElement.ValueKind == JsonValueKind.Number && openPendingTimeMsElement.TryGetInt32(out var openPendingTimeMs) ? openPendingTimeMs : 0,
             ClosePendingTimeMs = closePendingTimeMsElement.ValueKind == JsonValueKind.Number && closePendingTimeMsElement.TryGetInt32(out var closePendingTimeMs) ? closePendingTimeMs : 0,
+            DelayOpenAMs = delayOpenAMsElement.ValueKind == JsonValueKind.Number && delayOpenAMsElement.TryGetInt32(out var delayOpenAMs) ? delayOpenAMs : 0,
+            DelayOpenBMs = delayOpenBMsElement.ValueKind == JsonValueKind.Number && delayOpenBMsElement.TryGetInt32(out var delayOpenBMs) ? delayOpenBMs : 0,
             PlatformA = platformAElement.ValueKind == JsonValueKind.String ? platformAElement.GetString() : null,
             PlatformB = platformBElement.ValueKind == JsonValueKind.String ? platformBElement.GetString() : null
         };
@@ -250,6 +256,8 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
         first.TryGetProperty("close_max_times_tick", out var closeMaxTimesTickElement);
         first.TryGetProperty("open_pending_time_ms", out var openPendingTimeMsElement);
         first.TryGetProperty("close_pending_time_ms", out var closePendingTimeMsElement);
+        first.TryGetProperty("delay_open_a_ms", out var delayOpenAMsElement);
+        first.TryGetProperty("delay_open_b_ms", out var delayOpenBMsElement);
         first.TryGetProperty("platform_a", out var platformAElement);
         first.TryGetProperty("platform_b", out var platformBElement);
 
@@ -284,6 +292,8 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
             CloseMaxTimesTick = closeMaxTimesTickElement.ValueKind == JsonValueKind.Number && closeMaxTimesTickElement.TryGetInt32(out var closeMaxTimesTick) ? closeMaxTimesTick : 0,
             OpenPendingTimeMs = openPendingTimeMsElement.ValueKind == JsonValueKind.Number && openPendingTimeMsElement.TryGetInt32(out var openPendingTimeMs) ? openPendingTimeMs : 0,
             ClosePendingTimeMs = closePendingTimeMsElement.ValueKind == JsonValueKind.Number && closePendingTimeMsElement.TryGetInt32(out var closePendingTimeMs) ? closePendingTimeMs : 0,
+            DelayOpenAMs = delayOpenAMsElement.ValueKind == JsonValueKind.Number && delayOpenAMsElement.TryGetInt32(out var delayOpenAMs) ? delayOpenAMs : 0,
+            DelayOpenBMs = delayOpenBMsElement.ValueKind == JsonValueKind.Number && delayOpenBMsElement.TryGetInt32(out var delayOpenBMs) ? delayOpenBMs : 0,
             PlatformA = platformAElement.ValueKind == JsonValueKind.String ? platformAElement.GetString() : null,
             PlatformB = platformBElement.ValueKind == JsonValueKind.String ? platformBElement.GetString() : null
         };
@@ -400,6 +410,12 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
 
         [JsonPropertyName("close_pending_time_ms")]
         public int ClosePendingTimeMs { get; set; }
+
+        [JsonPropertyName("delay_open_a_ms")]
+        public int DelayOpenAMs { get; set; }
+
+        [JsonPropertyName("delay_open_b_ms")]
+        public int DelayOpenBMs { get; set; }
 
         [JsonPropertyName("platform_a")]
         public string? PlatformA { get; set; }

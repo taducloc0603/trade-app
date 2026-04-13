@@ -79,14 +79,28 @@ public sealed class TradeExecutionRouter : ITradeExecutionRouter
 
         Debug.WriteLine($"[TradeRouter][Open] executorA={executorA.GetType().Name}, executorB={executorB.GetType().Name}");
 
-        var legATask = executorA.OpenLegAsync(request.LegA, cancellationToken);
-        var legBTask = executorB.OpenLegAsync(request.LegB, cancellationToken);
+        var legATask = OpenLegWithDelayAsync(executorA, request.LegA, cancellationToken);
+        var legBTask = OpenLegWithDelayAsync(executorB, request.LegB, cancellationToken);
         var legs = await Task.WhenAll(legATask, legBTask);
 
         return new ManualTradeResult(
             Label: "OPEN_MANUAL",
             Success: legs.All(x => x.Success),
             Legs: legs);
+    }
+
+    private static async Task<ManualTradeLegResult> OpenLegWithDelayAsync(
+        ITradePlatformExecutor executor,
+        TradeOpenLegRequest request,
+        CancellationToken cancellationToken)
+    {
+        var delayMs = Math.Max(0, request.DelayMs);
+        if (delayMs > 0)
+        {
+            await Task.Delay(delayMs, cancellationToken);
+        }
+
+        return await executor.OpenLegAsync(request, cancellationToken);
     }
 
     private async Task<ManualTradeResult> ExecuteClosePairPerLegAsync(TradeClosePairRequest request, CancellationToken cancellationToken)
