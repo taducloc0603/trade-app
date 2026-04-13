@@ -31,7 +31,8 @@ public sealed record TradeCloseLegRequest(
     TradeLegPlatform Platform,
     string TradeHwnd,
     ulong Ticket,
-    TradeLegAction Action = TradeLegAction.Close);
+    TradeLegAction Action = TradeLegAction.Close,
+    int DelayMs = 0);
 
 public sealed record TradeOpenPairRequest(
     TradeOpenLegRequest LegA,

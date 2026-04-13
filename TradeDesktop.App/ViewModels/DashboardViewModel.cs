@@ -1004,6 +1004,16 @@ public sealed class DashboardViewModel : ObservableObject
         var appCloseRequestTimeLocal = DateTimeOffset.Now;
         var appCloseRequestRawMs = Environment.TickCount64;
         _activeAutoCloseRecoveryCycle = BuildActiveCloseRecoveryCycle(slot, selectA, selectB);
+        var delayCloseAMs = Math.Max(0, _runtimeConfigState.CurrentDelayCloseAMs);
+        var delayCloseBMs = Math.Max(0, _runtimeConfigState.CurrentDelayCloseBMs);
+
+        System.Windows.Application.Current.Dispatcher.Invoke(() =>
+        {
+            SignalLogItems.Insert(0,
+                $"    - [{DateTime.Now:HH:mm:ss.fff}] Time delay close A {delayCloseAMs} ms khi close ở sàn A");
+            SignalLogItems.Insert(0,
+                $"    - [{DateTime.Now:HH:mm:ss.fff}] Time delay close B {delayCloseBMs} ms khi close ở sàn B");
+        });
 
         // Capture pending request BEFORE executing close to avoid race with shared-memory polling.
         CapturePendingCloseRequestFromTrigger(selectA, trigger, isExchangeA: true, appCloseRequestTimeLocal, appCloseRequestRawMs, slot);
@@ -1018,7 +1028,8 @@ public sealed class DashboardViewModel : ObservableObject
                         Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformA),
                         TradeHwnd: selectA.Request.TradeHwnd,
                         Ticket: selectA.Request.Ticket,
-                        Action: TradeLegAction.Close),
+                        Action: TradeLegAction.Close,
+                        DelayMs: delayCloseAMs),
                 LegB: selectB.Request is null
                     ? null
                     : new TradeCloseLegRequest(
@@ -1026,7 +1037,8 @@ public sealed class DashboardViewModel : ObservableObject
                         Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformB),
                         TradeHwnd: selectB.Request.TradeHwnd,
                         Ticket: selectB.Request.Ticket,
-                        Action: TradeLegAction.Close)));
+                        Action: TradeLegAction.Close,
+                        DelayMs: delayCloseBMs)));
 
         var hadCloseCandidateA = selectA.Request is not null;
         var hadCloseCandidateB = selectB.Request is not null;
@@ -3713,7 +3725,9 @@ public sealed class DashboardViewModel : ObservableObject
                     result.OpenPendingTimeMs,
                     result.ClosePendingTimeMs,
                     result.DelayOpenAMs,
-                    result.DelayOpenBMs);
+                    result.DelayOpenBMs,
+                    result.DelayCloseAMs,
+                    result.DelayCloseBMs);
                 _runtimeConfigState.UpdateManualTradeHwnd(result.ManualHwndColumns);
                 ResetTradingLogicState();
 

@@ -25,4 +25,6 @@ public sealed record ConfigRecord(
     int OpenPendingTimeMs,
     int ClosePendingTimeMs,
     int DelayOpenAMs,
-    int DelayOpenBMs);
+    int DelayOpenBMs,
+    int DelayCloseAMs,
+    int DelayCloseBMs);

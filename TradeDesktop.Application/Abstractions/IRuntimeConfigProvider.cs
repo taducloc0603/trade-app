@@ -25,6 +25,8 @@ public interface IRuntimeConfigProvider
     int CurrentClosePendingTimeMs { get; }
     int CurrentDelayOpenAMs { get; }
     int CurrentDelayOpenBMs { get; }
+    int CurrentDelayCloseAMs { get; }
+    int CurrentDelayCloseBMs { get; }
     string CurrentMapName1 { get; }
     string CurrentMapName2 { get; }
     DashboardMetrics? CurrentDashboardMetrics { get; }

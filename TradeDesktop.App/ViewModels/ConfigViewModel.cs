@@ -406,7 +406,9 @@ public sealed class ConfigViewModel : ObservableObject
                 loadResult.OpenPendingTimeMs,
                 loadResult.ClosePendingTimeMs,
                 loadResult.DelayOpenAMs,
-                loadResult.DelayOpenBMs);
+                loadResult.DelayOpenBMs,
+                loadResult.DelayCloseAMs,
+                loadResult.DelayCloseBMs);
             _runtimeConfigState.UpdateManualTradeHwnd(BuildManualHwndColumns());
 
             IsExistingRecordLoaded = true;

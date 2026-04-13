@@ -111,14 +111,14 @@ public sealed class TradeExecutionRouter : ITradeExecutionRouter
         {
             var executorA = ResolveExecutor(request.LegA.Platform);
             Debug.WriteLine($"[TradeRouter][Close] executorA={executorA.GetType().Name}");
-            tasks.Add(executorA.CloseLegAsync(request.LegA, cancellationToken));
+            tasks.Add(CloseLegWithDelayAsync(executorA, request.LegA, cancellationToken));
         }
 
         if (request.LegB is not null)
         {
             var executorB = ResolveExecutor(request.LegB.Platform);
             Debug.WriteLine($"[TradeRouter][Close] executorB={executorB.GetType().Name}");
-            tasks.Add(executorB.CloseLegAsync(request.LegB, cancellationToken));
+            tasks.Add(CloseLegWithDelayAsync(executorB, request.LegB, cancellationToken));
         }
 
         if (tasks.Count == 0)
@@ -134,6 +134,20 @@ public sealed class TradeExecutionRouter : ITradeExecutionRouter
             Label: "CLOSE_MANUAL",
             Success: legs.All(x => x.Success),
             Legs: legs);
+    }
+
+    private static async Task<ManualTradeLegResult> CloseLegWithDelayAsync(
+        ITradePlatformExecutor executor,
+        TradeCloseLegRequest request,
+        CancellationToken cancellationToken)
+    {
+        var delayMs = Math.Max(0, request.DelayMs);
+        if (delayMs > 0)
+        {
+            await Task.Delay(delayMs, cancellationToken);
+        }
+
+        return await executor.CloseLegAsync(request, cancellationToken);
     }
 
     private ITradePlatformExecutor ResolveExecutor(TradeLegPlatform platform)
