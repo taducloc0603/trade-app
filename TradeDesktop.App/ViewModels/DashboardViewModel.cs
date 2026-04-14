@@ -253,6 +253,7 @@ public sealed class DashboardViewModel : ObservableObject
     private LivePairTradeState _manualOpenGatePairState = LivePairTradeState.MapUnavailableOrParseError;
     private OrderTabType _selectedOrderTab = OrderTabType.Trade;
     private int _selectedOrderTabIndex;
+    private string _historyRealtimeProfitSummary = "0.00 | 0.00 $";
 
     public DashboardViewModel(
         IServiceProvider serviceProvider,
@@ -424,6 +425,12 @@ public sealed class DashboardViewModel : ObservableObject
     public ObservableCollection<string> SignalLogItems { get; } = [];
     public ObservableCollection<TradePairRealtimeProfitRowViewModel> TradeRealtimeProfitRows { get; } = [];
     public ObservableCollection<HistoryPairProfitRowViewModel> HistoryRealtimeProfitRows { get; } = [];
+    public string HistoryRealtimeProfitSummary
+    {
+        get => _historyRealtimeProfitSummary;
+        private set => SetProperty(ref _historyRealtimeProfitSummary, value);
+    }
+
     public IReadOnlyList<OrderInfoTabViewModel> OrderTabs { get; }
     public OrderInfoTabViewModel TradeTab { get; }
     public OrderInfoTabViewModel HistoryTab { get; }
@@ -1806,6 +1813,7 @@ public sealed class DashboardViewModel : ObservableObject
         _profitSnapshotByTicket.Clear();
         TradeRealtimeProfitRows.Clear();
         HistoryRealtimeProfitRows.Clear();
+        HistoryRealtimeProfitSummary = "0.00 | 0.00 $";
         OnPropertyChanged(nameof(CurrentPositionText));
         OnPropertyChanged(nameof(CurrentPhaseText));
         RaiseManualOpenCanExecuteChanged();
@@ -2936,6 +2944,11 @@ public sealed class DashboardViewModel : ObservableObject
 
         AccumulateHistoryProfitRows(HistoryTab.LeftPanel.HistoryRows, sumByStt);
         AccumulateHistoryProfitRows(HistoryTab.RightPanel.HistoryRows, sumByStt);
+
+        var totalProfit = sumByStt.Values.Sum(x => x.Profit);
+        var totalProfitDollar = sumByStt.Values.Sum(x => x.ProfitDollar);
+        HistoryRealtimeProfitSummary =
+            $"{totalProfit.ToString("0.00", CultureInfo.InvariantCulture)} | {totalProfitDollar.ToString("0.00", CultureInfo.InvariantCulture)} $";
 
         var rebuilt = sumByStt
             .OrderBy(x => x.Key)

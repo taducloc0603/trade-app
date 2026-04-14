@@ -477,9 +477,22 @@
                                         <RowDefinition Height="*" />
                                     </Grid.RowDefinitions>
 
-                                    <TextBlock Text="Profit Realtime (A + B)"
-                                               FontWeight="SemiBold"
-                                               Foreground="#344054" />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <TextBlock Text="Profit Realtime (A + B)"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="#344054" />
+
+                                        <TextBlock Grid.Column="1"
+                                                   Text="{Binding HistoryRealtimeProfitSummary}"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="#344054"
+                                                   HorizontalAlignment="Right" />
+                                    </Grid>
 
                                     <Border Grid.Row="2"
                                             BorderBrush="#E4E7EC"
