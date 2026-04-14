@@ -1,214 +1,234 @@
 # TradeDesktop - WPF Trading Dashboard (.NET 8)
 
-README này tập trung vào **công thức** và **business logic giao dịch** của dự án, đồng thời liệt kê nhanh các file quan trọng để dễ onboarding.
+README này mô tả lại ngắn gọn nhưng đầy đủ các phần quan trọng của dự án: **chức năng**, **logic giao dịch**, và **công thức tính tín hiệu** theo đúng implementation hiện tại.
 
 ---
 
-## 1) Tổng quan ngắn
+## 1) Tổng quan hệ thống
 
-`TradeDesktop` là ứng dụng WPF (.NET 8) đọc dữ liệu từ shared memory (hoặc mock), tính toán chênh lệch giữa 2 sàn (A/B), xác nhận tín hiệu theo thời gian, và phát sinh lệnh `OPEN/CLOSE` theo flow.
+`TradeDesktop` là ứng dụng WPF (.NET 8) dùng để:
 
-Kiến trúc theo layer:
+- Đọc dữ liệu giá thời gian thực từ shared memory của 2 nguồn (A/B).
+- Tính `GapBuy/GapSell` theo point multiplier cấu hình.
+- Xác nhận tín hiệu `OPEN/CLOSE` bằng cửa sổ thời gian (anti-noise).
+- Điều phối luồng giao dịch theo state machine (mở/giữ/đóng/chờ).
+- Gửi lệnh xuống executor MT4/MT5 theo từng leg A/B.
+- Ghi log tín hiệu chi tiết để truy vết công thức và giá kích hoạt.
+
+Kiến trúc layer:
 
 ```text
 TradeDesktop.sln
-├─ TradeDesktop.App/             # UI (WPF + ViewModel)
-├─ TradeDesktop.Application/     # Business logic + use-case + abstraction
+├─ TradeDesktop.App/             # WPF UI + ViewModels + orchestration thực thi lệnh
+├─ TradeDesktop.Application/     # Business rules, flow engine, models, abstractions
 ├─ TradeDesktop.Domain/          # Domain models thuần
-├─ TradeDesktop.Infrastructure/  # Kết nối data source, repository, signal infra
-└─ TradeDesktop.Tests/           # Unit tests cho logic chính
+├─ TradeDesktop.Infrastructure/  # Shared memory reader, Supabase repository, signal infra
+└─ TradeDesktop.Tests/           # Unit tests cho các logic cốt lõi
 ```
 
 ---
 
-## 2) Công thức cốt lõi (quan trọng nhất)
+## 2) Công thức cốt lõi
+
+File: `TradeDesktop.Application/Services/GapCalculator.cs`
 
 ### 2.1 Công thức Gap
-
-Được tính trong `TradeDesktop.Application/Services/GapCalculator.cs`:
 
 - `GapBuy = (B.Bid - A.Ask) * Point`
 - `GapSell = (B.Ask - A.Bid) * Point`
 
-Trong code, kết quả được ép về `int`:
+Trong code kết quả được ép `int`:
 
 - `gapBuy = (int)((sanB.Bid - sanA.Ask) * pointMultiplier)`
 - `gapSell = (int)((sanB.Ask - sanA.Bid) * pointMultiplier)`
 
-> `Point` lấy từ runtime config; nếu cấu hình không hợp lệ (`<=0`) thì fallback về `1`.
+`Point` lấy từ runtime config (`CurrentPoint`), fallback về `1` nếu `<= 0`.
 
 ### 2.2 Ý nghĩa nghiệp vụ
 
-- `GapBuy` lớn dương: thiên hướng mở theo nhánh **GapBuy**.
-- `GapSell` lớn âm: thiên hướng mở theo nhánh **GapSell** (vì rule dùng ngưỡng âm).
-- Hệ thống luôn xử lý theo **cửa sổ xác nhận theo thời gian**, không bắn lệnh chỉ với 1 tick đơn lẻ.
+- `GapBuy` đủ dương -> thiên hướng trigger nhánh Buy.
+- `GapSell` đủ âm -> thiên hướng trigger nhánh Sell.
+- Trigger không dựa 1 tick đơn lẻ, mà yêu cầu giữ điều kiện trong khoảng thời gian xác nhận.
 
 ---
 
-## 3) Business logic giao dịch
+## 3) Logic OPEN signal (xác nhận mở lệnh)
 
-## 3.1 Open Signal (xác nhận mở lệnh)
+File: `TradeDesktop.Application/Services/GapSignalConfirmationEngine.cs`
 
-Code chính: `TradeDesktop.Application/Services/GapSignalConfirmationEngine.cs`
-
-Hệ thống chuẩn hoá config trước khi dùng:
+Config trước khi áp rule được chuẩn hóa:
 
 - `ConfirmGapPts = Abs(config.ConfirmGapPts)`
 - `OpenPts = Abs(config.OpenPts)`
 - `HoldConfirmMs = Max(0, config.HoldConfirmMs)`
+- `OpenMaxTimesTick = Max(0, config.OpenMaxTimesTick)`
 
-### A) OpenByGapBuy
+### 3.1 OpenByGapBuy
 
-Điều kiện:
+1. `GapBuy` hiện tại phải tồn tại và `>= ConfirmGapPts`.
+2. Mở cửa sổ confirm, gom chuỗi gap theo thời gian.
+3. Khi đủ `HoldConfirmMs`, toàn bộ `BuyGaps` trong cửa sổ phải thỏa `>= ConfirmGapPts`.
+4. Tick cuối cùng phải thỏa `>= OpenPts`.
+5. Nếu `OpenMaxTimesTick > 0` thì số tick trong cửa sổ không được vượt ngưỡng này.
+6. Thỏa hết điều kiện -> trigger `OpenByGapBuy`.
 
-1. Tick hiện tại có `GapBuy` và `GapBuy >= ConfirmGapPts`.
-2. Bắt đầu gom dữ liệu trong cửa sổ thời gian.
-3. Sau khi đủ `HoldConfirmMs`, **toàn bộ** gap trong cửa sổ phải thoả `>= ConfirmGapPts`.
-4. Tick cuối cùng trong cửa sổ phải thoả `>= OpenPts`.
-5. Khi thoả hết điều kiện -> trigger `OpenByGapBuy`.
+### 3.2 OpenByGapSell
 
-### B) OpenByGapSell
+Đối xứng với ngưỡng âm:
 
-Điều kiện đối xứng theo ngưỡng âm:
+1. `GapSell <= -ConfirmGapPts`.
+2. Duy trì liên tục đủ `HoldConfirmMs`.
+3. Toàn bộ `SellGaps` trong cửa sổ thỏa `<= -ConfirmGapPts`.
+4. Tick cuối cùng thỏa `<= -OpenPts`.
+5. Nếu `OpenMaxTimesTick > 0`, số tick phải nằm trong giới hạn.
+6. Thỏa hết -> trigger `OpenByGapSell`.
 
-1. Tick hiện tại có `GapSell` và `GapSell <= -ConfirmGapPts`.
-2. Giữ điều kiện liên tục đủ `HoldConfirmMs`.
-3. Toàn bộ cửa sổ phải thoả `<= -ConfirmGapPts`.
-4. Tick cuối cùng phải thoả `<= -OpenPts`.
-5. Khi thoả -> trigger `OpenByGapSell`.
+> Bất kỳ điều kiện nào fail trong window -> reset state của nhánh đó.
 
-> Nếu bất kỳ điều kiện nào fail trong cửa sổ, state của nhánh đó bị reset.
+---
 
-## 3.2 Close Signal (xác nhận đóng lệnh)
+## 4) Logic CLOSE signal (xác nhận đóng lệnh)
 
-Code chính: `TradeDesktop.Application/Services/CloseSignalEngine.cs`
+File: `TradeDesktop.Application/Services/CloseSignalEngine.cs`
 
-Chuẩn hoá config close:
+Config close được chuẩn hóa:
 
 - `CloseConfirmGapPts = Abs(config.CloseConfirmGapPts)`
 - `ClosePts = Abs(config.ClosePts)`
 - `CloseHoldConfirmMs = Max(0, config.CloseHoldConfirmMs)`
+- `CloseMaxTimesTick = Max(0, config.CloseMaxTimesTick)`
 
 Rule theo mode đã mở:
 
-- Nếu đang mở theo `GapBuy` (`TradingOpenMode.GapBuy`)  
-  -> close theo nhánh `GapSell` với điều kiện âm (`<= -CloseConfirmGapPts`, tick cuối `<= -ClosePts`).
+- Nếu đang mở từ `GapBuy` (`TradingOpenMode.GapBuy`)  
+  -> close theo nhánh `GapSell` với điều kiện âm:
+  - confirm: `GapSell <= -CloseConfirmGapPts`
+  - tick cuối: `GapSell <= -ClosePts`
 
-- Nếu đang mở theo `GapSell` (`TradingOpenMode.GapSell`)  
-  -> close theo nhánh `GapBuy` với điều kiện dương (`>= CloseConfirmGapPts`, tick cuối `>= ClosePts`).
+- Nếu đang mở từ `GapSell` (`TradingOpenMode.GapSell`)  
+  -> close theo nhánh `GapBuy` với điều kiện dương:
+  - confirm: `GapBuy >= CloseConfirmGapPts`
+  - tick cuối: `GapBuy >= ClosePts`
 
-## 3.3 Flow trạng thái giao dịch (state machine)
+---
 
-Code chính: `TradeDesktop.Application/Services/TradingFlowEngine.cs`
+## 5) State machine giao dịch
 
-Các trạng thái:
+File: `TradeDesktop.Application/Services/TradingFlowEngine.cs`
+
+### 5.1 Trạng thái
 
 - `WaitingOpen`
 - `WaitingCloseFromGapBuy`
 - `WaitingCloseFromGapSell`
 
-Luồng:
+### 5.2 Luồng xử lý
 
-1. `WaitingOpen`: kiểm tra open signal.
-2. Khi open thành công:
-   - Ghi `OpenedAtUtc`
+1. Ở `WaitingOpen`: chỉ kiểm tra open khi đã qua `CurrentWaitSeconds` kể từ lần close gần nhất.
+2. Khi open trigger thành công:
+   - Set `CurrentOpenMode`, `CurrentPositionSide`, `OpenedAtUtc`
    - Random `CurrentHoldingSeconds` trong `[StartTimeHold..EndTimeHold]`
-   - Chuyển sang `WaitingCloseFromGapBuy` hoặc `WaitingCloseFromGapSell`
-3. Ở trạng thái close: chỉ bắt đầu kiểm tra close sau khi đã giữ lệnh đủ `CurrentHoldingSeconds`.
-4. Khi close thành công:
-   - Ghi `ClosedAtUtc`
-   - Random `CurrentWaitSeconds` trong `[StartWaitTime..EndWaitTime]`
-   - Trả về `WaitingOpen`
-5. Trong `WaitingOpen`, nếu chưa qua đủ `CurrentWaitSeconds` kể từ `ClosedAtUtc` thì chưa được mở lệnh mới.
+   - Chuyển qua state chờ close tương ứng.
+3. Ở state close: chỉ kiểm tra close khi đã giữ lệnh đủ `CurrentHoldingSeconds`.
+4. Khi close trigger xuất hiện: đánh dấu pending close execution.
+5. Khi close thực sự hoàn tất (`BeginWaitAfterClose`):
+   - reset trạng thái position về none
+   - set `ClosedAtUtc`
+   - random `CurrentWaitSeconds` trong `[StartWaitTime..EndWaitTime]`
+   - quay về `WaitingOpen`.
 
-> Ý nghĩa nghiệp vụ: chống vào/ra lệnh quá dày, mô phỏng nhịp giao dịch thực tế.
+=> Mục tiêu nghiệp vụ: hạn chế spam lệnh, tránh vào/ra liên tục theo nhiễu ngắn hạn.
 
 ---
 
-## 4) Mapping công thức sang log tín hiệu
+## 6) Mapping Trigger -> Instruction -> Log
 
-Hai file chính:
+Files:
 
 - `TradeDesktop.Application/Services/TradeInstructionFactory.cs`
 - `TradeDesktop.Application/Services/TradeSignalLogBuilder.cs`
 
 Khi trigger xảy ra:
 
-1. Tạo `TradeSignalInstruction` gồm:
-   - loại trigger (`OpenByGapBuy`, `CloseByGapSell`, ...)
-   - danh sách gap dùng để confirm
-   - biểu thức giá nguồn để giải thích tín hiệu
-2. Build log theo format:
-   - Header: `[OPEN BY GAP_BUY] GAP ...`
-   - Explain line: `= (B.Bid - A.Ask) * Point(x)` hoặc `= (B.Ask - A.Bid) * Point(x)`
-   - 2 dòng leg cho sàn A và B (OPEN/CLOSE, BUY/SELL, giá)
+1. Build `TradeSignalInstruction` từ `GapSignalTriggerResult`:
+   - xác định trigger type (`OpenByGapBuy`, `CloseByGapSell`, ...)
+   - chọn trigger gaps (BuyGaps hoặc SellGaps)
+   - ánh xạ biểu thức nguồn giá:
+     - nhánh GapBuy: `(B.Bid - A.Ask) * Point`
+     - nhánh GapSell: `(B.Ask - A.Bid) * Point`
+2. Build log gồm 4 dòng:
+   - header: `[OPEN BY GAP_BUY] GAP ...`
+   - explain: công thức + giá input + point
+   - leg A
+   - leg B
 
-=> Giúp trace rõ “vì sao hệ thống bắn tín hiệu”.
+Chuỗi này giúp debug theo logic: **giá nguồn -> gap -> trigger -> lệnh**.
 
 ---
 
-## 5) Danh sách file quan trọng và chức năng
+## 7) Runtime config và thực thi lệnh
 
-## 5.1 App (UI)
+### 7.1 Runtime config
 
-- `TradeDesktop.App/ViewModels/DashboardViewModel.cs`  
-  Trung tâm UI/business orchestration: nhận snapshot, bind số liệu, gọi `TradingFlowEngine`, dựng log tín hiệu, hiển thị trạng thái giao dịch.
+Files:
 
-- `TradeDesktop.App/MainWindow.xaml`  
-  Dashboard hiển thị dữ liệu 2 sàn, gap, trạng thái trading logic, signal log.
+- `TradeDesktop.Application/Services/ConfigService.cs`
+- `TradeDesktop.App/State/RuntimeConfigState.cs`
+- `TradeDesktop.Infrastructure/Supabase/SupabaseConfigRepository.cs`
 
-- `TradeDesktop.App/Commands/AsyncRelayCommand.cs`  
-  Command async cho WPF, có chặn chạy song song.
+Điểm chính:
 
-## 5.2 Application (business layer)
+- Config được load/save theo `machine host name` (đã normalize lowercase).
+- Nhiều trường số được normalize an toàn (`Abs`, `Max(0)`, fallback point = 1).
+- `platform_a/platform_b` normalize về `mt4` hoặc `mt5` (default `mt5`).
 
-- `TradeDesktop.Application/Services/GapCalculator.cs`  
-  Tính `GapBuy/GapSell` theo công thức cốt lõi.
+### 7.2 Routing thực thi lệnh
 
-- `TradeDesktop.Application/Services/GapSignalConfirmationEngine.cs`  
-  Engine xác nhận mở lệnh theo cửa sổ thời gian và ngưỡng confirm/open.
+File: `TradeDesktop.App/Services/TradeExecutionRouter.cs`
 
-- `TradeDesktop.Application/Services/CloseSignalEngine.cs`  
-  Engine xác nhận đóng lệnh theo mode đang mở và ngưỡng close.
+- Router nhận request pair (open/close), validate platform từng leg.
+- Điều phối executor theo platform (`Mt4TradeExecutor` / `Mt5TradeExecutor`).
+- Hỗ trợ delay từng leg (`DelayOpenAMs`, `DelayOpenBMs`, `DelayCloseAMs`, `DelayCloseBMs`).
 
-- `TradeDesktop.Application/Services/TradingFlowEngine.cs`  
-  State machine điều phối OPEN/CLOSE + random hold/wait.
+---
 
-- `TradeDesktop.Application/Services/TradeInstructionFactory.cs`  
-  Chuyển `GapSignalTriggerResult` thành instruction chi tiết 2 leg A/B.
+## 8) Data source shared memory
 
-- `TradeDesktop.Application/Services/TradeSignalLogBuilder.cs`  
-  Render instruction thành log text phục vụ vận hành/debug.
+Files chính:
 
-- `TradeDesktop.Application/Models/GapSignalModels.cs`  
-  Định nghĩa enum/record cho snapshot, config, trigger, instruction.
+- `TradeDesktop.Infrastructure/MarketData/SharedMemoryMarketDataReader.cs`
+- `TradeDesktop.Infrastructure/SharedMemory/TradesSharedMemoryReader.cs`
+- `TradeDesktop.Infrastructure/SharedMemory/HistorySharedMemoryReader.cs`
 
-- `TradeDesktop.Application/Services/DashboardMetricsMapper.cs`  
-  Map raw shared memory snapshot -> `DashboardMetrics` và tính gap.
+Chức năng:
 
-- `TradeDesktop.Application/Services/ConfigService.cs`  
-  Load/save runtime config theo machine host name; chuẩn hoá giá trị config.
+- Poll map tick theo chu kỳ 50ms.
+- Parse/validate tick record (version, bid/ask/spread, symbol, timestamp).
+- Tính thêm thống kê runtime (`latency`, `max/avg latency`, `TPS`).
+- Đọc map trades/history để đối soát lệnh và hiển thị bảng realtime/history.
 
-## 5.3 Domain
+---
 
-- `TradeDesktop.Domain/Models/DashboardMetrics.cs`  
-  Model aggregate dữ liệu hiển thị dashboard.
+## 9) File nên đọc khi onboarding
 
-- `TradeDesktop.Domain/Models/MarketData.cs`, `SignalResult.cs`, `SignalType.cs`  
-  Model tín hiệu cơ bản (phần nền cũ/simple signal).
+### App
 
-## 5.4 Infrastructure
+- `TradeDesktop.App/ViewModels/DashboardViewModel.cs` (orchestration chính)
+- `TradeDesktop.App/ViewModels/ConfigViewModel.cs` (config runtime)
+- `TradeDesktop.App/MainWindow.xaml` (UI dashboard)
 
-- `TradeDesktop.Infrastructure/MarketData/SharedMemoryMarketDataReader.cs`  
-  Reader dữ liệu shared memory thực tế.
+### Application
 
-- `TradeDesktop.Infrastructure/MarketData/MockSharedMemoryMarketDataReader.cs`  
-  Reader mock phục vụ test/dev.
+- `GapCalculator.cs`
+- `GapSignalConfirmationEngine.cs`
+- `CloseSignalEngine.cs`
+- `TradingFlowEngine.cs`
+- `SignalEntryGuard.cs`
+- `TradeInstructionFactory.cs`
+- `TradeSignalLogBuilder.cs`
+- `Models/GapSignalModels.cs`
 
-- `TradeDesktop.Infrastructure/Supabase/SupabaseConfigRepository.cs`  
-  Truy xuất config từ Supabase theo host name.
-
-## 5.5 Tests (nên đọc đầu tiên khi cần hiểu rule)
+### Tests
 
 - `TradeDesktop.Tests/GapCalculatorTests.cs`
 - `TradeDesktop.Tests/GapSignalConfirmationEngineTests.cs`
@@ -218,19 +238,22 @@ Khi trigger xảy ra:
 
 ---
 
-## 6) Những thứ quan trọng cần nhớ
+## 10) Checklist debug nhanh khi tín hiệu sai
 
-1. **Point multiplier** tác động trực tiếp độ lớn gap -> sai point là sai toàn bộ tín hiệu.
-2. **Confirm theo cửa sổ thời gian** là lõi anti-noise; không nên bỏ nếu chưa có bộ lọc khác thay thế.
-3. **Open và Close dùng ngưỡng độc lập** (`OpenPts/ConfirmGapPts` khác `ClosePts/CloseConfirmGapPts`).
-4. **TradingFlowEngine có hold + wait random** để tránh spam giao dịch liên tục.
-5. **Config theo machine host name**: sai hostname sẽ không load đúng config runtime.
-6. Khi debug tín hiệu, luôn đối chiếu theo thứ tự:  
-   `Snapshot giá -> Gap -> Confirm window -> Trigger -> Instruction -> Log line`.
+Đối chiếu theo thứ tự:
+
+1. Snapshot giá A/B có hợp lệ không?
+2. `Point` runtime có đúng không?
+3. `GapBuy/GapSell` tính ra có đúng kỳ vọng không?
+4. Cửa sổ confirm có đủ `HoldConfirmMs` và thỏa toàn bộ tick không?
+5. Tick cuối có đạt ngưỡng open/close không?
+6. `OpenMaxTimesTick/CloseMaxTimesTick` có chặn trigger không?
+7. State flow hiện tại là gì (`WaitingOpen` hay `WaitingClose*`)?
+8. Trigger -> Instruction -> Log có khớp công thức nguồn giá không?
 
 ---
 
-## 7) Build / Run / Test
+## 11) Build / Run / Test
 
 ```bash
 dotnet restore TradeDesktop.sln
