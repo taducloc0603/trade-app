@@ -1,5 +1,4 @@
 <Window x:Class="TradeDesktop.App.MainWindow"
-        x:Name="RootWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -495,7 +494,8 @@
                                                 Background="#FAFBFC">
                                             <ScrollViewer HorizontalScrollBarVisibility="Auto"
                                                           VerticalScrollBarVisibility="Auto">
-                                                <DataGrid ItemsSource="{Binding HistoryRealtimeProfitRows}"
+                                                <DataGrid x:Name="HistoryProfitRealtimeGrid"
+                                                          ItemsSource="{Binding HistoryRealtimeProfitRows}"
                                                           AutoGenerateColumns="False"
                                                           IsReadOnly="True"
                                                           CanUserAddRows="False"
@@ -529,12 +529,12 @@
                                                         <DataGridTextColumn Header="STT" Binding="{Binding Stt}" Width="55" />
                                                         <DataGridTextColumn Binding="{Binding Profit}" Width="95">
                                                             <DataGridTextColumn.Header>
-                                                                <TextBlock Text="{Binding DataContext.HistoryProfitHeader, Source={x:Reference RootWindow}}" />
+                                                                <TextBlock Text="{Binding DataContext.HistoryProfitHeader, Source={x:Reference HistoryProfitRealtimeGrid}}" />
                                                             </DataGridTextColumn.Header>
                                                         </DataGridTextColumn>
                                                         <DataGridTextColumn Binding="{Binding ProfitDollar}" Width="95">
                                                             <DataGridTextColumn.Header>
-                                                                <TextBlock Text="{Binding DataContext.HistoryProfitDollarHeader, Source={x:Reference RootWindow}}" />
+                                                                <TextBlock Text="{Binding DataContext.HistoryProfitDollarHeader, Source={x:Reference HistoryProfitRealtimeGrid}}" />
                                                             </DataGridTextColumn.Header>
                                                         </DataGridTextColumn>
                                                     </DataGrid.Columns>
