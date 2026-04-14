@@ -526,8 +526,16 @@
 
                                                     <DataGrid.Columns>
                                                         <DataGridTextColumn Header="STT" Binding="{Binding Stt}" Width="55" />
-                                                        <DataGridTextColumn Header="Profit" Binding="{Binding Profit}" Width="95" />
-                                                        <DataGridTextColumn Header="Profit ($)" Binding="{Binding ProfitDollar}" Width="95" />
+                                                        <DataGridTextColumn Binding="{Binding Profit}" Width="95">
+                                                            <DataGridTextColumn.Header>
+                                                                <TextBlock Text="{Binding DataContext.HistoryProfitColumnHeader, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                                            </DataGridTextColumn.Header>
+                                                        </DataGridTextColumn>
+                                                        <DataGridTextColumn Binding="{Binding ProfitDollar}" Width="95">
+                                                            <DataGridTextColumn.Header>
+                                                                <TextBlock Text="{Binding DataContext.HistoryProfitDollarColumnHeader, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                                            </DataGridTextColumn.Header>
+                                                        </DataGridTextColumn>
                                                     </DataGrid.Columns>
                                                 </DataGrid>
                                             </ScrollViewer>

@@ -424,6 +424,19 @@ public sealed class DashboardViewModel : ObservableObject
     public ObservableCollection<string> SignalLogItems { get; } = [];
     public ObservableCollection<TradePairRealtimeProfitRowViewModel> TradeRealtimeProfitRows { get; } = [];
     public ObservableCollection<HistoryPairProfitRowViewModel> HistoryRealtimeProfitRows { get; } = [];
+
+    private string _historyProfitColumnHeader = "Profit";
+    private string _historyProfitDollarColumnHeader = "Profit ($)";
+    public string HistoryProfitColumnHeader
+    {
+        get => _historyProfitColumnHeader;
+        private set => SetProperty(ref _historyProfitColumnHeader, value);
+    }
+    public string HistoryProfitDollarColumnHeader
+    {
+        get => _historyProfitDollarColumnHeader;
+        private set => SetProperty(ref _historyProfitDollarColumnHeader, value);
+    }
     public IReadOnlyList<OrderInfoTabViewModel> OrderTabs { get; }
     public OrderInfoTabViewModel TradeTab { get; }
     public OrderInfoTabViewModel HistoryTab { get; }
@@ -2950,6 +2963,11 @@ public sealed class DashboardViewModel : ObservableObject
         {
             HistoryRealtimeProfitRows.Add(row);
         }
+
+        var totalProfit = sumByStt.Values.Sum(x => x.Profit);
+        var totalProfitDollar = sumByStt.Values.Sum(x => x.ProfitDollar);
+        HistoryProfitColumnHeader = $"Profit ({totalProfit.ToString("0.00", CultureInfo.InvariantCulture)})";
+        HistoryProfitDollarColumnHeader = $"Profit $ ({totalProfitDollar.ToString("0.00", CultureInfo.InvariantCulture)})";
     }
 
     private static void AccumulateHistoryProfitRows(
