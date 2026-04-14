@@ -241,6 +241,8 @@ public sealed class DashboardViewModel : ObservableObject
     private string _exchangeBTime = "-";
     private string _exchangeBMaxLatMs = "-";
     private string _exchangeBAvgLatMs = "-";
+    private string _historyProfitHeader = "Profit(0.00)";
+    private string _historyProfitDollarHeader = "Profit ($) (0.00)";
     private bool _isTradingLogicEnabled;
     private bool _isOpenGapBuyEnabled = true;
     private bool _isOpenGapSellEnabled = true;
@@ -425,17 +427,16 @@ public sealed class DashboardViewModel : ObservableObject
     public ObservableCollection<TradePairRealtimeProfitRowViewModel> TradeRealtimeProfitRows { get; } = [];
     public ObservableCollection<HistoryPairProfitRowViewModel> HistoryRealtimeProfitRows { get; } = [];
 
-    private string _historyProfitColumnHeader = "Profit";
-    private string _historyProfitDollarColumnHeader = "Profit ($)";
-    public string HistoryProfitColumnHeader
+    public string HistoryProfitHeader
     {
-        get => _historyProfitColumnHeader;
-        private set => SetProperty(ref _historyProfitColumnHeader, value);
+        get => _historyProfitHeader;
+        private set => SetProperty(ref _historyProfitHeader, value);
     }
-    public string HistoryProfitDollarColumnHeader
+
+    public string HistoryProfitDollarHeader
     {
-        get => _historyProfitDollarColumnHeader;
-        private set => SetProperty(ref _historyProfitDollarColumnHeader, value);
+        get => _historyProfitDollarHeader;
+        private set => SetProperty(ref _historyProfitDollarHeader, value);
     }
     public IReadOnlyList<OrderInfoTabViewModel> OrderTabs { get; }
     public OrderInfoTabViewModel TradeTab { get; }
@@ -2958,16 +2959,16 @@ public sealed class DashboardViewModel : ObservableObject
                 profitDollar: x.Value.ProfitDollar.ToString("0.00", CultureInfo.InvariantCulture)))
             .ToList();
 
+        var totalProfit = sumByStt.Values.Sum(x => x.Profit);
+        var totalProfitDollar = sumByStt.Values.Sum(x => x.ProfitDollar);
+        HistoryProfitHeader = $"Profit({FormatProfit(totalProfit)})";
+        HistoryProfitDollarHeader = $"Profit ($) ({FormatProfit(totalProfitDollar)})";
+
         HistoryRealtimeProfitRows.Clear();
         foreach (var row in rebuilt)
         {
             HistoryRealtimeProfitRows.Add(row);
         }
-
-        var totalProfit = sumByStt.Values.Sum(x => x.Profit);
-        var totalProfitDollar = sumByStt.Values.Sum(x => x.ProfitDollar);
-        HistoryProfitColumnHeader = $"Profit ({totalProfit.ToString("0.00", CultureInfo.InvariantCulture)})";
-        HistoryProfitDollarColumnHeader = $"Profit $ ({totalProfitDollar.ToString("0.00", CultureInfo.InvariantCulture)})";
     }
 
     private static void AccumulateHistoryProfitRows(

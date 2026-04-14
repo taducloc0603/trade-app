@@ -528,12 +528,12 @@
                                                         <DataGridTextColumn Header="STT" Binding="{Binding Stt}" Width="55" />
                                                         <DataGridTextColumn Binding="{Binding Profit}" Width="95">
                                                             <DataGridTextColumn.Header>
-                                                                <TextBlock Text="{Binding DataContext.HistoryProfitColumnHeader, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                                                <TextBlock Text="{Binding DataContext.HistoryProfitHeader, RelativeSource={RelativeSource AncestorType=Window}}" />
                                                             </DataGridTextColumn.Header>
                                                         </DataGridTextColumn>
                                                         <DataGridTextColumn Binding="{Binding ProfitDollar}" Width="95">
                                                             <DataGridTextColumn.Header>
-                                                                <TextBlock Text="{Binding DataContext.HistoryProfitDollarColumnHeader, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                                                <TextBlock Text="{Binding DataContext.HistoryProfitDollarHeader, RelativeSource={RelativeSource AncestorType=Window}}" />
                                                             </DataGridTextColumn.Header>
                                                         </DataGridTextColumn>
                                                     </DataGrid.Columns>
