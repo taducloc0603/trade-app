@@ -565,7 +565,7 @@ public sealed class DashboardViewModel : ObservableObject
 
         ResetTradingLogicState();
         IsTradingLogicEnabled = true;
-        SyncTradingFlowWithLivePairState(GetLivePairTradeStateStrict());
+        SyncTradingFlowWithLivePairState(GetToolManagedPairTradeStateStrict());
         LastSignalText = "-";
         SignalLogItems.Clear();
         return Task.CompletedTask;
@@ -637,8 +637,8 @@ public sealed class DashboardViewModel : ObservableObject
         finally
         {
             _isManualOpenInFlight = false;
-            SyncTradingFlowWithLivePairState(GetLivePairTradeStateStrict());
-            RefreshManualOpenAvailability(GetLivePairTradeStateStrict());
+            SyncTradingFlowWithLivePairState(GetToolManagedPairTradeStateStrict());
+            RefreshManualOpenAvailability(GetToolManagedPairTradeStateStrict());
             RaiseManualOpenCanExecuteChanged();
         }
     }
@@ -696,8 +696,8 @@ public sealed class DashboardViewModel : ObservableObject
         finally
         {
             _isManualOpenInFlight = false;
-            SyncTradingFlowWithLivePairState(GetLivePairTradeStateStrict());
-            RefreshManualOpenAvailability(GetLivePairTradeStateStrict());
+            SyncTradingFlowWithLivePairState(GetToolManagedPairTradeStateStrict());
+            RefreshManualOpenAvailability(GetToolManagedPairTradeStateStrict());
             RaiseManualOpenCanExecuteChanged();
         }
     }
@@ -1253,14 +1253,26 @@ public sealed class DashboardViewModel : ObservableObject
                 DiagnosticMessage: null);
         }
 
-        var firstTrade = result.Records[0];
+        var toolTrade = result.Records.FirstOrDefault(r => IsAppGeneratedTicket(r.Ticket));
+        if (toolTrade is null)
+        {
+            return new CloseSelectionResult(
+                Request: null,
+                Status: CloseSelectionStatus.NoOpenTrade,
+                TradeType: null,
+                TradeMapName: tradeMapName,
+                Symbol: null,
+                Volume: null,
+                DiagnosticMessage: $"Close {exchangeLabel} skipped: no tool-managed trade found (EA trade ignored)");
+        }
+
         return new CloseSelectionResult(
-            Request: new ManualCloseRequest(exchangeLabel, tradeHwnd, firstTrade.Ticket),
+            Request: new ManualCloseRequest(exchangeLabel, tradeHwnd, toolTrade.Ticket),
             Status: CloseSelectionStatus.Candidate,
-            TradeType: firstTrade.TradeType,
+            TradeType: toolTrade.TradeType,
             TradeMapName: tradeMapName,
-            Symbol: firstTrade.Symbol,
-            Volume: firstTrade.Lot,
+            Symbol: toolTrade.Symbol,
+            Volume: toolTrade.Lot,
             DiagnosticMessage: null);
     }
 
@@ -1913,7 +1925,7 @@ public sealed class DashboardViewModel : ObservableObject
             $"Host Name: {_runtimeConfigState.CurrentMachineHostName}  |  Point: {_runtimeConfigState.CurrentPoint}  |  OpenPts: {_runtimeConfigState.CurrentOpenPts}  |  ConfirmGapPts: {_runtimeConfigState.CurrentConfirmGapPts}  |  ClosePts: {_runtimeConfigState.CurrentClosePts}  |  CloseConfirmGapPts: {_runtimeConfigState.CurrentCloseConfirmGapPts}  |  StartTimeHold: {_runtimeConfigState.CurrentStartTimeHold}  |  EndTimeHold: {_runtimeConfigState.CurrentEndTimeHold}  |  StartWaitTime: {_runtimeConfigState.CurrentStartWaitTime}  |  EndWaitTime: {_runtimeConfigState.CurrentEndWaitTime}  |  ConfirmLatencyMs: {_runtimeConfigState.CurrentConfirmLatencyMs}  |  MaxGap: {_runtimeConfigState.CurrentMaxGap}  |  MaxSpread: {_runtimeConfigState.CurrentMaxSpread}  |  Map 1: {_runtimeConfigState.CurrentMapName1}  |  Map 2: {_runtimeConfigState.CurrentMapName2}";
 
         HasManualTradeHwndConfig = _runtimeConfigState.CurrentManualHwndColumns.Any(x => x.IsComplete);
-        RefreshManualOpenAvailability(GetLivePairTradeStateStrict());
+        RefreshManualOpenAvailability(GetToolManagedPairTradeStateStrict());
 
         RefreshOrderInfoTabs();
     }
@@ -1980,7 +1992,6 @@ public sealed class DashboardViewModel : ObservableObject
             var shouldApplyHistoryRight = ShouldApplyHistoryResult(HistoryTab.RightPanel.TargetMapName, historyRightResult);
             var snapshot = _runtimeConfigState.CurrentDashboardMetrics;
             var point = _runtimeConfigState.CurrentPoint;
-            var livePairStateFromPoll = GetLivePairTradeState(tradeLeftResult, tradeRightResult);
 
             System.Windows.Application.Current.Dispatcher.Invoke(() =>
             {
@@ -2006,24 +2017,28 @@ public sealed class DashboardViewModel : ObservableObject
                     ApplyHistoryResult(HistoryTab.RightPanel, historyRightResult, point);
                 }
 
-                RefreshManualOpenAvailability(livePairStateFromPoll);
-                SyncTradingFlowWithLivePairState(livePairStateFromPoll);
+                // Tính tool-managed state SAU khi ApplyTradeResult đã update _pairIdByTicket
+                // QUAN TRỌNG: phải tính trong Dispatcher.Invoke, không được tính ngoài
+                var toolManagedPairState = GetToolManagedPairTradeState(tradeLeftResult, tradeRightResult);
+
+                RefreshManualOpenAvailability(toolManagedPairState);
+                SyncTradingFlowWithLivePairState(toolManagedPairState);
 
                 EvaluateAndApplyAutoOpenInvariantWatchdog(tradeLeftResult, tradeRightResult);
 
-                TryRecoverWaitingCloseFromPolling(livePairStateFromPoll);
+                TryRecoverWaitingCloseFromPolling(toolManagedPairState);
 
                 // Track BothOpen state để watchdog hoạt động kể cả khi phase bị reset sang WaitingOpen
-                if (livePairStateFromPoll == LivePairTradeState.BothOpen)
+                if (toolManagedPairState == LivePairTradeState.BothOpen)
                 {
                     _hadBothOpenRecently = true;
                 }
-                else if (livePairStateFromPoll == LivePairTradeState.BothFlat && !_externalPartialCloseInFlight)
+                else if (toolManagedPairState == LivePairTradeState.BothFlat && !_externalPartialCloseInFlight)
                 {
                     _hadBothOpenRecently = false;
                 }
 
-                TryDetectAndHandleExternalPartialClose(livePairStateFromPoll);
+                TryDetectAndHandleExternalPartialClose(toolManagedPairState);
 
                 timeoutActions = CollectPendingOpenTimeoutActions();
                 closeRetryActions = CollectPendingCloseRetryActions();
@@ -2488,6 +2503,54 @@ public sealed class DashboardViewModel : ObservableObject
             : LivePairTradeState.OnlyBOpen;
     }
 
+    /// <summary>
+    /// Tính live pair state CHỈ dựa trên trades được mở QUA TOOL
+    /// (ticket phải pass IsAppGeneratedTicket).
+    /// Phải được gọi trong Dispatcher.Invoke sau ApplyTradeResult,
+    /// vì IsAppGeneratedTicket dùng _pairIdByTicket được update bởi RegisterOpenExpectedForNewTickets.
+    /// </summary>
+    private LivePairTradeState GetToolManagedPairTradeState(
+        SharedMapReadResult<TradeSharedRecord> tradeLeftResult,
+        SharedMapReadResult<TradeSharedRecord> tradeRightResult)
+    {
+        if (!tradeLeftResult.IsMapAvailable || !tradeLeftResult.IsParseSuccess
+            || !tradeRightResult.IsMapAvailable || !tradeRightResult.IsParseSuccess)
+        {
+            return LivePairTradeState.MapUnavailableOrParseError;
+        }
+
+        var hasToolOpenA = tradeLeftResult.Records.Any(r => IsAppGeneratedTicket(r.Ticket));
+        var hasToolOpenB = tradeRightResult.Records.Any(r => IsAppGeneratedTicket(r.Ticket));
+
+        if (!hasToolOpenA && !hasToolOpenB)
+        {
+            return LivePairTradeState.BothFlat;
+        }
+
+        if (hasToolOpenA && hasToolOpenB)
+        {
+            return LivePairTradeState.BothOpen;
+        }
+
+        return hasToolOpenA
+            ? LivePairTradeState.OnlyAOpen
+            : LivePairTradeState.OnlyBOpen;
+    }
+
+    private LivePairTradeState GetToolManagedPairTradeStateStrict()
+    {
+        try
+        {
+            var tradeLeftResult = _tradesSharedMemoryReader.ReadTrades(TradeTab.LeftPanel.TargetMapName);
+            var tradeRightResult = _tradesSharedMemoryReader.ReadTrades(TradeTab.RightPanel.TargetMapName);
+            return GetToolManagedPairTradeState(tradeLeftResult, tradeRightResult);
+        }
+        catch
+        {
+            return LivePairTradeState.MapUnavailableOrParseError;
+        }
+    }
+
     private void SyncTradingFlowWithLivePairState(LivePairTradeState pairState)
     {
         if (!IsTradingLogicEnabled)
@@ -2542,7 +2605,8 @@ public sealed class DashboardViewModel : ObservableObject
             var left = _latestTradeLeftResult ?? _tradesSharedMemoryReader.ReadTrades(TradeTab.LeftPanel.TargetMapName);
             var right = _latestTradeRightResult ?? _tradesSharedMemoryReader.ReadTrades(TradeTab.RightPanel.TargetMapName);
 
-            var candidate = left.Records.FirstOrDefault() ?? right.Records.FirstOrDefault();
+            var candidate = left.Records.FirstOrDefault(r => IsAppGeneratedTicket(r.Ticket))
+                ?? right.Records.FirstOrDefault(r => IsAppGeneratedTicket(r.Ticket));
             if (candidate is null)
             {
                 return TradingPositionSide.None;
