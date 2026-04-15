@@ -53,6 +53,9 @@ public sealed class DashboardViewModel : ObservableObject
     private int _autoSlot;
     private int _autoOpenInFlight;
     private int _closeBothFlatPollStreak;
+    private int _externalPartialCloseStreak = 0;
+    private const int ExternalPartialCloseStreakRequired = 2;
+    private bool _externalPartialCloseInFlight = false;
     private bool _isAutoOpenPausedByInvariant;
     private ActiveAutoCycleState? _activeAutoCycle;
     private ActiveAutoCycleState? _activeAutoCloseRecoveryCycle;
@@ -2003,6 +2006,7 @@ public sealed class DashboardViewModel : ObservableObject
                 EvaluateAndApplyAutoOpenInvariantWatchdog(tradeLeftResult, tradeRightResult);
 
                 TryRecoverWaitingCloseFromPolling(livePairStateFromPoll);
+                TryDetectAndHandleExternalPartialClose(livePairStateFromPoll);
 
                 timeoutActions = CollectPendingOpenTimeoutActions();
                 closeRetryActions = CollectPendingCloseRetryActions();
@@ -2615,6 +2619,212 @@ public sealed class DashboardViewModel : ObservableObject
 
         SignalLogItems.Insert(0,
             $"    - [{DateTime.Now:HH:mm:ss.fff}] Close reconcile result: BothFlat (stable polling {StableBothFlatPollsRequired}/{StableBothFlatPollsRequired})");
+    }
+
+    private void TryDetectAndHandleExternalPartialClose(LivePairTradeState currentPairState)
+    {
+        // Guard 1: chỉ chạy khi trading logic đang bật
+        if (!IsTradingLogicEnabled)
+        {
+            _externalPartialCloseStreak = 0;
+            return;
+        }
+
+        // Guard 2: chỉ chạy khi đang ở phase WaitingClose
+        var phase = _tradingFlowEngine.CurrentPhase;
+        var isWaitingClose = phase == TradingFlowPhase.WaitingCloseFromGapBuy
+            || phase == TradingFlowPhase.WaitingCloseFromGapSell;
+        if (!isWaitingClose)
+        {
+            _externalPartialCloseStreak = 0;
+            return;
+        }
+
+        // Guard 3: chỉ xử lý auto pair, không can thiệp manual trade
+        if (_activeAutoCycle is null)
+        {
+            _externalPartialCloseStreak = 0;
+            return;
+        }
+
+        // Guard 4: không chạy khi tool đang trong tiến trình tự close
+        // (AutoCloseOrderAsync đã set _activeAutoCloseRecoveryCycle)
+        if (_activeAutoCloseRecoveryCycle is not null)
+        {
+            _externalPartialCloseStreak = 0;
+            return;
+        }
+
+        // Guard 5: không chạy khi đang có close in flight từ watchdog này
+        if (_externalPartialCloseInFlight)
+        {
+            return;
+        }
+
+        // Chỉ xử lý khi partial open (1 sàn còn mở, 1 sàn đã flat)
+        var isPartialOpen = currentPairState == LivePairTradeState.OnlyAOpen
+            || currentPairState == LivePairTradeState.OnlyBOpen;
+
+        if (!isPartialOpen)
+        {
+            _externalPartialCloseStreak = 0;
+            return;
+        }
+
+        _externalPartialCloseStreak++;
+        if (_externalPartialCloseStreak < ExternalPartialCloseStreakRequired)
+        {
+            SignalLogItems.Insert(0,
+                $"    - [{DateTime.Now:HH:mm:ss.fff}] [EXTERNAL CLOSE] Partial state detected ({FormatLivePairTradeState(currentPairState)}) streak {_externalPartialCloseStreak}/{ExternalPartialCloseStreakRequired}. Confirming...");
+            return;
+        }
+
+        // Đủ streak — xác nhận EA đã close 1 leg từ bên ngoài
+        _externalPartialCloseStreak = 0;
+        _externalPartialCloseInFlight = true;
+
+        // Xác định sàn còn lại cần close
+        var remainingExchange = currentPairState == LivePairTradeState.OnlyAOpen ? "A" : "B";
+
+        // Lấy ticket của leg còn lại từ activeAutoCycle để kiểm tra
+        var knownTicket = remainingExchange == "A"
+            ? _activeAutoCycle.TicketA
+            : _activeAutoCycle.TicketB;
+
+        SignalLogItems.Insert(0,
+            $"    - [{DateTime.Now:HH:mm:ss.fff}] [EXTERNAL CLOSE] EA closed 1 leg externally. Scheduling close of remaining leg {remainingExchange} (ticket={knownTicket?.ToString() ?? "unknown"}).");
+
+        _ = Task.Run(() => CloseRemainingLegAfterExternalCloseAsync(remainingExchange, knownTicket));
+    }
+
+    private async Task CloseRemainingLegAfterExternalCloseAsync(string remainingExchange, ulong? knownTicket)
+    {
+        try
+        {
+            var isExchangeA = string.Equals(remainingExchange, "A", StringComparison.OrdinalIgnoreCase);
+            var tradeMapName = isExchangeA
+                ? TradeTab.LeftPanel.TargetMapName
+                : TradeTab.RightPanel.TargetMapName;
+            var tradeHwnd = isExchangeA
+                ? _runtimeConfigState.CurrentTradeHwndA
+                : _runtimeConfigState.CurrentTradeHwndB;
+            var platform = ResolveTradeLegPlatform(isExchangeA
+                ? _runtimeConfigState.CurrentPlatformA
+                : _runtimeConfigState.CurrentPlatformB);
+
+            var selection = SelectCloseCandidateForExchange(
+                exchangeLabel: remainingExchange,
+                tradeMapName: tradeMapName,
+                tradeHwnd: tradeHwnd);
+
+            if (selection.Request is null)
+            {
+                System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                    SignalLogItems.Insert(0,
+                        $"    - [{DateTime.Now:HH:mm:ss.fff}] [EXTERNAL CLOSE] No candidate found for {remainingExchange}. Skipping."));
+                return;
+            }
+
+            // Guard: kiểm tra ticket khớp để tránh close nhầm lệnh không thuộc cycle này
+            if (knownTicket.HasValue && selection.Request.Ticket != knownTicket.Value)
+            {
+                System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                    SignalLogItems.Insert(0,
+                        $"    - [{DateTime.Now:HH:mm:ss.fff}] [EXTERNAL CLOSE] Ticket mismatch for {remainingExchange} (expected={knownTicket}, found={selection.Request.Ticket}). Skipping to avoid closing wrong trade."));
+                return;
+            }
+
+            var appCloseRequestTimeLocal = DateTimeOffset.Now;
+            var appCloseRequestRawMs = Environment.TickCount64;
+            var slot = Math.Max(0, _autoSlot - 1);
+
+            System.Windows.Application.Current.Dispatcher.Invoke(() =>
+            {
+                // Set activeAutoCloseRecoveryCycle để FinalizeCloseFlowIfPairFlat hoạt động đúng sau khi close xong
+                var activeCycle = _activeAutoCycle;
+                if (activeCycle is not null)
+                {
+                    _activeAutoCloseRecoveryCycle = new ActiveAutoCycleState
+                    {
+                        Slot = activeCycle.Slot,
+                        OpenedAtLocal = activeCycle.OpenedAtLocal,
+                        PairIdA = isExchangeA ? activeCycle.PairIdA : null,
+                        PairIdB = isExchangeA ? null : activeCycle.PairIdB,
+                        TicketA = isExchangeA ? selection.Request.Ticket : null,
+                        TicketB = isExchangeA ? null : selection.Request.Ticket,
+                    };
+                }
+
+                RegisterPendingCloseRequest(
+                    tradeMapName: tradeMapName,
+                    ticket: selection.Request.Ticket,
+                    tradeType: selection.TradeType ?? 0,
+                    expectedPrice: null,
+                    appCloseRequestTimeLocal: appCloseRequestTimeLocal,
+                    appCloseRequestRawMs: appCloseRequestRawMs,
+                    symbol: selection.Symbol,
+                    volume: selection.Volume,
+                    isAutoFlow: true,
+                    slotNumber: slot,
+                    exchangeLabel: remainingExchange);
+            });
+
+            var closeRequest = new TradeClosePairRequest(
+                LegA: isExchangeA
+                    ? new TradeCloseLegRequest(
+                        Exchange: "A",
+                        Platform: platform,
+                        TradeHwnd: tradeHwnd,
+                        Ticket: selection.Request.Ticket,
+                        Action: TradeLegAction.Close,
+                        DelayMs: 0)
+                    : null,
+                LegB: isExchangeA
+                    ? null
+                    : new TradeCloseLegRequest(
+                        Exchange: "B",
+                        Platform: platform,
+                        TradeHwnd: tradeHwnd,
+                        Ticket: selection.Request.Ticket,
+                        Action: TradeLegAction.Close,
+                        DelayMs: 0));
+
+            var closeResult = await _tradeExecutionRouter.ClosePairAsync(closeRequest);
+
+            System.Windows.Application.Current.Dispatcher.Invoke(() =>
+            {
+                var success = closeResult.Legs.Any(x => x.Success);
+                SignalLogItems.Insert(0,
+                    $"    - [{DateTime.Now:HH:mm:ss.fff}] [EXTERNAL CLOSE] Close {remainingExchange} ticket={selection.Request.Ticket} result: {(success ? "SUCCESS" : "FAILED")}");
+
+                if (success)
+                {
+                    // Reset streak để polling reconcile (TryRecoverWaitingCloseFromPolling) xử lý tiếp
+                    _closeBothFlatPollStreak = 0;
+                }
+                else
+                {
+                    // Close thất bại — reset để không block finalize mãi mãi
+                    _activeAutoCloseRecoveryCycle = null;
+                }
+
+                OnPropertyChanged(nameof(CurrentPositionText));
+                OnPropertyChanged(nameof(CurrentPhaseText));
+            });
+        }
+        catch (Exception ex)
+        {
+            System.Windows.Application.Current.Dispatcher.Invoke(() =>
+            {
+                SignalLogItems.Insert(0,
+                    $"    - [{DateTime.Now:HH:mm:ss.fff}] [EXTERNAL CLOSE] Error closing remaining leg: {ex.Message}");
+                _activeAutoCloseRecoveryCycle = null;
+            });
+        }
+        finally
+        {
+            _externalPartialCloseInFlight = false;
+        }
     }
 
     private void LogFlowRecoveryState(
