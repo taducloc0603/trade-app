@@ -2640,14 +2640,7 @@ public sealed class DashboardViewModel : ObservableObject
             return;
         }
 
-        // Guard 3: chỉ xử lý auto pair, không can thiệp manual trade
-        if (_activeAutoCycle is null)
-        {
-            _externalPartialCloseStreak = 0;
-            return;
-        }
-
-        // Guard 4: không chạy khi tool đang trong tiến trình tự close
+        // Guard 3: không chạy khi tool đang trong tiến trình tự close bình thường
         // (AutoCloseOrderAsync đã set _activeAutoCloseRecoveryCycle)
         if (_activeAutoCloseRecoveryCycle is not null)
         {
@@ -2655,7 +2648,7 @@ public sealed class DashboardViewModel : ObservableObject
             return;
         }
 
-        // Guard 5: không chạy khi đang có close in flight từ watchdog này
+        // Guard 4: không chạy khi đang có close in flight từ watchdog này
         if (_externalPartialCloseInFlight)
         {
             return;
@@ -2686,13 +2679,14 @@ public sealed class DashboardViewModel : ObservableObject
         // Xác định sàn còn lại cần close
         var remainingExchange = currentPairState == LivePairTradeState.OnlyAOpen ? "A" : "B";
 
-        // Lấy ticket của leg còn lại từ activeAutoCycle để kiểm tra
-        var knownTicket = remainingExchange == "A"
-            ? _activeAutoCycle.TicketA
-            : _activeAutoCycle.TicketB;
+        // Lấy ticket của leg còn lại từ activeAutoCycle nếu có (auto flow)
+        // Manual flow sẽ là null — SelectCloseCandidateForExchange sẽ tự tìm
+        var knownTicket = _activeAutoCycle is not null
+            ? (remainingExchange == "A" ? _activeAutoCycle.TicketA : _activeAutoCycle.TicketB)
+            : null;
 
         SignalLogItems.Insert(0,
-            $"    - [{DateTime.Now:HH:mm:ss.fff}] [EXTERNAL CLOSE] EA closed 1 leg externally. Scheduling close of remaining leg {remainingExchange} (ticket={knownTicket?.ToString() ?? "unknown"}).");
+            $"    - [{DateTime.Now:HH:mm:ss.fff}] [EXTERNAL CLOSE] EA closed 1 leg externally. Scheduling close of remaining leg {remainingExchange} (ticket={knownTicket?.ToString() ?? "unknown"}, mode={(_activeAutoCycle is not null ? "auto" : "manual")}).");
 
         _ = Task.Run(() => CloseRemainingLegAfterExternalCloseAsync(remainingExchange, knownTicket));
     }
@@ -2725,7 +2719,9 @@ public sealed class DashboardViewModel : ObservableObject
                 return;
             }
 
-            // Guard: kiểm tra ticket khớp để tránh close nhầm lệnh không thuộc cycle này
+            // Guard: kiểm tra ticket khớp để tránh close nhầm lệnh.
+            // Chỉ áp dụng khi knownTicket có giá trị (auto flow).
+            // Manual flow bỏ qua bước này vì không track ticket.
             if (knownTicket.HasValue && selection.Request.Ticket != knownTicket.Value)
             {
                 System.Windows.Application.Current.Dispatcher.Invoke(() =>
@@ -2740,16 +2736,32 @@ public sealed class DashboardViewModel : ObservableObject
 
             System.Windows.Application.Current.Dispatcher.Invoke(() =>
             {
-                // Set activeAutoCloseRecoveryCycle để FinalizeCloseFlowIfPairFlat hoạt động đúng sau khi close xong
+                // Set _activeAutoCloseRecoveryCycle để FinalizeCloseFlowIfPairFlat
+                // hoạt động đúng sau khi close xong (không bị block bởi "no active close recovery cycle")
                 var activeCycle = _activeAutoCycle;
                 if (activeCycle is not null)
                 {
+                    // Auto flow: dùng thông tin đầy đủ từ active cycle
                     _activeAutoCloseRecoveryCycle = new ActiveAutoCycleState
                     {
                         Slot = activeCycle.Slot,
                         OpenedAtLocal = activeCycle.OpenedAtLocal,
                         PairIdA = isExchangeA ? activeCycle.PairIdA : null,
                         PairIdB = isExchangeA ? null : activeCycle.PairIdB,
+                        TicketA = isExchangeA ? selection.Request.Ticket : null,
+                        TicketB = isExchangeA ? null : selection.Request.Ticket,
+                    };
+                }
+                else
+                {
+                    // Manual flow: tạo cycle tối thiểu chỉ với ticket vừa tìm được
+                    // để IsActiveCloseRecoveryCycleClosed có thể verify sau khi close xong
+                    _activeAutoCloseRecoveryCycle = new ActiveAutoCycleState
+                    {
+                        Slot = 0,
+                        OpenedAtLocal = DateTimeOffset.Now,
+                        PairIdA = isExchangeA ? selection.Request.Ticket.ToString() : null,
+                        PairIdB = isExchangeA ? null : selection.Request.Ticket.ToString(),
                         TicketA = isExchangeA ? selection.Request.Ticket : null,
                         TicketB = isExchangeA ? null : selection.Request.Ticket,
                     };
@@ -2764,7 +2776,7 @@ public sealed class DashboardViewModel : ObservableObject
                     appCloseRequestRawMs: appCloseRequestRawMs,
                     symbol: selection.Symbol,
                     volume: selection.Volume,
-                    isAutoFlow: true,
+                    isAutoFlow: activeCycle is not null,
                     slotNumber: slot,
                     exchangeLabel: remainingExchange);
             });
@@ -2804,7 +2816,7 @@ public sealed class DashboardViewModel : ObservableObject
                 }
                 else
                 {
-                    // Close thất bại — reset để không block finalize mãi mãi
+                    // Close thất bại — reset _activeAutoCloseRecoveryCycle để không block finalize mãi mãi
                     _activeAutoCloseRecoveryCycle = null;
                 }
 
