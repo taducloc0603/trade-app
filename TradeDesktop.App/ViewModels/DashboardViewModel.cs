@@ -54,6 +54,7 @@ public sealed class DashboardViewModel : ObservableObject
     private int _autoOpenInFlight;
     private int _closeBothFlatPollStreak;
     private int _externalPartialCloseStreak = 0;
+    private string _lastExternalCloseGuardBlockReason = string.Empty;
     private const int ExternalPartialCloseStreakRequired = 2;
     private bool _externalPartialCloseInFlight = false;
     private bool _isAutoOpenPausedByInvariant;
@@ -1811,6 +1812,9 @@ public sealed class DashboardViewModel : ObservableObject
         _activeAutoCycle = null;
         _activeAutoCloseRecoveryCycle = null;
         _closeBothFlatPollStreak = 0;
+        _externalPartialCloseStreak = 0;
+        _externalPartialCloseInFlight = false;
+        _lastExternalCloseGuardBlockReason = string.Empty;
         _sttByPairId.Clear();
         _nextStt = 1;
         _profitSnapshotByTicket.Clear();
@@ -2627,16 +2631,23 @@ public sealed class DashboardViewModel : ObservableObject
         if (!IsTradingLogicEnabled)
         {
             _externalPartialCloseStreak = 0;
+            _lastExternalCloseGuardBlockReason = string.Empty;
             return;
         }
 
-        // Guard 2: chỉ chạy khi đang ở phase WaitingClose
+        // Guard 2: phase phải là WaitingClose
+        // Fallback: nếu phase bị reset tạm sang WaitingOpen (do SyncTradingFlowWithLivePairState
+        // thấy BothFlat thoáng qua), vẫn cho chạy nếu auto pair đã confirm đủ 2 ticket
         var phase = _tradingFlowEngine.CurrentPhase;
         var isWaitingClose = phase == TradingFlowPhase.WaitingCloseFromGapBuy
             || phase == TradingFlowPhase.WaitingCloseFromGapSell;
-        if (!isWaitingClose)
+        var hasConfirmedAutoPair = _activeAutoCycle is not null
+            && _activeAutoCycle.TicketA.HasValue
+            && _activeAutoCycle.TicketB.HasValue;
+        if (!isWaitingClose && !hasConfirmedAutoPair)
         {
             _externalPartialCloseStreak = 0;
+            LogExternalCloseGuardBlockOnce($"Guard2: phase={phase}, noConfirmedAutoPair");
             return;
         }
 
@@ -2645,6 +2656,7 @@ public sealed class DashboardViewModel : ObservableObject
         if (_activeAutoCloseRecoveryCycle is not null)
         {
             _externalPartialCloseStreak = 0;
+            LogExternalCloseGuardBlockOnce($"Guard3: activeAutoCloseRecoveryCycle set (slot={_activeAutoCloseRecoveryCycle.Slot})");
             return;
         }
 
@@ -2661,8 +2673,12 @@ public sealed class DashboardViewModel : ObservableObject
         if (!isPartialOpen)
         {
             _externalPartialCloseStreak = 0;
+            _lastExternalCloseGuardBlockReason = string.Empty;
             return;
         }
+
+        // Reset log throttle khi guards đã pass và partial state được nhận ra
+        _lastExternalCloseGuardBlockReason = string.Empty;
 
         _externalPartialCloseStreak++;
         if (_externalPartialCloseStreak < ExternalPartialCloseStreakRequired)
@@ -2689,6 +2705,19 @@ public sealed class DashboardViewModel : ObservableObject
             $"    - [{DateTime.Now:HH:mm:ss.fff}] [EXTERNAL CLOSE] EA closed 1 leg externally. Scheduling close of remaining leg {remainingExchange} (ticket={knownTicket?.ToString() ?? "unknown"}, mode={(_activeAutoCycle is not null ? "auto" : "manual")}).");
 
         _ = Task.Run(() => CloseRemainingLegAfterExternalCloseAsync(remainingExchange, knownTicket));
+    }
+
+    // Log guard block chỉ khi reason thay đổi — tránh spam mỗi poll
+    private void LogExternalCloseGuardBlockOnce(string reason)
+    {
+        if (string.Equals(_lastExternalCloseGuardBlockReason, reason, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _lastExternalCloseGuardBlockReason = reason;
+        SignalLogItems.Insert(0,
+            $"    - [{DateTime.Now:HH:mm:ss.fff}] [EXTERNAL CLOSE] Blocked: {reason}");
     }
 
     private async Task CloseRemainingLegAfterExternalCloseAsync(string remainingExchange, ulong? knownTicket)
