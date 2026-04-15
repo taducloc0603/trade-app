@@ -56,7 +56,7 @@ public sealed class DashboardViewModel : ObservableObject
     private int _externalPartialCloseStreak = 0;
     private bool _hadBothOpenRecently = false;
     private string _lastExternalCloseGuardBlockReason = string.Empty;
-    private const int ExternalPartialCloseStreakRequired = 2;
+    private const int ExternalPartialCloseStreakRequired = 1;
     private bool _externalPartialCloseInFlight = false;
     private bool _isAutoOpenPausedByInvariant;
     private ActiveAutoCycleState? _activeAutoCycle;
@@ -65,7 +65,7 @@ public sealed class DashboardViewModel : ObservableObject
     private SharedMapReadResult<TradeSharedRecord>? _latestTradeLeftResult;
     private SharedMapReadResult<TradeSharedRecord>? _latestTradeRightResult;
 
-    private static readonly TimeSpan OrderInfoPollInterval = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan OrderInfoPollInterval = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan OpenPartialRecheckDelay = TimeSpan.FromSeconds(1);
     private const int StableBothFlatPollsRequired = 2;
 
