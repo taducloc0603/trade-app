@@ -2708,7 +2708,21 @@ public sealed class DashboardViewModel : ObservableObject
             return;
         }
 
-        // Reset log throttle khi guards đã pass và partial state được nhận ra
+        // Guard 5: chỉ xử lý nếu lệnh còn lại được mở QUA TOOL
+        // Nếu ticket không có trong _pairIdByTicket -> lệnh mở trực tiếp trên EA -> bỏ qua
+        var remainingExchange = currentPairState == LivePairTradeState.OnlyAOpen ? "A" : "B";
+        var remainingResult = remainingExchange == "A"
+            ? (_latestTradeLeftResult ?? _tradesSharedMemoryReader.ReadTrades(TradeTab.LeftPanel.TargetMapName))
+            : (_latestTradeRightResult ?? _tradesSharedMemoryReader.ReadTrades(TradeTab.RightPanel.TargetMapName));
+        var remainingTicket = remainingResult?.Records.FirstOrDefault()?.Ticket;
+        if (!remainingTicket.HasValue || !_pairIdByTicket.ContainsKey(remainingTicket.Value))
+        {
+            _externalPartialCloseStreak = 0;
+            LogExternalCloseGuardBlockOnce($"Guard5: ticket={remainingTicket?.ToString() ?? "null"} not opened via tool");
+            return;
+        }
+
+        // Reset log throttle khi tất cả guards đã pass
         _lastExternalCloseGuardBlockReason = string.Empty;
 
         _externalPartialCloseStreak++;
@@ -2723,9 +2737,6 @@ public sealed class DashboardViewModel : ObservableObject
         _externalPartialCloseStreak = 0;
         _externalPartialCloseInFlight = true;
 
-        // Xác định sàn còn lại cần close
-        var remainingExchange = currentPairState == LivePairTradeState.OnlyAOpen ? "A" : "B";
-
         // Lấy ticket của leg còn lại từ activeAutoCycle nếu có (auto flow)
         // Manual flow sẽ là null — SelectCloseCandidateForExchange sẽ tự tìm
         var knownTicket = _activeAutoCycle is not null
@@ -2733,7 +2744,7 @@ public sealed class DashboardViewModel : ObservableObject
             : null;
 
         SignalLogItems.Insert(0,
-            $"    - [{DateTime.Now:HH:mm:ss.fff}] [EXTERNAL CLOSE] EA closed 1 leg externally. Scheduling close of remaining leg {remainingExchange} (ticket={knownTicket?.ToString() ?? "unknown"}, mode={(_activeAutoCycle is not null ? "auto" : "manual")}).");
+            $"    - [{DateTime.Now:HH:mm:ss.fff}] [EXTERNAL CLOSE] EA closed 1 leg externally. Scheduling close of remaining leg {remainingExchange} (ticket={knownTicket?.ToString() ?? remainingTicket.Value.ToString()}, mode={(_activeAutoCycle is not null ? "auto" : "manual")}, phase={phase}).");
 
         _ = Task.Run(() => CloseRemainingLegAfterExternalCloseAsync(remainingExchange, knownTicket));
     }
