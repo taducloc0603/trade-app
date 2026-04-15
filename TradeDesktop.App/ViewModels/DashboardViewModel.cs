@@ -54,6 +54,7 @@ public sealed class DashboardViewModel : ObservableObject
     private int _autoOpenInFlight;
     private int _closeBothFlatPollStreak;
     private int _externalPartialCloseStreak = 0;
+    private bool _hadBothOpenRecently = false;
     private string _lastExternalCloseGuardBlockReason = string.Empty;
     private const int ExternalPartialCloseStreakRequired = 2;
     private bool _externalPartialCloseInFlight = false;
@@ -1815,6 +1816,7 @@ public sealed class DashboardViewModel : ObservableObject
         _externalPartialCloseStreak = 0;
         _externalPartialCloseInFlight = false;
         _lastExternalCloseGuardBlockReason = string.Empty;
+        _hadBothOpenRecently = false;
         _sttByPairId.Clear();
         _nextStt = 1;
         _profitSnapshotByTicket.Clear();
@@ -2010,6 +2012,17 @@ public sealed class DashboardViewModel : ObservableObject
                 EvaluateAndApplyAutoOpenInvariantWatchdog(tradeLeftResult, tradeRightResult);
 
                 TryRecoverWaitingCloseFromPolling(livePairStateFromPoll);
+
+                // Track BothOpen state để watchdog hoạt động kể cả khi phase bị reset sang WaitingOpen
+                if (livePairStateFromPoll == LivePairTradeState.BothOpen)
+                {
+                    _hadBothOpenRecently = true;
+                }
+                else if (livePairStateFromPoll == LivePairTradeState.BothFlat && !_externalPartialCloseInFlight)
+                {
+                    _hadBothOpenRecently = false;
+                }
+
                 TryDetectAndHandleExternalPartialClose(livePairStateFromPoll);
 
                 timeoutActions = CollectPendingOpenTimeoutActions();
@@ -2644,10 +2657,10 @@ public sealed class DashboardViewModel : ObservableObject
         var hasConfirmedAutoPair = _activeAutoCycle is not null
             && _activeAutoCycle.TicketA.HasValue
             && _activeAutoCycle.TicketB.HasValue;
-        if (!isWaitingClose && !hasConfirmedAutoPair)
+        if (!isWaitingClose && !hasConfirmedAutoPair && !_hadBothOpenRecently)
         {
             _externalPartialCloseStreak = 0;
-            LogExternalCloseGuardBlockOnce($"Guard2: phase={phase}, noConfirmedAutoPair");
+            LogExternalCloseGuardBlockOnce($"Guard2: phase={phase}, noConfirmedAutoPair, notHadBothOpenRecently");
             return;
         }
 
@@ -2655,9 +2668,27 @@ public sealed class DashboardViewModel : ObservableObject
         // (AutoCloseOrderAsync đã set _activeAutoCloseRecoveryCycle)
         if (_activeAutoCloseRecoveryCycle is not null)
         {
-            _externalPartialCloseStreak = 0;
-            LogExternalCloseGuardBlockOnce($"Guard3: activeAutoCloseRecoveryCycle set (slot={_activeAutoCloseRecoveryCycle.Slot})");
-            return;
+            // Kiểm tra cycle có bị stale không (ticket đã đóng từ lâu, không còn liên quan)
+            // bằng cách dùng _latestTradeLeftResult / _latestTradeRightResult đang có sẵn
+            var leftForCycleCheck = _latestTradeLeftResult
+                ?? _tradesSharedMemoryReader.ReadTrades(TradeTab.LeftPanel.TargetMapName);
+            var rightForCycleCheck = _latestTradeRightResult
+                ?? _tradesSharedMemoryReader.ReadTrades(TradeTab.RightPanel.TargetMapName);
+
+            if (IsActiveCloseRecoveryCycleClosed(leftForCycleCheck, rightForCycleCheck, out _))
+            {
+                // Cycle đã stale (ticket không còn mở) — clear để không block watchdog
+                _activeAutoCloseRecoveryCycle = null;
+                SignalLogItems.Insert(0,
+                    $"    - [{DateTime.Now:HH:mm:ss.fff}] [EXTERNAL CLOSE] Stale activeAutoCloseRecoveryCycle cleared.");
+            }
+            else
+            {
+                // Cycle đang active (tool đang tự close) — block đúng
+                _externalPartialCloseStreak = 0;
+                LogExternalCloseGuardBlockOnce($"Guard3: activeAutoCloseRecoveryCycle active (slot={_activeAutoCloseRecoveryCycle.Slot})");
+                return;
+            }
         }
 
         // Guard 4: không chạy khi đang có close in flight từ watchdog này
