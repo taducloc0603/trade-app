@@ -2576,9 +2576,39 @@ public sealed class DashboardViewModel : ObservableObject
 
         // ▼ FIX: chỉ sync khi có ít nhất 1 lệnh được mở QUA TOOL
         //        Lệnh mở từ EA/bên ngoài không được ảnh hưởng state machine
-        if (!HasAnyToolOpenedTicketInLatestResults())
         {
-            return;
+            // Đọc fresh để tính isToolFlat — không dùng cache tránh stale 1 nhịp
+            var freshLeftSync = _tradesSharedMemoryReader.ReadTrades(TradeTab.LeftPanel.TargetMapName);
+            var freshRightSync = _tradesSharedMemoryReader.ReadTrades(TradeTab.RightPanel.TargetMapName);
+            var hasToolTicket = (freshLeftSync.IsMapAvailable && freshLeftSync.IsParseSuccess
+                                 && freshLeftSync.Records.Any(r => _pairIdByTicket.ContainsKey(r.Ticket)))
+                             || (freshRightSync.IsMapAvailable && freshRightSync.IsParseSuccess
+                                 && freshRightSync.Records.Any(r => _pairIdByTicket.ContainsKey(r.Ticket)));
+
+            if (!hasToolTicket)
+            {
+                // Không còn tool ticket. Nếu phase WaitingClose và cycle confirmed → ForceWaitingOpen.
+                var isWaitingClose = _tradingFlowEngine.CurrentPhase == TradingFlowPhase.WaitingCloseFromGapBuy
+                    || _tradingFlowEngine.CurrentPhase == TradingFlowPhase.WaitingCloseFromGapSell;
+                if (isWaitingClose)
+                {
+                    var canFinalize = _activeAutoCloseRecoveryCycle is null
+                        || IsActiveCloseRecoveryCycleClosed(freshLeftSync, freshRightSync, out _);
+                    if (canFinalize)
+                    {
+                        SignalLogItems.Insert(0,
+                            $"    - [{DateTime.Now:HH:mm:ss.fff}] Flow -> WaitingOpen: reason=tool-flat " +
+                            $"phase={_tradingFlowEngine.CurrentPhase} " +
+                            $"cycle={(_activeAutoCloseRecoveryCycle is null ? "null" : $"slot={_activeAutoCloseRecoveryCycle.Slot}")} " +
+                            $"source=SyncTradingFlow");
+                        _tradingFlowEngine.ForceWaitingOpen();
+                        OnPropertyChanged(nameof(CurrentPositionText));
+                        OnPropertyChanged(nameof(CurrentPhaseText));
+                    }
+                }
+
+                return;
+            }
         }
 
         var side = ResolveLivePositionSideFromMaps();
@@ -2691,6 +2721,43 @@ public sealed class DashboardViewModel : ObservableObject
         return true;
     }
 
+    private bool FinalizeCloseFlowIfPairFlat(
+        string source,
+        SharedMapReadResult<TradeSharedRecord> tradeLeftResult,
+        SharedMapReadResult<TradeSharedRecord> tradeRightResult)
+    {
+        if (!IsActiveCloseRecoveryCycleClosed(tradeLeftResult, tradeRightResult, out var blockReason))
+        {
+            SignalLogItems.Insert(0,
+                $"    - [{DateTime.Now:HH:mm:ss.fff}] Close finalize blocked: active cycle not fully closed ({blockReason})");
+            _closeBothFlatPollStreak = 0;
+            return false;
+        }
+
+        var closeCompletedAtUtc = DateTime.UtcNow;
+        var closeCompletedAtLocal = closeCompletedAtUtc.ToLocalTime();
+        _tradingFlowEngine.BeginWaitAfterClose(
+            closeCompletedAtUtc,
+            _runtimeConfigState.CurrentStartWaitTime,
+            _runtimeConfigState.CurrentEndWaitTime);
+
+        if (_tradingFlowEngine.ClosedAtUtc != closeCompletedAtUtc)
+        {
+            return false;
+        }
+
+        var waitSeconds = _tradingFlowEngine.CurrentWaitSeconds;
+        SignalLogItems.Insert(0,
+            $"    - [{DateTime.Now:HH:mm:ss.fff}] Flow -> WaitingOpen after close confirmed ({source})");
+        SignalLogItems.Insert(0,
+            SignalLogFormatter.FormatRandomWaitingTime(closeCompletedAtLocal, waitSeconds));
+        ClearActiveAutoCycleOnCloseFinalize();
+        _closeBothFlatPollStreak = 0;
+        OnPropertyChanged(nameof(CurrentPositionText));
+        OnPropertyChanged(nameof(CurrentPhaseText));
+        return true;
+    }
+
     private void TryRecoverWaitingCloseFromPolling(LivePairTradeState pairState)
     {
         var phase = _tradingFlowEngine.CurrentPhase;
@@ -2703,15 +2770,38 @@ public sealed class DashboardViewModel : ObservableObject
             return;
         }
 
+        // Đọc SharedMemory 1 lần duy nhất cho nhịp này — dùng lại cho cả isToolFlat và finalize
+        var freshLeft = _tradesSharedMemoryReader.ReadTrades(TradeTab.LeftPanel.TargetMapName);
+        var freshRight = _tradesSharedMemoryReader.ReadTrades(TradeTab.RightPanel.TargetMapName);
+
         if (pairState != LivePairTradeState.BothFlat)
         {
-            _closeBothFlatPollStreak = 0;
-            return;
+            // Tool-aware flat: nếu map khả dụng và không còn tool ticket → tiếp tục finalize
+            var mapOk = freshLeft.IsMapAvailable && freshLeft.IsParseSuccess
+                     && freshRight.IsMapAvailable && freshRight.IsParseSuccess;
+            var isToolFlat = mapOk
+                && !freshLeft.Records.Concat(freshRight.Records)
+                                     .Any(r => _pairIdByTicket.ContainsKey(r.Ticket));
+
+            if (!isToolFlat)
+            {
+                _closeBothFlatPollStreak = 0;
+                return;
+            }
+
+            // Log chỉ khi streak = 0 (lần đầu detect tool-flat trong chuỗi này)
+            if (_closeBothFlatPollStreak == 0)
+            {
+                SignalLogItems.Insert(0,
+                    $"    - [{DateTime.Now:HH:mm:ss.fff}] [RECOVER] tool-flat detected " +
+                    $"(rawState={FormatLivePairTradeState(pairState)}) " +
+                    $"cycle={(_activeAutoCloseRecoveryCycle is null ? "null" : $"slot={_activeAutoCloseRecoveryCycle.Slot}")} " +
+                    $"proceeding with close cycle check");
+            }
         }
 
-        if (!IsActiveCloseRecoveryCycleClosed(_latestTradeLeftResult ?? _tradesSharedMemoryReader.ReadTrades(TradeTab.LeftPanel.TargetMapName),
-                _latestTradeRightResult ?? _tradesSharedMemoryReader.ReadTrades(TradeTab.RightPanel.TargetMapName),
-                out var closeBlockReason))
+        // Dùng freshLeft/freshRight đã đọc — không đọc lại lần nữa
+        if (!IsActiveCloseRecoveryCycleClosed(freshLeft, freshRight, out var closeBlockReason))
         {
             _closeBothFlatPollStreak = 0;
             SignalLogItems.Insert(0,
@@ -2725,14 +2815,20 @@ public sealed class DashboardViewModel : ObservableObject
             return;
         }
 
-        var reconciled = FinalizeCloseFlowIfPairFlat("polling watchdog/MMF");
+        // Dùng overload mới — truyền freshLeft/freshRight, không đọc lại
+        var source = pairState == LivePairTradeState.BothFlat
+            ? "polling watchdog/MMF"
+            : "polling watchdog/tool-flat";
+        var reconciled = FinalizeCloseFlowIfPairFlat(source, freshLeft, freshRight);
         if (!reconciled)
         {
             return;
         }
 
         SignalLogItems.Insert(0,
-            $"    - [{DateTime.Now:HH:mm:ss.fff}] Close reconcile result: BothFlat (stable polling {StableBothFlatPollsRequired}/{StableBothFlatPollsRequired})");
+            $"    - [{DateTime.Now:HH:mm:ss.fff}] Close reconcile result: " +
+            $"{(pairState == LivePairTradeState.BothFlat ? "BothFlat" : "tool-flat")} " +
+            $"(stable polling {StableBothFlatPollsRequired}/{StableBothFlatPollsRequired})");
     }
 
     private void TryDetectAndHandleExternalPartialClose(LivePairTradeState currentPairState)
