@@ -234,18 +234,28 @@ public sealed class Mt4TradeExecutor : ITradePlatformExecutor
                     Exchange: request.Exchange,
                     Action: "CLOSE",
                     Success: true,
-                    Detail: $"Close {request.Exchange} skipped: no open trade");
+                    Detail: $"Close {request.Exchange} skipped: no open trade (ticket={request.Ticket})");
             }
 
-            var closeResult = NativeMethodsMt4.ClosePositionMt4(context, 0);
+            if (request.RowIndex is null)
+            {
+                return new ManualTradeLegResult(
+                    Exchange: request.Exchange,
+                    Action: "CLOSE",
+                    Success: false,
+                    Detail: $"Close {request.Exchange} skipped: ticket={request.Ticket} row=unresolved rowCount={rowCount} source=Mt4TradeExecutor");
+            }
+
+            var rowIndex = Math.Max(0, Math.Min(request.RowIndex.Value, rowCount - 1));
+            var closeResult = NativeMethodsMt4.ClosePositionMt4(context, rowIndex);
             var success = closeResult == 1;
             return new ManualTradeLegResult(
                 Exchange: request.Exchange,
                 Action: "CLOSE",
                 Success: success,
                 Detail: success
-                    ? $"Close {request.Exchange} first trade: ticket={request.Ticket}"
-                    : $"Close {request.Exchange} failed: ticket={request.Ticket}, error=close_position_mt4 failed");
+                    ? $"Close {request.Exchange} ok: ticket={request.Ticket} row={rowIndex} rowCount={rowCount}"
+                    : $"Close {request.Exchange} failed: ticket={request.Ticket} row={rowIndex} rowCount={rowCount} error=close_position_mt4 source=Mt4TradeExecutor");
         }
         catch (Exception ex)
         {

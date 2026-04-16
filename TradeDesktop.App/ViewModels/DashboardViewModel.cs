@@ -732,7 +732,8 @@ public sealed class DashboardViewModel : ObservableObject
                         Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformA),
                         TradeHwnd: selectA.Request.TradeHwnd,
                         Ticket: selectA.Request.Ticket,
-                        Action: TradeLegAction.Close),
+                        Action: TradeLegAction.Close,
+                        RowIndex: selectA.Request.RowIndex),
                 LegB: selectB.Request is null
                     ? null
                     : new TradeCloseLegRequest(
@@ -740,7 +741,8 @@ public sealed class DashboardViewModel : ObservableObject
                         Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformB),
                         TradeHwnd: selectB.Request.TradeHwnd,
                         Ticket: selectB.Request.Ticket,
-                        Action: TradeLegAction.Close)));
+                        Action: TradeLegAction.Close,
+                        RowIndex: selectB.Request.RowIndex)));
 
         // Phase 1 Manual Close log
         var now = DateTime.Now;
@@ -1041,7 +1043,8 @@ public sealed class DashboardViewModel : ObservableObject
                         TradeHwnd: selectA.Request.TradeHwnd,
                         Ticket: selectA.Request.Ticket,
                         Action: TradeLegAction.Close,
-                        DelayMs: delayCloseAMs),
+                        DelayMs: delayCloseAMs,
+                        RowIndex: selectA.Request.RowIndex),
                 LegB: selectB.Request is null
                     ? null
                     : new TradeCloseLegRequest(
@@ -1050,7 +1053,8 @@ public sealed class DashboardViewModel : ObservableObject
                         TradeHwnd: selectB.Request.TradeHwnd,
                         Ticket: selectB.Request.Ticket,
                         Action: TradeLegAction.Close,
-                        DelayMs: delayCloseBMs)));
+                        DelayMs: delayCloseBMs,
+                        RowIndex: selectB.Request.RowIndex)));
 
         var hadCloseCandidateA = selectA.Request is not null;
         var hadCloseCandidateB = selectB.Request is not null;
@@ -1213,6 +1217,37 @@ public sealed class DashboardViewModel : ObservableObject
         return trigger.LastBBid.HasValue ? (double)trigger.LastBBid.Value : null;
     }
 
+    /// <summary>
+    /// Đọc SharedMemory và tìm row index của ticket cụ thể.
+    /// Trả null nếu map không khả dụng hoặc ticket không tồn tại.
+    /// Caller phải skip close khi nhận null — tuyệt đối không fallback về 0.
+    /// </summary>
+    private int? FindRowIndexForTicket(string tradeMapName, ulong ticket)
+    {
+        try
+        {
+            var result = _tradesSharedMemoryReader.ReadTrades(tradeMapName);
+            if (!result.IsMapAvailable || !result.IsParseSuccess)
+            {
+                return null;
+            }
+
+            for (var i = 0; i < result.Records.Count; i++)
+            {
+                if (result.Records[i].Ticket == ticket)
+                {
+                    return i;
+                }
+            }
+        }
+        catch
+        {
+            // ignore and fallback to null
+        }
+
+        return null;
+    }
+
     private CloseSelectionResult SelectCloseCandidateForExchange(string exchangeLabel, string tradeMapName, string tradeHwnd)
     {
         var result = _tradesSharedMemoryReader.ReadTrades(tradeMapName);
@@ -1253,8 +1288,17 @@ public sealed class DashboardViewModel : ObservableObject
                 DiagnosticMessage: null);
         }
 
-        var firstTrade = result.Records.FirstOrDefault(r => _pairIdByTicket.ContainsKey(r.Ticket));
-        if (firstTrade is null)
+        var firstTradeIndex = -1;
+        for (var i = 0; i < result.Records.Count; i++)
+        {
+            if (_pairIdByTicket.ContainsKey(result.Records[i].Ticket))
+            {
+                firstTradeIndex = i;
+                break;
+            }
+        }
+
+        if (firstTradeIndex < 0)
         {
             return new CloseSelectionResult(
                 Request: null,
@@ -1267,8 +1311,10 @@ public sealed class DashboardViewModel : ObservableObject
                                    $"({result.Records.Count} external trade(s) present, not opened via tool)");
         }
 
+        var firstTrade = result.Records[firstTradeIndex];
+
         return new CloseSelectionResult(
-            Request: new ManualCloseRequest(exchangeLabel, tradeHwnd, firstTrade.Ticket),
+            Request: new ManualCloseRequest(exchangeLabel, tradeHwnd, firstTrade.Ticket, firstTradeIndex),
             Status: CloseSelectionStatus.Candidate,
             TradeType: firstTrade.TradeType,
             TradeMapName: tradeMapName,
@@ -2220,6 +2266,7 @@ public sealed class DashboardViewModel : ObservableObject
         var isExchangeA = string.Equals(action.OpenedExchange, "A", StringComparison.OrdinalIgnoreCase);
         var platform = ResolveTradeLegPlatform(isExchangeA ? _runtimeConfigState.CurrentPlatformA : _runtimeConfigState.CurrentPlatformB);
         var tradeHwnd = isExchangeA ? _runtimeConfigState.CurrentTradeHwndA : _runtimeConfigState.CurrentTradeHwndB;
+        var rowIndex = FindRowIndexForTicket(action.TradeMapName, action.Ticket);
 
         var appCloseRequestTimeLocal = DateTimeOffset.Now;
         var appCloseRequestRawMs = Environment.TickCount64;
@@ -2249,7 +2296,8 @@ public sealed class DashboardViewModel : ObservableObject
                         Platform: platform,
                         TradeHwnd: tradeHwnd,
                         Ticket: action.Ticket,
-                        Action: TradeLegAction.Close)
+                        Action: TradeLegAction.Close,
+                        RowIndex: rowIndex)
                     : null,
                 LegB: isExchangeA
                     ? null
@@ -2258,7 +2306,8 @@ public sealed class DashboardViewModel : ObservableObject
                         Platform: platform,
                         TradeHwnd: tradeHwnd,
                         Ticket: action.Ticket,
-                        Action: TradeLegAction.Close)),
+                        Action: TradeLegAction.Close,
+                        RowIndex: rowIndex)),
             cancellationToken);
 
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
@@ -2908,7 +2957,8 @@ public sealed class DashboardViewModel : ObservableObject
                         TradeHwnd: tradeHwnd,
                         Ticket: selection.Request.Ticket,
                         Action: TradeLegAction.Close,
-                        DelayMs: 0)
+                        DelayMs: 0,
+                        RowIndex: selection.Request.RowIndex)
                     : null,
                 LegB: isExchangeA
                     ? null
@@ -2918,7 +2968,8 @@ public sealed class DashboardViewModel : ObservableObject
                         TradeHwnd: tradeHwnd,
                         Ticket: selection.Request.Ticket,
                         Action: TradeLegAction.Close,
-                        DelayMs: 0));
+                        DelayMs: 0,
+                        RowIndex: selection.Request.RowIndex));
 
             var closeResult = await _tradeExecutionRouter.ClosePairAsync(closeRequest);
 
@@ -3050,6 +3101,8 @@ public sealed class DashboardViewModel : ObservableObject
                 exchangeLabel: action.Exchange);
         }
 
+        var rowIndex = FindRowIndexForTicket(action.TradeMapName, action.Ticket);
+
         var closeResult = await _tradeExecutionRouter.ClosePairAsync(
             new TradeClosePairRequest(
                 LegA: string.Equals(action.Exchange, "A", StringComparison.OrdinalIgnoreCase)
@@ -3058,7 +3111,8 @@ public sealed class DashboardViewModel : ObservableObject
                         Platform: action.Platform,
                         TradeHwnd: action.TradeHwnd,
                         Ticket: action.Ticket,
-                        Action: TradeLegAction.Close)
+                        Action: TradeLegAction.Close,
+                        RowIndex: rowIndex)
                     : null,
                 LegB: string.Equals(action.Exchange, "B", StringComparison.OrdinalIgnoreCase)
                     ? new TradeCloseLegRequest(
@@ -3066,7 +3120,8 @@ public sealed class DashboardViewModel : ObservableObject
                         Platform: action.Platform,
                         TradeHwnd: action.TradeHwnd,
                         Ticket: action.Ticket,
-                        Action: TradeLegAction.Close)
+                        Action: TradeLegAction.Close,
+                        RowIndex: rowIndex)
                     : null),
             cancellationToken);
 

@@ -10,7 +10,8 @@ public interface IMt5ManualTradeService
 public sealed record ManualCloseRequest(
     string Exchange,
     string TradeHwnd,
-    ulong Ticket);
+    ulong Ticket,
+    int? RowIndex = null);
 
 public sealed record ManualTradeLegResult(
     string Exchange,
