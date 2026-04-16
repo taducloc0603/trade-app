@@ -638,7 +638,7 @@ public sealed class DashboardViewModel : ObservableObject
         {
             _isManualOpenInFlight = false;
             SyncTradingFlowWithLivePairState(GetLivePairTradeStateStrict());
-            RefreshManualOpenAvailability(GetLivePairTradeStateStrict());
+            RefreshManualOpenAvailability(ComputeToolAwarePairStateForOpenGate(GetLivePairTradeStateStrict()));
             RaiseManualOpenCanExecuteChanged();
         }
     }
@@ -697,7 +697,7 @@ public sealed class DashboardViewModel : ObservableObject
         {
             _isManualOpenInFlight = false;
             SyncTradingFlowWithLivePairState(GetLivePairTradeStateStrict());
-            RefreshManualOpenAvailability(GetLivePairTradeStateStrict());
+            RefreshManualOpenAvailability(ComputeToolAwarePairStateForOpenGate(GetLivePairTradeStateStrict()));
             RaiseManualOpenCanExecuteChanged();
         }
     }
@@ -838,7 +838,7 @@ public sealed class DashboardViewModel : ObservableObject
             var appOpenRequestRawMs = Environment.TickCount64;
             var slot = _autoSlot;
 
-            var pairState = GetLivePairTradeStateStrict();
+            var pairState = ComputeToolAwarePairStateForOpenGate(GetLivePairTradeStateStrict());
             if (pairState != LivePairTradeState.BothFlat)
             {
                 System.Windows.Application.Current.Dispatcher.Invoke(() =>
@@ -933,7 +933,7 @@ public sealed class DashboardViewModel : ObservableObject
             var appOpenRequestRawMs = Environment.TickCount64;
             var slot = _autoSlot;
 
-            var pairState = GetLivePairTradeStateStrict();
+            var pairState = ComputeToolAwarePairStateForOpenGate(GetLivePairTradeStateStrict());
             if (pairState != LivePairTradeState.BothFlat)
             {
                 System.Windows.Application.Current.Dispatcher.Invoke(() =>
@@ -1253,7 +1253,20 @@ public sealed class DashboardViewModel : ObservableObject
                 DiagnosticMessage: null);
         }
 
-        var firstTrade = result.Records[0];
+        var firstTrade = result.Records.FirstOrDefault(r => _pairIdByTicket.ContainsKey(r.Ticket));
+        if (firstTrade is null)
+        {
+            return new CloseSelectionResult(
+                Request: null,
+                Status: CloseSelectionStatus.NoOpenTrade,
+                TradeType: null,
+                TradeMapName: tradeMapName,
+                Symbol: null,
+                Volume: null,
+                DiagnosticMessage: $"Close {exchangeLabel} skipped: no tool-opened trade found " +
+                                   $"({result.Records.Count} external trade(s) present, not opened via tool)");
+        }
+
         return new CloseSelectionResult(
             Request: new ManualCloseRequest(exchangeLabel, tradeHwnd, firstTrade.Ticket),
             Status: CloseSelectionStatus.Candidate,
@@ -2006,7 +2019,7 @@ public sealed class DashboardViewModel : ObservableObject
                     ApplyHistoryResult(HistoryTab.RightPanel, historyRightResult, point);
                 }
 
-                RefreshManualOpenAvailability(livePairStateFromPoll);
+                RefreshManualOpenAvailability(ComputeToolAwarePairStateForOpenGate(livePairStateFromPoll));
                 SyncTradingFlowWithLivePairState(livePairStateFromPoll);
 
                 EvaluateAndApplyAutoOpenInvariantWatchdog(tradeLeftResult, tradeRightResult);
@@ -2512,6 +2525,13 @@ public sealed class DashboardViewModel : ObservableObject
             return;
         }
 
+        // ▼ FIX: chỉ sync khi có ít nhất 1 lệnh được mở QUA TOOL
+        //        Lệnh mở từ EA/bên ngoài không được ảnh hưởng state machine
+        if (!HasAnyToolOpenedTicketInLatestResults())
+        {
+            return;
+        }
+
         var side = ResolveLivePositionSideFromMaps();
         if (side == TradingPositionSide.None)
         {
@@ -2556,6 +2576,34 @@ public sealed class DashboardViewModel : ObservableObject
         {
             return TradingPositionSide.None;
         }
+    }
+
+    /// <summary>
+    /// Trả về true nếu có ít nhất 1 ticket đang mở trong latest results
+    /// được mở QUA TOOL (có trong _pairIdByTicket).
+    /// </summary>
+    private bool HasAnyToolOpenedTicketInLatestResults()
+    {
+        var leftRecords = _latestTradeLeftResult?.Records ?? (IReadOnlyList<TradeSharedRecord>)[];
+        var rightRecords = _latestTradeRightResult?.Records ?? (IReadOnlyList<TradeSharedRecord>)[];
+        return leftRecords.Concat(rightRecords).Any(r => _pairIdByTicket.ContainsKey(r.Ticket));
+    }
+
+    /// <summary>
+    /// Trả về LivePairTradeState "tool-aware" dùng cho gate mở lệnh:
+    /// nếu có lệnh đang mở nhưng KHÔNG phải do tool -> coi như BothFlat.
+    /// </summary>
+    private LivePairTradeState ComputeToolAwarePairStateForOpenGate(LivePairTradeState rawState)
+    {
+        if (rawState == LivePairTradeState.BothFlat
+            || rawState == LivePairTradeState.MapUnavailableOrParseError)
+        {
+            return rawState;
+        }
+
+        return HasAnyToolOpenedTicketInLatestResults()
+            ? rawState
+            : LivePairTradeState.BothFlat;
     }
 
     private bool FinalizeCloseFlowIfPairFlat(string source)
