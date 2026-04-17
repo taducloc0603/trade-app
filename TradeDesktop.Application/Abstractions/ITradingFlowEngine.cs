@@ -11,6 +11,8 @@ public interface ITradingFlowEngine
     DateTime? ClosedAtUtc { get; }
     int CurrentHoldingSeconds { get; }
     int CurrentWaitSeconds { get; }
+    int CurrentOpenQualifyingCount { get; }
+    int CurrentCloseQualifyingCount { get; }
 
     GapSignalTriggerResult? ProcessSnapshot(
         GapSignalSnapshot snapshot,
@@ -22,6 +24,14 @@ public interface ITradingFlowEngine
         int endWaitSeconds);
 
     void AbortPendingCloseExecution();
+
+    void AbortPendingOpenExecution();
+
+    bool TryConsumeQualifyingForOpen(int requiredN);
+
+    bool TryConsumeQualifyingForClose(int requiredN);
+
+    void ResetQualifyingCounters();
 
     void ForceWaitingClose(TradingPositionSide positionSide);
 

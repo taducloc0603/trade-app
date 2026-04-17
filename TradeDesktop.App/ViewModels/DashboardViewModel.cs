@@ -316,6 +316,7 @@ public sealed class DashboardViewModel : ObservableObject
         OrderTabs = [TradeTab, HistoryTab];
 
         _runtimeConfigState.StateChanged += (_, _) => ApplyRuntimeConfig();
+        _runtimeConfigState.QualifyingConfigChanged += OnQualifyingConfigChanged;
         ApplyRuntimeConfig();
         _ = InitializeRuntimeConfigAsync();
 
@@ -798,7 +799,7 @@ public sealed class DashboardViewModel : ObservableObject
             else if (trigger.Action == GapSignalAction.Open)
             {
                 // Open execution failed before confirmation -> rollback transient WaitingClose state.
-                _tradingFlowEngine.Reset();
+                _tradingFlowEngine.AbortPendingOpenExecution();
             }
 
             System.Windows.Application.Current.Dispatcher.Invoke(() =>
@@ -4247,7 +4248,9 @@ public sealed class DashboardViewModel : ObservableObject
                     result.DelayOpenAMs,
                     result.DelayOpenBMs,
                     result.DelayCloseAMs,
-                    result.DelayCloseBMs);
+                    result.DelayCloseBMs,
+                    result.OpenNumberOfQualifyingTimes,
+                    result.CloseNumberOfQualifyingTimes);
                 _runtimeConfigState.UpdateManualTradeHwnd(result.ManualHwndColumns);
                 ResetTradingLogicState();
 
@@ -4392,7 +4395,7 @@ public sealed class DashboardViewModel : ObservableObject
                 {
                     // Open phase is switched to WaitingClose immediately when trigger is produced.
                     // If guard rejects execution, rollback to WaitingOpen to keep UI/state consistent.
-                    _tradingFlowEngine.Reset();
+                    _tradingFlowEngine.AbortPendingOpenExecution();
                 }
 
                 OnPropertyChanged(nameof(CurrentPositionText));
@@ -4409,7 +4412,7 @@ public sealed class DashboardViewModel : ObservableObject
             {
                 // Open trigger already moved flow to WaitingClose inside engine.
                 // Rollback to WaitingOpen when user toggle disables this open side.
-                _tradingFlowEngine.Reset();
+                _tradingFlowEngine.AbortPendingOpenExecution();
                 OnPropertyChanged(nameof(CurrentPositionText));
                 OnPropertyChanged(nameof(CurrentPhaseText));
 
@@ -4418,9 +4421,55 @@ public sealed class DashboardViewModel : ObservableObject
                 return;
             }
 
+            if (trigger.Action == GapSignalAction.Open)
+            {
+                var requiredN = _runtimeConfigState.CurrentOpenNumberOfQualifyingTimes;
+                var canExecute = _tradingFlowEngine.TryConsumeQualifyingForOpen(requiredN);
+                if (!canExecute)
+                {
+                    var current = _tradingFlowEngine.CurrentOpenQualifyingCount;
+                    SignalLogItems.Insert(0,
+                        $"[{DateTime.Now:HH:mm:ss.fff}] [SKIP OPEN] qualifying {current}/{requiredN} - side={trigger.PrimarySide}");
+
+                    _tradingFlowEngine.AbortPendingOpenExecution();
+                    OnPropertyChanged(nameof(CurrentPositionText));
+                    OnPropertyChanged(nameof(CurrentPhaseText));
+                    return;
+                }
+
+                SignalLogItems.Insert(0,
+                    $"[{DateTime.Now:HH:mm:ss.fff}] [EXEC OPEN] qualifying {requiredN}/{requiredN} - side={trigger.PrimarySide}");
+            }
+            else if (trigger.Action == GapSignalAction.Close)
+            {
+                var requiredN = _runtimeConfigState.CurrentCloseNumberOfQualifyingTimes;
+                var canExecute = _tradingFlowEngine.TryConsumeQualifyingForClose(requiredN);
+                if (!canExecute)
+                {
+                    var current = _tradingFlowEngine.CurrentCloseQualifyingCount;
+                    SignalLogItems.Insert(0,
+                        $"[{DateTime.Now:HH:mm:ss.fff}] [SKIP CLOSE] qualifying {current}/{requiredN} - mode={_tradingFlowEngine.CurrentOpenMode}");
+
+                    _tradingFlowEngine.AbortPendingCloseExecution();
+                    OnPropertyChanged(nameof(CurrentPositionText));
+                    OnPropertyChanged(nameof(CurrentPhaseText));
+                    return;
+                }
+
+                SignalLogItems.Insert(0,
+                    $"[{DateTime.Now:HH:mm:ss.fff}] [EXEC CLOSE] qualifying {requiredN}/{requiredN} reached");
+            }
+
             // Auto-execute trade from signal trigger
             _ = DispatchSignalTradeAsync(trigger);
         });
+    }
+
+    private void OnQualifyingConfigChanged(object? sender, EventArgs e)
+    {
+        _tradingFlowEngine.ResetQualifyingCounters();
+        SignalLogItems.Insert(0,
+            $"[{DateTime.Now:HH:mm:ss.fff}] [RESET QUALIFY] config N changed, counters cleared");
     }
 
     private bool TryAllowAutoOpenByToggle(GapSignalTriggerResult trigger, out string blockedReason)

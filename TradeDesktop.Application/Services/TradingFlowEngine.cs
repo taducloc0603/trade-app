@@ -12,6 +12,8 @@ public sealed class TradingFlowEngine(
     private bool _isCloseExecutionPending;
     private DateTime? _openedAtRuntimeUtc;
     private DateTime? _closedAtRuntimeUtc;
+    private int _openQualifyingCount;
+    private int _closeQualifyingCount;
 
     public TradingFlowPhase CurrentPhase { get; private set; } = TradingFlowPhase.WaitingOpen;
     public TradingOpenMode CurrentOpenMode { get; private set; } = TradingOpenMode.None;
@@ -20,6 +22,8 @@ public sealed class TradingFlowEngine(
     public DateTime? ClosedAtUtc { get; private set; }
     public int CurrentHoldingSeconds { get; private set; }
     public int CurrentWaitSeconds { get; private set; }
+    public int CurrentOpenQualifyingCount => _openQualifyingCount;
+    public int CurrentCloseQualifyingCount => _closeQualifyingCount;
 
     public GapSignalTriggerResult? ProcessSnapshot(
         GapSignalSnapshot snapshot,
@@ -116,6 +120,7 @@ public sealed class TradingFlowEngine(
         CurrentWaitSeconds = NextSecondsInRange(startWaitSeconds, endWaitSeconds);
         openSignalEngine.Reset();
         closeSignalEngine.Reset();
+        ResetQualifyingCounters();
     }
 
     public void AbortPendingCloseExecution()
@@ -130,6 +135,65 @@ public sealed class TradingFlowEngine(
         _closedAtRuntimeUtc = null;
         CurrentWaitSeconds = 0;
         closeSignalEngine.Reset();
+    }
+
+    public void AbortPendingOpenExecution()
+    {
+        var isWaitingClose = CurrentPhase == TradingFlowPhase.WaitingCloseFromGapBuy
+                          || CurrentPhase == TradingFlowPhase.WaitingCloseFromGapSell;
+        if (!isWaitingClose || CurrentOpenMode == TradingOpenMode.None)
+        {
+            return;
+        }
+
+        _isCloseExecutionPending = false;
+        CurrentPhase = TradingFlowPhase.WaitingOpen;
+        CurrentOpenMode = TradingOpenMode.None;
+        CurrentPositionSide = TradingPositionSide.None;
+        OpenedAtUtc = null;
+        _openedAtRuntimeUtc = null;
+        ClosedAtUtc = null;
+        _closedAtRuntimeUtc = null;
+        CurrentHoldingSeconds = 0;
+        CurrentWaitSeconds = 0;
+
+        openSignalEngine.Reset();
+        closeSignalEngine.Reset();
+        // Keep qualifying counters for skip/guard-reject flow.
+    }
+
+    public bool TryConsumeQualifyingForOpen(int requiredN)
+    {
+        var effectiveN = Math.Max(1, requiredN);
+        _openQualifyingCount++;
+
+        if (_openQualifyingCount >= effectiveN)
+        {
+            _openQualifyingCount = 0;
+            return true;
+        }
+
+        return false;
+    }
+
+    public bool TryConsumeQualifyingForClose(int requiredN)
+    {
+        var effectiveN = Math.Max(1, requiredN);
+        _closeQualifyingCount++;
+
+        if (_closeQualifyingCount >= effectiveN)
+        {
+            _closeQualifyingCount = 0;
+            return true;
+        }
+
+        return false;
+    }
+
+    public void ResetQualifyingCounters()
+    {
+        _openQualifyingCount = 0;
+        _closeQualifyingCount = 0;
     }
 
     public void ForceWaitingClose(TradingPositionSide positionSide)
@@ -158,6 +222,7 @@ public sealed class TradingFlowEngine(
 
         openSignalEngine.Reset();
         closeSignalEngine.Reset();
+        ResetQualifyingCounters();
     }
 
     public void ForceWaitingOpen()
@@ -174,6 +239,7 @@ public sealed class TradingFlowEngine(
         CurrentWaitSeconds = 0;
         openSignalEngine.Reset();
         closeSignalEngine.Reset();
+        ResetQualifyingCounters();
     }
 
     public void Reset()

@@ -31,6 +31,8 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
     public int CurrentDelayOpenBMs { get; private set; }
     public int CurrentDelayCloseAMs { get; private set; }
     public int CurrentDelayCloseBMs { get; private set; }
+    public int CurrentOpenNumberOfQualifyingTimes { get; private set; } = 1;
+    public int CurrentCloseNumberOfQualifyingTimes { get; private set; } = 1;
     public string CurrentMapName1 { get; private set; } = string.Empty;
     public string CurrentMapName2 { get; private set; } = string.Empty;
     public string CurrentPlatformA { get; private set; } = "mt5";
@@ -73,8 +75,11 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
     public int DelayOpenBMs => CurrentDelayOpenBMs;
     public int DelayCloseAMs => CurrentDelayCloseAMs;
     public int DelayCloseBMs => CurrentDelayCloseBMs;
+    public int OpenNumberOfQualifyingTimes => CurrentOpenNumberOfQualifyingTimes;
+    public int CloseNumberOfQualifyingTimes => CurrentCloseNumberOfQualifyingTimes;
 
     public event EventHandler? StateChanged;
+    public event EventHandler? QualifyingConfigChanged;
 
     public void Update(
         string machineHostName,
@@ -101,7 +106,9 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
         int delayOpenAMs = -1,
         int delayOpenBMs = -1,
         int delayCloseAMs = -1,
-        int delayCloseBMs = -1)
+        int delayCloseBMs = -1,
+        int openNumberOfQualifyingTimes = -1,
+        int closeNumberOfQualifyingTimes = -1)
         => Update(
             machineHostName,
             mapName1,
@@ -129,7 +136,9 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
             delayOpenAMs,
             delayOpenBMs,
             delayCloseAMs,
-            delayCloseBMs);
+            delayCloseBMs,
+            openNumberOfQualifyingTimes,
+            closeNumberOfQualifyingTimes);
 
     public void Update(
         string machineHostName,
@@ -158,8 +167,13 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
         int delayOpenAMs = -1,
         int delayOpenBMs = -1,
         int delayCloseAMs = -1,
-        int delayCloseBMs = -1)
+        int delayCloseBMs = -1,
+        int openNumberOfQualifyingTimes = -1,
+        int closeNumberOfQualifyingTimes = -1)
     {
+        var oldOpenN = CurrentOpenNumberOfQualifyingTimes;
+        var oldCloseN = CurrentCloseNumberOfQualifyingTimes;
+
         CurrentMachineHostName = (machineHostName ?? string.Empty).Trim().ToLower();
         CurrentPoint = point > 0 ? point : 1;
         CurrentOpenPts = Math.Abs(openPts);
@@ -201,10 +215,25 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
         {
             CurrentDelayCloseBMs = Math.Max(0, delayCloseBMs);
         }
+        if (openNumberOfQualifyingTimes >= 0)
+        {
+            CurrentOpenNumberOfQualifyingTimes = Math.Max(1, openNumberOfQualifyingTimes);
+        }
+        if (closeNumberOfQualifyingTimes >= 0)
+        {
+            CurrentCloseNumberOfQualifyingTimes = Math.Max(1, closeNumberOfQualifyingTimes);
+        }
         CurrentMapName1 = (mapName1 ?? string.Empty).Trim();
         CurrentMapName2 = (mapName2 ?? string.Empty).Trim();
         CurrentPlatformA = NormalizePlatform(platformA);
         CurrentPlatformB = NormalizePlatform(platformB);
+
+        if (oldOpenN != CurrentOpenNumberOfQualifyingTimes
+            || oldCloseN != CurrentCloseNumberOfQualifyingTimes)
+        {
+            QualifyingConfigChanged?.Invoke(this, EventArgs.Empty);
+        }
+
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -242,7 +271,9 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
             CurrentDelayOpenAMs,
             CurrentDelayOpenBMs,
             CurrentDelayCloseAMs,
-            CurrentDelayCloseBMs);
+            CurrentDelayCloseBMs,
+            CurrentOpenNumberOfQualifyingTimes,
+            CurrentCloseNumberOfQualifyingTimes);
 
     public void Update(string machineHostName, string mapName1, string mapName2)
         => Update(
@@ -272,7 +303,9 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
             CurrentDelayOpenAMs,
             CurrentDelayOpenBMs,
             CurrentDelayCloseAMs,
-            CurrentDelayCloseBMs);
+            CurrentDelayCloseBMs,
+            CurrentOpenNumberOfQualifyingTimes,
+            CurrentCloseNumberOfQualifyingTimes);
 
     public void UpdatePlatform(string platformA, string platformB)
     {

@@ -27,4 +27,6 @@ public sealed record ConfigRecord(
     int DelayOpenAMs,
     int DelayOpenBMs,
     int DelayCloseAMs,
-    int DelayCloseBMs);
+    int DelayCloseBMs,
+    int OpenNumberOfQualifyingTimes,
+    int CloseNumberOfQualifyingTimes);
