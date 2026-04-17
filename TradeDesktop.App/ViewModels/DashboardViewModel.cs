@@ -2104,11 +2104,12 @@ public sealed class DashboardViewModel : ObservableObject
         SharedMapReadResult<TradeSharedRecord> tradeLeftResult,
         SharedMapReadResult<TradeSharedRecord> tradeRightResult)
     {
-        var openRowsA = GetOpenRowCount(tradeLeftResult);
-        var openRowsB = GetOpenRowCount(tradeRightResult);
+        // Chỉ đếm lệnh do tool mở — lệnh EA không ảnh hưởng invariant
+        var toolRowsA = CountToolOpenedRows(tradeLeftResult);
+        var toolRowsB = CountToolOpenedRows(tradeRightResult);
         var liveAutoPairCount = CountLiveAutoPairCount(tradeLeftResult, tradeRightResult);
 
-        var hasInvariantViolation = liveAutoPairCount > 1 || openRowsA > 1 || openRowsB > 1;
+        var hasInvariantViolation = liveAutoPairCount > 1 || toolRowsA > 1 || toolRowsB > 1;
         if (!hasInvariantViolation)
         {
             return;
@@ -2121,7 +2122,7 @@ public sealed class DashboardViewModel : ObservableObject
 
         _isAutoOpenPausedByInvariant = true;
         SignalLogItems.Insert(0,
-            $"    - [{DateTime.Now:HH:mm:ss.fff}] Invariant violation: multiple live auto pairs detected (A={openRowsA},B={openRowsB}). Auto-open paused.");
+            $"    - [{DateTime.Now:HH:mm:ss.fff}] Invariant violation: multiple live auto pairs detected (toolA={toolRowsA},toolB={toolRowsB}). Auto-open paused.");
     }
 
     private static int GetOpenRowCount(SharedMapReadResult<TradeSharedRecord> tradeResult)
@@ -2132,6 +2133,20 @@ public sealed class DashboardViewModel : ObservableObject
         }
 
         return tradeResult.Records.Count;
+    }
+
+    /// <summary>
+    /// Đếm số lệnh đang mở được mở QUA TOOL (có trong _pairIdByTicket).
+    /// Lệnh EA không do tool mở không được tính vào invariant check.
+    /// </summary>
+    private int CountToolOpenedRows(SharedMapReadResult<TradeSharedRecord> tradeResult)
+    {
+        if (!tradeResult.IsMapAvailable || !tradeResult.IsParseSuccess)
+        {
+            return 0;
+        }
+
+        return tradeResult.Records.Count(r => _pairIdByTicket.ContainsKey(r.Ticket));
     }
 
     private int CountLiveAutoPairCount(
