@@ -78,6 +78,7 @@ public sealed class DashboardViewModel : ObservableObject
     private static readonly TimeSpan StatePersistInterval = TimeSpan.FromSeconds(2);
     private const int StateSchemaVersion = 2;
     private const int MaxRestoreAgeSeconds = 60;
+    private const int MaxTicketMemoryAgeSeconds = 86400;
     private const int InvariantPausePersistWindowSeconds = 60;
     private DispatcherTimer? _statePersistTimer;
     private bool _isStatePersistenceStarted;
@@ -580,11 +581,12 @@ public sealed class DashboardViewModel : ObservableObject
             return Task.CompletedTask;
         }
 
+        SignalLogItems.Clear();
         ResetTradingLogicState();
         IsTradingLogicEnabled = true;
+        TryRestoreWaitingCloseFromTicketMemory();
         SyncTradingFlowWithLivePairState(GetLivePairTradeStateStrict());
         LastSignalText = "-";
-        SignalLogItems.Clear();
         return Task.CompletedTask;
     }
 
@@ -4773,15 +4775,24 @@ public sealed class DashboardViewModel : ObservableObject
             return;
         }
 
-        if ((DateTime.UtcNow - snap.SavedAtUtc).TotalSeconds > MaxRestoreAgeSeconds)
-        {
-            Debug.WriteLine("[StatePersistence] Skip restore: snapshot stale.");
-            return;
-        }
-
         if (snap.SchemaVersion != StateSchemaVersion)
         {
             Debug.WriteLine("[StatePersistence] Skip restore: schema mismatch.");
+            return;
+        }
+
+        var ageSeconds = (DateTime.UtcNow - snap.SavedAtUtc).TotalSeconds;
+        if (ageSeconds > MaxTicketMemoryAgeSeconds)
+        {
+            Debug.WriteLine("[StatePersistence] Skip restore: snapshot too old (>24h).");
+            return;
+        }
+
+        if (ageSeconds > MaxRestoreAgeSeconds)
+        {
+            Replace(_pairIdByTicket, new Dictionary<ulong, string>(snap.PairIdByTicket));
+            SignalLogItems.Insert(0,
+                $"[{DateTime.Now:HH:mm:ss.fff}] Ticket memory restored (snapshot age={(int)ageSeconds}s, ticket-only mode)");
             return;
         }
 
@@ -5018,6 +5029,111 @@ public sealed class DashboardViewModel : ObservableObject
             x => x.Key,
             x => new HashSet<ulong>(x.Value),
             StringComparer.Ordinal);
+
+    private void TryRestoreWaitingCloseFromTicketMemory()
+    {
+        SharedMapReadResult<TradeSharedRecord> leftResult;
+        SharedMapReadResult<TradeSharedRecord> rightResult;
+
+        try
+        {
+            leftResult = _tradesSharedMemoryReader.ReadTrades(TradeTab.LeftPanel.TargetMapName);
+            rightResult = _tradesSharedMemoryReader.ReadTrades(TradeTab.RightPanel.TargetMapName);
+        }
+        catch
+        {
+            return;
+        }
+
+        if (!leftResult.IsMapAvailable || !leftResult.IsParseSuccess
+            || !rightResult.IsMapAvailable || !rightResult.IsParseSuccess)
+        {
+            return;
+        }
+
+        var allLiveTickets = new HashSet<ulong>(leftResult.Records.Select(r => r.Ticket));
+        allLiveTickets.UnionWith(rightResult.Records.Select(r => r.Ticket));
+
+        var staleTickets = _pairIdByTicket.Keys
+            .Where(ticket => !allLiveTickets.Contains(ticket))
+            .ToList();
+
+        foreach (var staleTicket in staleTickets)
+        {
+            _pairIdByTicket.Remove(staleTicket);
+        }
+
+        if (staleTickets.Count > 0)
+        {
+            SignalLogItems.Insert(0,
+                $"[{DateTime.Now:HH:mm:ss.fff}] [CLEANUP] Removed {staleTickets.Count} stale ticket(s) from memory");
+        }
+
+        var restoredTickets = _pairIdByTicket.Keys
+            .Where(ticket => allLiveTickets.Contains(ticket))
+            .ToList();
+
+        if (restoredTickets.Count == 0)
+        {
+            return;
+        }
+
+        var restoredTicketSet = restoredTickets.ToHashSet();
+        var leftMatchedRecords = leftResult.Records
+            .Where(record => restoredTicketSet.Contains(record.Ticket))
+            .ToList();
+        var rightMatchedRecords = rightResult.Records
+            .Where(record => restoredTicketSet.Contains(record.Ticket))
+            .ToList();
+
+        TradingPositionSide positionSide;
+        var leftAnchor = leftMatchedRecords.FirstOrDefault();
+        if (leftAnchor is not null)
+        {
+            positionSide = leftAnchor.TradeType == 0
+                ? TradingPositionSide.Buy
+                : TradingPositionSide.Sell;
+        }
+        else
+        {
+            var rightAnchor = rightMatchedRecords.FirstOrDefault();
+            if (rightAnchor is not null)
+            {
+                positionSide = rightAnchor.TradeType == 0
+                    ? TradingPositionSide.Sell
+                    : TradingPositionSide.Buy;
+            }
+            else
+            {
+                positionSide = TradingPositionSide.Buy;
+            }
+        }
+
+        var expectedPhase = positionSide == TradingPositionSide.Buy
+            ? TradingFlowPhase.WaitingCloseFromGapBuy
+            : TradingFlowPhase.WaitingCloseFromGapSell;
+
+        if (_tradingFlowEngine.CurrentPhase == expectedPhase
+            && _tradingFlowEngine.CurrentPositionSide == positionSide)
+        {
+            return;
+        }
+
+        _tradingFlowEngine.ForceWaitingClose(positionSide);
+        OnPropertyChanged(nameof(CurrentPositionText));
+        OnPropertyChanged(nameof(CurrentPhaseText));
+
+        var ticketList = string.Join(",", restoredTickets.Distinct().OrderBy(x => x));
+        var hasLeft = leftMatchedRecords.Count > 0;
+        var hasRight = rightMatchedRecords.Count > 0;
+        var partialTag = (hasLeft && hasRight) ? string.Empty : "[partial]";
+        var exchangeLabel = hasLeft ? "A" : "B";
+
+        SignalLogItems.Insert(0,
+            $"[{DateTime.Now:HH:mm:ss.fff}] [RESTORED]{partialTag} Tickets: {ticketList}. " +
+            $"PositionSide={positionSide}. Flow → WaitingClose." +
+            ((hasLeft && hasRight) ? string.Empty : $" (sàn {exchangeLabel})"));
+    }
 
     private static PendingOpenRequestDto ToDto(PendingOpenRequest x)
         => new(
