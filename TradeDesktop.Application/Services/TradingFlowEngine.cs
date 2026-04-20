@@ -25,6 +25,39 @@ public sealed class TradingFlowEngine(
     public int CurrentOpenQualifyingCount => _openQualifyingCount;
     public int CurrentCloseQualifyingCount => _closeQualifyingCount;
 
+    public FlowSnapshot ExportState()
+        => new()
+        {
+            Phase = CurrentPhase,
+            OpenMode = CurrentOpenMode,
+            PositionSide = CurrentPositionSide,
+            OpenedAtUtc = OpenedAtUtc,
+            ClosedAtUtc = ClosedAtUtc,
+            CurrentHoldingSeconds = CurrentHoldingSeconds,
+            CurrentWaitSeconds = CurrentWaitSeconds,
+            OpenQualifyingCount = _openQualifyingCount,
+            CloseQualifyingCount = _closeQualifyingCount,
+            IsCloseExecutionPending = _isCloseExecutionPending,
+            OpenedAtRuntimeUtc = _openedAtRuntimeUtc,
+            ClosedAtRuntimeUtc = _closedAtRuntimeUtc
+        };
+
+    public void RestoreState(FlowSnapshot snapshot)
+    {
+        CurrentPhase = snapshot.Phase;
+        CurrentOpenMode = snapshot.OpenMode;
+        CurrentPositionSide = snapshot.PositionSide;
+        OpenedAtUtc = snapshot.OpenedAtUtc;
+        ClosedAtUtc = snapshot.ClosedAtUtc;
+        CurrentHoldingSeconds = Math.Max(0, snapshot.CurrentHoldingSeconds);
+        CurrentWaitSeconds = Math.Max(0, snapshot.CurrentWaitSeconds);
+        _openQualifyingCount = Math.Max(0, snapshot.OpenQualifyingCount);
+        _closeQualifyingCount = Math.Max(0, snapshot.CloseQualifyingCount);
+        _isCloseExecutionPending = snapshot.IsCloseExecutionPending;
+        _openedAtRuntimeUtc = snapshot.OpenedAtRuntimeUtc;
+        _closedAtRuntimeUtc = snapshot.ClosedAtRuntimeUtc;
+    }
+
     public GapSignalTriggerResult? ProcessSnapshot(
         GapSignalSnapshot snapshot,
         GapSignalConfirmationConfig config)

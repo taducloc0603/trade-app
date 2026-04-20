@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Windows.Threading;
 using System.Windows.Media;
 using Microsoft.Extensions.DependencyInjection;
 using TradeDesktop.App.Commands;
@@ -28,6 +29,7 @@ public sealed class DashboardViewModel : ObservableObject
     private readonly IHistorySharedMemoryReader _historySharedMemoryReader;
     private readonly ITradeExecutionRouter _tradeExecutionRouter;
     private readonly IMt5ManualTradeService _mt5ManualTradeService;
+    private readonly IStatePersistence _statePersistence;
     private readonly string _normalizedHostName;
     private readonly CancellationTokenSource _orderInfoPollingCts = new();
     private readonly Dictionary<string, ulong> _lastTradeTimestampByMap = new(StringComparer.Ordinal);
@@ -62,6 +64,7 @@ public sealed class DashboardViewModel : ObservableObject
     private const int ExternalPartialCloseStreakRequired = 2;
     private bool _externalPartialCloseInFlight = false;
     private bool _isAutoOpenPausedByInvariant;
+    private DateTime? _lastInvariantPauseAtUtc;
     private int _invariantClearStreak;
     private const int InvariantClearPollsRequired = 5;
     private ActiveAutoCycleState? _activeAutoCycle;
@@ -72,6 +75,12 @@ public sealed class DashboardViewModel : ObservableObject
 
     private static readonly TimeSpan OrderInfoPollInterval = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan OpenPartialRecheckDelay = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan StatePersistInterval = TimeSpan.FromSeconds(2);
+    private const int StateSchemaVersion = 1;
+    private const int MaxRestoreAgeSeconds = 120;
+    private const int InvariantPausePersistWindowSeconds = 60;
+    private DispatcherTimer? _statePersistTimer;
+    private bool _isStatePersistenceStarted;
     private const int StableBothFlatPollsRequired = 2;
 
     private sealed record PendingOpenRequest(
@@ -278,7 +287,8 @@ public sealed class DashboardViewModel : ObservableObject
         ITradesSharedMemoryReader tradesSharedMemoryReader,
         IHistorySharedMemoryReader historySharedMemoryReader,
         ITradeExecutionRouter tradeExecutionRouter,
-        IMt5ManualTradeService mt5ManualTradeService)
+        IMt5ManualTradeService mt5ManualTradeService,
+        IStatePersistence statePersistence)
     {
         _serviceProvider = serviceProvider;
         _runtimeConfigState = runtimeConfigState;
@@ -292,6 +302,7 @@ public sealed class DashboardViewModel : ObservableObject
         _historySharedMemoryReader = historySharedMemoryReader;
         _tradeExecutionRouter = tradeExecutionRouter;
         _mt5ManualTradeService = mt5ManualTradeService;
+        _statePersistence = statePersistence;
 
         var normalizedHostName = _machineIdentityService.GetHostName();
         _normalizedHostName = normalizedHostName;
@@ -1992,6 +2003,7 @@ public sealed class DashboardViewModel : ObservableObject
         _lastAutoOpenClickAtLocal = null;
         _autoCloseInFlight = 0;
         _isAutoOpenPausedByInvariant = false;
+        _lastInvariantPauseAtUtc = null;
         _invariantClearStreak = 0;
         _activeAutoCycle = null;
         _activeAutoCloseRecoveryCycle = null;
@@ -2269,6 +2281,7 @@ public sealed class DashboardViewModel : ObservableObject
         }
 
         _isAutoOpenPausedByInvariant = true;
+        _lastInvariantPauseAtUtc = DateTime.UtcNow;
         SignalLogItems.Insert(0,
             $"    - [{DateTime.Now:HH:mm:ss.fff}] Invariant violation: multiple live auto pairs detected (toolA={toolRowsA},toolB={toolRowsB}). Auto-open paused.");
     }
@@ -4647,6 +4660,574 @@ public sealed class DashboardViewModel : ObservableObject
         _tradingFlowEngine.ResetQualifyingCounters();
         SignalLogItems.Insert(0,
             $"[{DateTime.Now:HH:mm:ss.fff}] [RESET QUALIFY] config N changed, counters cleared");
+    }
+
+    public void StartStatePersistence()
+    {
+        if (_isStatePersistenceStarted)
+        {
+            return;
+        }
+
+        _statePersistTimer = new DispatcherTimer
+        {
+            Interval = StatePersistInterval
+        };
+        _statePersistTimer.Tick += OnStatePersistTimerTick;
+        _statePersistTimer.Start();
+        _isStatePersistenceStarted = true;
+    }
+
+    public void StopStatePersistence()
+    {
+        if (_statePersistTimer is not null)
+        {
+            _statePersistTimer.Stop();
+            _statePersistTimer.Tick -= OnStatePersistTimerTick;
+            _statePersistTimer = null;
+        }
+
+        _isStatePersistenceStarted = false;
+
+        try
+        {
+            var finalSnapshot = CaptureStateSnapshot();
+            var saveTask = _statePersistence.SaveAsync(finalSnapshot);
+            if (!saveTask.Wait(TimeSpan.FromSeconds(2)))
+            {
+                Debug.WriteLine("[StatePersistence] Final save timed out.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[StatePersistence] Final save failed: {ex}");
+        }
+    }
+
+    public StateSnapshot CaptureStateSnapshot()
+    {
+        var shouldPersistInvariantPause =
+            _isAutoOpenPausedByInvariant
+            && _lastInvariantPauseAtUtc.HasValue
+            && (DateTime.UtcNow - _lastInvariantPauseAtUtc.Value).TotalSeconds <= InvariantPausePersistWindowSeconds;
+
+        return new StateSnapshot
+        {
+            SchemaVersion = StateSchemaVersion,
+            SavedAtUtc = DateTime.UtcNow,
+            Hostname = Environment.MachineName,
+            Flow = _tradingFlowEngine.ExportState(),
+            PendingOpenByMap = _pendingOpenRequestsByMap.ToDictionary(
+                x => x.Key,
+                x => x.Value.Select(ToDto).ToList(),
+                StringComparer.Ordinal),
+            PendingCloseByMap = _pendingCloseRequestsByMap.ToDictionary(
+                x => x.Key,
+                x => x.Value.Select(ToDto).ToList(),
+                StringComparer.Ordinal),
+            PairIdByTicket = new Dictionary<ulong, string>(_pairIdByTicket),
+            PendingOpenPairById = _pendingOpenPairById.ToDictionary(
+                x => x.Key,
+                x => ToDto(x.Value),
+                StringComparer.Ordinal),
+            PendingClosePairById = _pendingClosePairById.ToDictionary(
+                x => x.Key,
+                x => ToDto(x.Value),
+                StringComparer.Ordinal),
+            ActiveAutoCycle = ToDto(_activeAutoCycle),
+            ActiveAutoCloseRecoveryCycle = ToDto(_activeAutoCloseRecoveryCycle),
+            KnownTradeTicketsByMap = CloneTicketSetMap(_knownTradeTicketsByMap),
+            KnownHistoryTicketsByMap = CloneTicketSetMap(_knownHistoryTicketsByMap),
+            LastTradeTimestampByMap = new Dictionary<string, ulong>(_lastTradeTimestampByMap, StringComparer.Ordinal),
+            LastHistoryTimestampByMap = new Dictionary<string, ulong>(_lastHistoryTimestampByMap, StringComparer.Ordinal),
+            OpenExecutionMsByTicket = new Dictionary<ulong, long>(_openExecutionMsByTicket),
+            CloseExecutionMsByTicket = new Dictionary<ulong, long>(_closeExecutionMsByTicket),
+            OpenSlippageByTicket = new Dictionary<ulong, double>(_openSlippageByTicket),
+            SttByPairId = new Dictionary<string, int>(_sttByPairId, StringComparer.Ordinal),
+            NextStt = _nextStt,
+            ManualSlot = _manualSlot,
+            AutoSlot = _autoSlot,
+            Invariant = new InvariantPauseState
+            {
+                IsPaused = shouldPersistInvariantPause,
+                ClearStreak = _invariantClearStreak,
+                PausedAtUtc = shouldPersistInvariantPause ? _lastInvariantPauseAtUtc : null
+            },
+            LastAutoOpenClickAtLocal = _lastAutoOpenClickAtLocal,
+            AutoOpenInFlight = _autoOpenInFlight,
+            AutoCloseInFlight = _autoCloseInFlight,
+            IsManualOpenInFlight = _isManualOpenInFlight,
+            HadBothOpenRecently = _hadBothOpenRecently,
+            ExternalPartialCloseStreak = _externalPartialCloseStreak,
+            ExternalPartialCloseInFlight = _externalPartialCloseInFlight,
+            CloseBothFlatPollStreak = _closeBothFlatPollStreak
+        };
+    }
+
+    public void RestoreFromSnapshot(StateSnapshot snap)
+    {
+        if (!string.Equals(snap.Hostname, Environment.MachineName, StringComparison.OrdinalIgnoreCase))
+        {
+            Debug.WriteLine("[StatePersistence] Skip restore: hostname mismatch.");
+            return;
+        }
+
+        if ((DateTime.UtcNow - snap.SavedAtUtc).TotalSeconds > MaxRestoreAgeSeconds)
+        {
+            Debug.WriteLine("[StatePersistence] Skip restore: snapshot stale.");
+            return;
+        }
+
+        if (snap.SchemaVersion != StateSchemaVersion)
+        {
+            Debug.WriteLine("[StatePersistence] Skip restore: schema mismatch.");
+            return;
+        }
+
+        _tradingFlowEngine.RestoreState(snap.Flow);
+
+        Replace(_pendingOpenRequestsByMap,
+            snap.PendingOpenByMap.ToDictionary(x => x.Key, x => x.Value.Select(ToDomain).ToList(), StringComparer.Ordinal));
+        Replace(_pendingCloseRequestsByMap,
+            snap.PendingCloseByMap.ToDictionary(x => x.Key, x => x.Value.Select(ToDomain).ToList(), StringComparer.Ordinal));
+        Replace(_pairIdByTicket, new Dictionary<ulong, string>(snap.PairIdByTicket));
+        Replace(_pendingOpenPairById,
+            snap.PendingOpenPairById.ToDictionary(x => x.Key, x => ToDomain(x.Value), StringComparer.Ordinal));
+        Replace(_pendingClosePairById,
+            snap.PendingClosePairById.ToDictionary(x => x.Key, x => ToDomain(x.Value), StringComparer.Ordinal));
+
+        _activeAutoCycle = ToDomain(snap.ActiveAutoCycle);
+        _activeAutoCloseRecoveryCycle = ToDomain(snap.ActiveAutoCloseRecoveryCycle);
+
+        Replace(_knownTradeTicketsByMap, CloneTicketSetMap(snap.KnownTradeTicketsByMap));
+        Replace(_knownHistoryTicketsByMap, CloneTicketSetMap(snap.KnownHistoryTicketsByMap));
+        Replace(_lastTradeTimestampByMap, new Dictionary<string, ulong>(snap.LastTradeTimestampByMap, StringComparer.Ordinal));
+        Replace(_lastHistoryTimestampByMap, new Dictionary<string, ulong>(snap.LastHistoryTimestampByMap, StringComparer.Ordinal));
+
+        Replace(_openExecutionMsByTicket, new Dictionary<ulong, long>(snap.OpenExecutionMsByTicket));
+        Replace(_closeExecutionMsByTicket, new Dictionary<ulong, long>(snap.CloseExecutionMsByTicket));
+        Replace(_openSlippageByTicket, new Dictionary<ulong, double>(snap.OpenSlippageByTicket));
+
+        Replace(_sttByPairId, new Dictionary<string, int>(snap.SttByPairId, StringComparer.Ordinal));
+        _nextStt = Math.Max(1, snap.NextStt);
+        _manualSlot = Math.Max(0, snap.ManualSlot);
+        _autoSlot = Math.Max(0, snap.AutoSlot);
+
+        _lastAutoOpenClickAtLocal = snap.LastAutoOpenClickAtLocal;
+        _autoOpenInFlight = Math.Max(0, snap.AutoOpenInFlight);
+        _autoCloseInFlight = Math.Max(0, snap.AutoCloseInFlight);
+        _isManualOpenInFlight = snap.IsManualOpenInFlight;
+        _hadBothOpenRecently = snap.HadBothOpenRecently;
+        _externalPartialCloseStreak = Math.Max(0, snap.ExternalPartialCloseStreak);
+        _externalPartialCloseInFlight = snap.ExternalPartialCloseInFlight;
+        _closeBothFlatPollStreak = Math.Max(0, snap.CloseBothFlatPollStreak);
+
+        _isAutoOpenPausedByInvariant = snap.Invariant.IsPaused;
+        _invariantClearStreak = Math.Max(0, snap.Invariant.ClearStreak);
+        _lastInvariantPauseAtUtc = snap.Invariant.PausedAtUtc;
+
+        SignalLogItems.Insert(0, $"[{DateTime.Now:HH:mm:ss.fff}] State restored from snapshot at {snap.SavedAtUtc:O}");
+        if (_isAutoOpenPausedByInvariant)
+        {
+            SignalLogItems.Insert(0,
+                $"    - [{DateTime.Now:HH:mm:ss.fff}] Invariant pause restored. Use Reset to clear if needed.");
+        }
+
+        OnPropertyChanged(nameof(CurrentPositionText));
+        OnPropertyChanged(nameof(CurrentPhaseText));
+    }
+
+    public async Task ReconcileWithSharedMemoryAsync()
+    {
+        SharedMapReadResult<TradeSharedRecord>? leftTrades = null;
+        SharedMapReadResult<TradeSharedRecord>? rightTrades = null;
+        SharedMapReadResult<HistorySharedRecord>? leftHistory = null;
+        SharedMapReadResult<HistorySharedRecord>? rightHistory = null;
+
+        var timeoutAt = DateTime.UtcNow.AddSeconds(3);
+        while (DateTime.UtcNow < timeoutAt)
+        {
+            leftTrades = _tradesSharedMemoryReader.ReadTrades(TradeTab.LeftPanel.TargetMapName);
+            rightTrades = _tradesSharedMemoryReader.ReadTrades(TradeTab.RightPanel.TargetMapName);
+            leftHistory = _historySharedMemoryReader.ReadHistory(HistoryTab.LeftPanel.TargetMapName);
+            rightHistory = _historySharedMemoryReader.ReadHistory(HistoryTab.RightPanel.TargetMapName);
+
+            var tradeReady = leftTrades.IsMapAvailable && leftTrades.IsParseSuccess
+                && rightTrades.IsMapAvailable && rightTrades.IsParseSuccess;
+            if (tradeReady)
+            {
+                break;
+            }
+
+            await Task.Delay(50);
+        }
+
+        leftTrades ??= _tradesSharedMemoryReader.ReadTrades(TradeTab.LeftPanel.TargetMapName);
+        rightTrades ??= _tradesSharedMemoryReader.ReadTrades(TradeTab.RightPanel.TargetMapName);
+        leftHistory ??= _historySharedMemoryReader.ReadHistory(HistoryTab.LeftPanel.TargetMapName);
+        rightHistory ??= _historySharedMemoryReader.ReadHistory(HistoryTab.RightPanel.TargetMapName);
+
+        var liveTrades = new Dictionary<ulong, TradeSharedRecord>();
+        if (leftTrades.IsMapAvailable && leftTrades.IsParseSuccess)
+        {
+            foreach (var r in leftTrades.Records)
+            {
+                liveTrades[r.Ticket] = r;
+            }
+        }
+
+        if (rightTrades.IsMapAvailable && rightTrades.IsParseSuccess)
+        {
+            foreach (var r in rightTrades.Records)
+            {
+                liveTrades[r.Ticket] = r;
+            }
+        }
+
+        var historyTickets = new HashSet<ulong>();
+        if (leftHistory.IsMapAvailable && leftHistory.IsParseSuccess)
+        {
+            foreach (var r in leftHistory.Records)
+            {
+                historyTickets.Add(r.Ticket);
+            }
+        }
+
+        if (rightHistory.IsMapAvailable && rightHistory.IsParseSuccess)
+        {
+            foreach (var r in rightHistory.Records)
+            {
+                historyTickets.Add(r.Ticket);
+            }
+        }
+
+        var nowUtc = DateTime.UtcNow;
+        var removedUnknown = 0;
+        var removedClosed = 0;
+
+        foreach (var kv in _pairIdByTicket.ToList())
+        {
+            var ticket = kv.Key;
+
+            if (liveTrades.ContainsKey(ticket))
+            {
+                continue;
+            }
+
+            if (historyTickets.Contains(ticket))
+            {
+                _pairIdByTicket.Remove(ticket);
+                removedClosed++;
+                var isWaitingClose = _tradingFlowEngine.CurrentPhase == TradingFlowPhase.WaitingCloseFromGapBuy
+                    || _tradingFlowEngine.CurrentPhase == TradingFlowPhase.WaitingCloseFromGapSell;
+                if (isWaitingClose)
+                {
+                    _tradingFlowEngine.BeginWaitAfterClose(
+                        nowUtc,
+                        _runtimeConfigState.CurrentStartWaitTime,
+                        _runtimeConfigState.CurrentEndWaitTime);
+                }
+
+                continue;
+            }
+
+            _pairIdByTicket.Remove(ticket);
+            removedUnknown++;
+        }
+
+        var pendingDroppedAsStale = 0;
+        var pendingConfirmedByLive = 0;
+        var openTimeoutMs = Math.Max(0, _runtimeConfigState.CurrentOpenPendingTimeMs);
+        foreach (var mapEntry in _pendingOpenRequestsByMap.ToList())
+        {
+            var list = mapEntry.Value;
+            for (var i = list.Count - 1; i >= 0; i--)
+            {
+                var req = list[i];
+                var ageMs = (DateTimeOffset.Now - req.AppOpenRequestTimeLocal).TotalMilliseconds;
+                if (openTimeoutMs > 0 && ageMs > openTimeoutMs)
+                {
+                    list.RemoveAt(i);
+                    pendingDroppedAsStale++;
+                    continue;
+                }
+
+                var matchedLive = liveTrades.Values.FirstOrDefault(t =>
+                    string.Equals(t.Symbol, req.Symbol, StringComparison.OrdinalIgnoreCase)
+                    && t.TradeType == req.TradeType
+                    && (!req.Volume.HasValue || Math.Abs(t.Lot - req.Volume.Value) < 0.0000001d));
+
+                if (matchedLive is not null)
+                {
+                    _pairIdByTicket[matchedLive.Ticket] = req.PairId;
+                    MarkOpenPairLegConfirmed(req, matchedLive.Ticket, matchedLive.Symbol, matchedLive.Lot);
+                    list.RemoveAt(i);
+                    pendingConfirmedByLive++;
+                }
+            }
+
+            if (list.Count == 0)
+            {
+                _pendingOpenRequestsByMap.Remove(mapEntry.Key);
+            }
+        }
+
+        _knownTradeTicketsByMap[TradeTab.LeftPanel.TargetMapName] =
+            (leftTrades.IsMapAvailable && leftTrades.IsParseSuccess)
+                ? leftTrades.Records.Select(x => x.Ticket).ToHashSet()
+                : [];
+        _knownTradeTicketsByMap[TradeTab.RightPanel.TargetMapName] =
+            (rightTrades.IsMapAvailable && rightTrades.IsParseSuccess)
+                ? rightTrades.Records.Select(x => x.Ticket).ToHashSet()
+                : [];
+
+        var severeMismatch = _pairIdByTicket.Count >= 2 && liveTrades.Count == 0;
+        if (severeMismatch)
+        {
+            _isAutoOpenPausedByInvariant = true;
+            _lastInvariantPauseAtUtc = DateTime.UtcNow;
+            SignalLogItems.Insert(0,
+                $"    - [{DateTime.Now:HH:mm:ss.fff}] Reconcile detected severe mismatch (persist>=2, live=0). Auto-open paused.");
+        }
+
+        SignalLogItems.Insert(0,
+            $"    - [{DateTime.Now:HH:mm:ss.fff}] Reconcile summary: removedClosed={removedClosed}, removedUnknown={removedUnknown}, pendingConfirmed={pendingConfirmedByLive}, pendingDropped={pendingDroppedAsStale}, liveTrades={liveTrades.Count}");
+
+        OnPropertyChanged(nameof(CurrentPositionText));
+        OnPropertyChanged(nameof(CurrentPhaseText));
+    }
+
+    private async void OnStatePersistTimerTick(object? sender, EventArgs e)
+    {
+        try
+        {
+            var snapshot = CaptureStateSnapshot();
+            await _statePersistence.SaveAsync(snapshot);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[StatePersistence] Timer save failed: {ex}");
+        }
+    }
+
+    private static Dictionary<string, HashSet<ulong>> CloneTicketSetMap(Dictionary<string, HashSet<ulong>> source)
+        => source.ToDictionary(
+            x => x.Key,
+            x => new HashSet<ulong>(x.Value),
+            StringComparer.Ordinal);
+
+    private static PendingOpenRequestDto ToDto(PendingOpenRequest x)
+        => new(
+            x.PairId,
+            x.TradeMapName,
+            x.Symbol,
+            x.TradeType,
+            x.Volume,
+            x.ExpectedPrice,
+            x.HoldingSeconds,
+            x.AppOpenRequestTimeLocal,
+            x.AppOpenRequestUnixMs,
+            x.AppOpenRequestRawMs,
+            x.IsAutoFlow,
+            x.SlotNumber,
+            x.ExchangeLabel);
+
+    private static PendingOpenRequest ToDomain(PendingOpenRequestDto x)
+        => new(
+            x.PairId,
+            x.TradeMapName,
+            x.Symbol,
+            x.TradeType,
+            x.Volume,
+            x.ExpectedPrice,
+            x.HoldingSeconds,
+            x.AppOpenRequestTimeLocal,
+            x.AppOpenRequestUnixMs,
+            x.AppOpenRequestRawMs,
+            x.IsAutoFlow,
+            x.SlotNumber,
+            x.ExchangeLabel);
+
+    private static PendingCloseRequestDto ToDto(PendingCloseRequest x)
+        => new(
+            x.PairId,
+            x.TradeMapName,
+            x.Ticket,
+            x.Symbol,
+            x.TradeType,
+            x.Volume,
+            x.ExpectedPrice,
+            x.AppCloseRequestTimeLocal,
+            x.AppCloseRequestUnixMs,
+            x.AppCloseRequestRawMs,
+            x.IsAutoFlow,
+            x.SlotNumber,
+            x.ExchangeLabel);
+
+    private static PendingCloseRequest ToDomain(PendingCloseRequestDto x)
+        => new(
+            x.PairId,
+            x.TradeMapName,
+            x.Ticket,
+            x.Symbol,
+            x.TradeType,
+            x.Volume,
+            x.ExpectedPrice,
+            x.AppCloseRequestTimeLocal,
+            x.AppCloseRequestUnixMs,
+            x.AppCloseRequestRawMs,
+            x.IsAutoFlow,
+            x.SlotNumber,
+            x.ExchangeLabel);
+
+    private static PendingOpenPairDto ToDto(PendingOpenPairState x)
+        => new()
+        {
+            PairId = x.PairId,
+            IsAutoFlow = x.IsAutoFlow,
+            SlotNumber = x.SlotNumber,
+            CreatedAtLocal = x.CreatedAtLocal,
+            OpenPendingTimeoutMs = x.OpenPendingTimeoutMs,
+            OpenConfirmedA = x.OpenConfirmedA,
+            OpenConfirmedB = x.OpenConfirmedB,
+            OpenedTicketA = x.OpenedTicketA,
+            OpenedTicketB = x.OpenedTicketB,
+            TradeMapNameA = x.TradeMapNameA,
+            TradeMapNameB = x.TradeMapNameB,
+            TradeTypeA = x.TradeTypeA,
+            TradeTypeB = x.TradeTypeB,
+            SymbolA = x.SymbolA,
+            SymbolB = x.SymbolB,
+            VolumeA = x.VolumeA,
+            VolumeB = x.VolumeB,
+            TimeoutCloseTriggered = x.TimeoutCloseTriggered,
+            TimeoutRecheckPending = x.TimeoutRecheckPending,
+            TimeoutRecheckRequestedAtLocal = x.TimeoutRecheckRequestedAtLocal,
+            IsResolved = x.IsResolved
+        };
+
+    private static PendingOpenPairState ToDomain(PendingOpenPairDto x)
+        => new()
+        {
+            PairId = x.PairId,
+            IsAutoFlow = x.IsAutoFlow,
+            SlotNumber = x.SlotNumber,
+            CreatedAtLocal = x.CreatedAtLocal,
+            OpenPendingTimeoutMs = x.OpenPendingTimeoutMs,
+            OpenConfirmedA = x.OpenConfirmedA,
+            OpenConfirmedB = x.OpenConfirmedB,
+            OpenedTicketA = x.OpenedTicketA,
+            OpenedTicketB = x.OpenedTicketB,
+            TradeMapNameA = x.TradeMapNameA,
+            TradeMapNameB = x.TradeMapNameB,
+            TradeTypeA = x.TradeTypeA,
+            TradeTypeB = x.TradeTypeB,
+            SymbolA = x.SymbolA,
+            SymbolB = x.SymbolB,
+            VolumeA = x.VolumeA,
+            VolumeB = x.VolumeB,
+            TimeoutCloseTriggered = x.TimeoutCloseTriggered,
+            TimeoutRecheckPending = x.TimeoutRecheckPending,
+            TimeoutRecheckRequestedAtLocal = x.TimeoutRecheckRequestedAtLocal,
+            IsResolved = x.IsResolved
+        };
+
+    private static PendingClosePairDto ToDto(PendingClosePairState x)
+        => new()
+        {
+            PairId = x.PairId,
+            IsAutoFlow = x.IsAutoFlow,
+            SlotNumber = x.SlotNumber,
+            CreatedAtLocal = x.CreatedAtLocal,
+            LastCheckedAtLocal = x.LastCheckedAtLocal,
+            ClosePendingTimeoutMs = x.ClosePendingTimeoutMs,
+            RetryChecks = x.RetryChecks,
+            ExhaustedLogged = x.ExhaustedLogged,
+            IsResolved = x.IsResolved,
+            CloseConfirmedA = x.CloseConfirmedA,
+            CloseConfirmedB = x.CloseConfirmedB,
+            TradeMapNameA = x.TradeMapNameA,
+            TradeMapNameB = x.TradeMapNameB,
+            PlatformA = x.PlatformA?.ToString(),
+            PlatformB = x.PlatformB?.ToString(),
+            TradeHwndA = x.TradeHwndA,
+            TradeHwndB = x.TradeHwndB,
+            TicketA = x.TicketA,
+            TicketB = x.TicketB,
+            TradeTypeA = x.TradeTypeA,
+            TradeTypeB = x.TradeTypeB,
+            SymbolA = x.SymbolA,
+            SymbolB = x.SymbolB,
+            VolumeA = x.VolumeA,
+            VolumeB = x.VolumeB
+        };
+
+    private static PendingClosePairState ToDomain(PendingClosePairDto x)
+        => new()
+        {
+            PairId = x.PairId,
+            IsAutoFlow = x.IsAutoFlow,
+            SlotNumber = x.SlotNumber,
+            CreatedAtLocal = x.CreatedAtLocal,
+            LastCheckedAtLocal = x.LastCheckedAtLocal,
+            ClosePendingTimeoutMs = x.ClosePendingTimeoutMs,
+            RetryChecks = x.RetryChecks,
+            ExhaustedLogged = x.ExhaustedLogged,
+            IsResolved = x.IsResolved,
+            CloseConfirmedA = x.CloseConfirmedA,
+            CloseConfirmedB = x.CloseConfirmedB,
+            TradeMapNameA = x.TradeMapNameA,
+            TradeMapNameB = x.TradeMapNameB,
+            PlatformA = ParseTradeLegPlatform(x.PlatformA),
+            PlatformB = ParseTradeLegPlatform(x.PlatformB),
+            TradeHwndA = x.TradeHwndA,
+            TradeHwndB = x.TradeHwndB,
+            TicketA = x.TicketA,
+            TicketB = x.TicketB,
+            TradeTypeA = x.TradeTypeA,
+            TradeTypeB = x.TradeTypeB,
+            SymbolA = x.SymbolA,
+            SymbolB = x.SymbolB,
+            VolumeA = x.VolumeA,
+            VolumeB = x.VolumeB
+        };
+
+    private static ActiveAutoCycleDto? ToDto(ActiveAutoCycleState? x)
+        => x is null ? null : new ActiveAutoCycleDto(x.Slot, x.OpenedAtLocal, x.PairIdA, x.PairIdB, x.TicketA, x.TicketB);
+
+    private static ActiveAutoCycleState? ToDomain(ActiveAutoCycleDto? x)
+        => x is null
+            ? null
+            : new ActiveAutoCycleState
+            {
+                Slot = x.Slot,
+                OpenedAtLocal = x.OpenedAtLocal,
+                PairIdA = x.PairIdA,
+                PairIdB = x.PairIdB,
+                TicketA = x.TicketA,
+                TicketB = x.TicketB
+            };
+
+    private static TradeLegPlatform? ParseTradeLegPlatform(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return Enum.TryParse<TradeLegPlatform>(value, ignoreCase: true, out var parsed)
+            ? parsed
+            : null;
+    }
+
+    private static void Replace<TKey, TValue>(Dictionary<TKey, TValue> target, Dictionary<TKey, TValue> source)
+        where TKey : notnull
+    {
+        target.Clear();
+        foreach (var kv in source)
+        {
+            target[kv.Key] = kv.Value;
+        }
     }
 
     private bool TryAllowAutoOpenByToggle(GapSignalTriggerResult trigger, out string blockedReason)

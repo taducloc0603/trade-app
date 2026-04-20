@@ -2,6 +2,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using TradeDesktop.Application.Abstractions;
 using TradeDesktop.Infrastructure.MarketData;
+using TradeDesktop.Infrastructure.Persistence;
 using TradeDesktop.Infrastructure.Signals;
 using TradeDesktop.Infrastructure.SharedMemory;
 using TradeDesktop.Infrastructure.Supabase;
@@ -19,6 +20,7 @@ public static class DependencyInjection
         services.AddSingleton<IExchangePairReader>(sp => sp.GetRequiredService<ISharedMemoryReader>());
         services.AddSingleton<ITradesSharedMemoryReader, TradesSharedMemoryReader>();
         services.AddSingleton<IHistorySharedMemoryReader, HistorySharedMemoryReader>();
+        services.AddSingleton<IStatePersistence, JsonStatePersistence>();
         services.AddSingleton<MockSharedMemoryMarketDataReader>();
         services.AddSingleton<ISignalEngine, SimpleSignalEngine>();
         services.AddHttpClient();

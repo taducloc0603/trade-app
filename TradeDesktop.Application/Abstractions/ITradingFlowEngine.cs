@@ -14,6 +14,9 @@ public interface ITradingFlowEngine
     int CurrentOpenQualifyingCount { get; }
     int CurrentCloseQualifyingCount { get; }
 
+    FlowSnapshot ExportState();
+    void RestoreState(FlowSnapshot snapshot);
+
     GapSignalTriggerResult? ProcessSnapshot(
         GapSignalSnapshot snapshot,
         GapSignalConfirmationConfig config);
