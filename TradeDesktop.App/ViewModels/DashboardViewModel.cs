@@ -52,6 +52,7 @@ public sealed class DashboardViewModel : ObservableObject
     private int _manualSlot;
     private int _autoSlot;
     private int _autoOpenInFlight;
+    private int _autoCloseInFlight;
     private DateTimeOffset? _lastAutoOpenClickAtLocal;
     private const int AutoOpenDebounceMs = 1500;
     private int _closeBothFlatPollStreak;
@@ -838,13 +839,14 @@ public sealed class DashboardViewModel : ObservableObject
             return;
         }
 
+        var slot = _autoSlot;
+        var appOpenRequestRawMs = Environment.TickCount64;
+        var pairId = BuildPairId(slot, appOpenRequestRawMs, isAutoFlow: true);
+
         try
         {
             var (_, hwndColumn) = _runtimeConfigState.GetRandomManualHwndColumn();
             var appOpenRequestTimeLocal = DateTimeOffset.Now;
-            var appOpenRequestRawMs = Environment.TickCount64;
-            var slot = _autoSlot;
-            var pairId = BuildPairId(slot, appOpenRequestRawMs, isAutoFlow: true);
 
             if (HasUnresolvedAutoPendingOpenCycle(out var blockingPairId))
             {
@@ -882,9 +884,15 @@ public sealed class DashboardViewModel : ObservableObject
             }
 
             BeginActiveAutoCycle(slot, appOpenRequestTimeLocal, appOpenRequestRawMs);
-            _lastAutoOpenClickAtLocal = DateTimeOffset.Now;
 
             _openConfirmBySlot.Remove(slot);
+
+            // Capture pending request BEFORE executing click to avoid race with shared-memory polling.
+            // Keep this before debounce timestamp assignment as defensive ordering.
+            CapturePendingOpenRequestFromTrigger(TradeTab.LeftPanel.TargetMapName, trigger, isExchangeA: true, tradeType: 0, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
+            CapturePendingOpenRequestFromTrigger(TradeTab.RightPanel.TargetMapName, trigger, isExchangeA: false, tradeType: 1, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
+
+            _lastAutoOpenClickAtLocal = DateTimeOffset.Now;
 
             var delayOpenAMs = Math.Max(0, _runtimeConfigState.CurrentDelayOpenAMs);
             var delayOpenBMs = Math.Max(0, _runtimeConfigState.CurrentDelayOpenBMs);
@@ -895,10 +903,6 @@ public sealed class DashboardViewModel : ObservableObject
                 SignalLogItems.Insert(0,
                     $"    - [{DateTime.Now:HH:mm:ss.fff}] Time delay open B {delayOpenBMs} ms khi open ở sàn B");
             });
-
-            // Capture pending request BEFORE executing click to avoid race with shared-memory polling.
-            CapturePendingOpenRequestFromTrigger(TradeTab.LeftPanel.TargetMapName, trigger, isExchangeA: true, tradeType: 0, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
-            CapturePendingOpenRequestFromTrigger(TradeTab.RightPanel.TargetMapName, trigger, isExchangeA: false, tradeType: 1, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
 
             var openResult = await _tradeExecutionRouter.OpenPairAsync(
                 new TradeOpenPairRequest(
@@ -940,6 +944,17 @@ public sealed class DashboardViewModel : ObservableObject
                 _autoSlot++;
             });
         }
+        catch
+        {
+            // Cleanup when router throws to avoid stale pending cycle blocking next opens.
+            _lastAutoOpenClickAtLocal = null;
+            if (_pendingOpenPairById.TryGetValue(pairId, out var state))
+            {
+                state.IsResolved = true;
+            }
+
+            throw;
+        }
         finally
         {
             Interlocked.Exchange(ref _autoOpenInFlight, 0);
@@ -968,13 +983,14 @@ public sealed class DashboardViewModel : ObservableObject
             return;
         }
 
+        var slot = _autoSlot;
+        var appOpenRequestRawMs = Environment.TickCount64;
+        var pairId = BuildPairId(slot, appOpenRequestRawMs, isAutoFlow: true);
+
         try
         {
             var (_, hwndColumn) = _runtimeConfigState.GetRandomManualHwndColumn();
             var appOpenRequestTimeLocal = DateTimeOffset.Now;
-            var appOpenRequestRawMs = Environment.TickCount64;
-            var slot = _autoSlot;
-            var pairId = BuildPairId(slot, appOpenRequestRawMs, isAutoFlow: true);
 
             if (HasUnresolvedAutoPendingOpenCycle(out var blockingPairId))
             {
@@ -1012,9 +1028,15 @@ public sealed class DashboardViewModel : ObservableObject
             }
 
             BeginActiveAutoCycle(slot, appOpenRequestTimeLocal, appOpenRequestRawMs);
-            _lastAutoOpenClickAtLocal = DateTimeOffset.Now;
 
             _openConfirmBySlot.Remove(slot);
+
+            // Capture pending request BEFORE executing click to avoid race with shared-memory polling.
+            // Keep this before debounce timestamp assignment as defensive ordering.
+            CapturePendingOpenRequestFromTrigger(TradeTab.LeftPanel.TargetMapName, trigger, isExchangeA: true, tradeType: 1, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
+            CapturePendingOpenRequestFromTrigger(TradeTab.RightPanel.TargetMapName, trigger, isExchangeA: false, tradeType: 0, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
+
+            _lastAutoOpenClickAtLocal = DateTimeOffset.Now;
 
             var delayOpenAMs = Math.Max(0, _runtimeConfigState.CurrentDelayOpenAMs);
             var delayOpenBMs = Math.Max(0, _runtimeConfigState.CurrentDelayOpenBMs);
@@ -1025,10 +1047,6 @@ public sealed class DashboardViewModel : ObservableObject
                 SignalLogItems.Insert(0,
                     $"    - [{DateTime.Now:HH:mm:ss.fff}] Time delay open B {delayOpenBMs} ms khi open ở sàn B");
             });
-
-            // Capture pending request BEFORE executing click to avoid race with shared-memory polling.
-            CapturePendingOpenRequestFromTrigger(TradeTab.LeftPanel.TargetMapName, trigger, isExchangeA: true, tradeType: 1, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
-            CapturePendingOpenRequestFromTrigger(TradeTab.RightPanel.TargetMapName, trigger, isExchangeA: false, tradeType: 0, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
 
             var openResult = await _tradeExecutionRouter.OpenPairAsync(
                 new TradeOpenPairRequest(
@@ -1070,6 +1088,17 @@ public sealed class DashboardViewModel : ObservableObject
                 _autoSlot++;
             });
         }
+        catch
+        {
+            // Cleanup when router throws to avoid stale pending cycle blocking next opens.
+            _lastAutoOpenClickAtLocal = null;
+            if (_pendingOpenPairById.TryGetValue(pairId, out var state))
+            {
+                state.IsResolved = true;
+            }
+
+            throw;
+        }
         finally
         {
             Interlocked.Exchange(ref _autoOpenInFlight, 0);
@@ -1078,141 +1107,158 @@ public sealed class DashboardViewModel : ObservableObject
 
     private async Task AutoCloseOrderAsync(GapSignalTriggerResult trigger)
     {
-        var slot = Math.Max(0, _autoSlot - 1);
-        _closeConfirmBySlot.Remove(slot);
-        var selectA = SelectCloseCandidateForExchange(
-            exchangeLabel: "A",
-            tradeMapName: TradeTab.LeftPanel.TargetMapName,
-            tradeHwnd: _runtimeConfigState.CurrentTradeHwndA);
-
-        var selectB = SelectCloseCandidateForExchange(
-            exchangeLabel: "B",
-            tradeMapName: TradeTab.RightPanel.TargetMapName,
-            tradeHwnd: _runtimeConfigState.CurrentTradeHwndB);
-
-        var appCloseRequestTimeLocal = DateTimeOffset.Now;
-        var appCloseRequestRawMs = Environment.TickCount64;
-        _activeAutoCloseRecoveryCycle = BuildActiveCloseRecoveryCycle(slot, selectA, selectB);
-        var delayCloseAMs = Math.Max(0, _runtimeConfigState.CurrentDelayCloseAMs);
-        var delayCloseBMs = Math.Max(0, _runtimeConfigState.CurrentDelayCloseBMs);
-
-        System.Windows.Application.Current.Dispatcher.Invoke(() =>
+        if (Interlocked.CompareExchange(ref _autoCloseInFlight, 1, 0) != 0)
         {
-            SignalLogItems.Insert(0,
-                $"    - [{DateTime.Now:HH:mm:ss.fff}] Time delay close A {delayCloseAMs} ms khi close ở sàn A");
-            SignalLogItems.Insert(0,
-                $"    - [{DateTime.Now:HH:mm:ss.fff}] Time delay close B {delayCloseBMs} ms khi close ở sàn B");
-        });
-
-        // Capture pending request BEFORE executing close to avoid race with shared-memory polling.
-        CapturePendingCloseRequestFromTrigger(selectA, trigger, isExchangeA: true, appCloseRequestTimeLocal, appCloseRequestRawMs, slot);
-        CapturePendingCloseRequestFromTrigger(selectB, trigger, isExchangeA: false, appCloseRequestTimeLocal, appCloseRequestRawMs, slot);
-
-        var closeResult = await _tradeExecutionRouter.ClosePairAsync(
-            new TradeClosePairRequest(
-                LegA: selectA.Request is null
-                    ? null
-                    : new TradeCloseLegRequest(
-                        Exchange: selectA.Request.Exchange,
-                        Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformA),
-                        TradeHwnd: selectA.Request.TradeHwnd,
-                        Ticket: selectA.Request.Ticket,
-                        Action: TradeLegAction.Close,
-                        DelayMs: delayCloseAMs,
-                        RowIndex: selectA.Request.RowIndex),
-                LegB: selectB.Request is null
-                    ? null
-                    : new TradeCloseLegRequest(
-                        Exchange: selectB.Request.Exchange,
-                        Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformB),
-                        TradeHwnd: selectB.Request.TradeHwnd,
-                        Ticket: selectB.Request.Ticket,
-                        Action: TradeLegAction.Close,
-                        DelayMs: delayCloseBMs,
-                        RowIndex: selectB.Request.RowIndex)));
-
-        var hadCloseCandidateA = selectA.Request is not null;
-        var hadCloseCandidateB = selectB.Request is not null;
-        var hadCloseCandidateBoth = hadCloseCandidateA && hadCloseCandidateB;
-
-        var successByExchange = closeResult.Legs
-            .GroupBy(x => x.Exchange, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => g.Any(x => x.Success), StringComparer.OrdinalIgnoreCase);
-
-        var closeSuccessA = !hadCloseCandidateA
-            || (successByExchange.TryGetValue("A", out var successA) && successA);
-        var closeSuccessB = !hadCloseCandidateB
-            || (successByExchange.TryGetValue("B", out var successB) && successB);
-        var hasCloseSuccessBoth = hadCloseCandidateBoth && closeSuccessA && closeSuccessB;
-
-        var reconcileTradeLeft = _tradesSharedMemoryReader.ReadTrades(TradeTab.LeftPanel.TargetMapName);
-        var reconcileTradeRight = _tradesSharedMemoryReader.ReadTrades(TradeTab.RightPanel.TargetMapName);
-        var pairState = GetLivePairTradeState(reconcileTradeLeft, reconcileTradeRight);
-        var immediateFlatObserved = false;
-
-        if (pairState == LivePairTradeState.BothFlat
-            && IsActiveCloseRecoveryCycleClosed(reconcileTradeLeft, reconcileTradeRight, out _))
-        {
-            // Hardening: do NOT finalize close immediately from a single MMF read.
-            // Prime streak and wait polling to confirm stable BothFlat.
-            _closeBothFlatPollStreak = Math.Max(_closeBothFlatPollStreak, 1);
-            immediateFlatObserved = true;
-        }
-        else
-        {
-            _closeBothFlatPollStreak = 0;
+            System.Windows.Application.Current.Dispatcher.Invoke(() =>
+            {
+                SignalLogItems.Insert(0,
+                    $"    - [{DateTime.Now:HH:mm:ss.fff}] Close blocked: another auto-close is in flight");
+            });
+            return;
         }
 
-        System.Windows.Application.Current.Dispatcher.Invoke(() =>
+        try
         {
-            // Phase 1 Auto Close log
-            var now = DateTime.Now;
-            var isCloseBuy = trigger.TriggerType is GapSignalTriggerType.CloseByGapBuy;
-            var triggerGapLabel = isCloseBuy ? "Gap BUY" : "Gap SELL";
-            var triggerLastGap = isCloseBuy ? trigger.LastBuyGap : trigger.LastSellGap;
-            var triggerAllGaps = isCloseBuy ? trigger.BuyGaps : trigger.SellGaps;
+            var slot = Math.Max(0, _autoSlot - 1);
+            _closeConfirmBySlot.Remove(slot);
+            var selectA = SelectCloseCandidateForExchange(
+                exchangeLabel: "A",
+                tradeMapName: TradeTab.LeftPanel.TargetMapName,
+                tradeHwnd: _runtimeConfigState.CurrentTradeHwndA);
 
-            if (selectA.TradeType.HasValue
-                && closeSuccessA)
+            var selectB = SelectCloseCandidateForExchange(
+                exchangeLabel: "B",
+                tradeMapName: TradeTab.RightPanel.TargetMapName,
+                tradeHwnd: _runtimeConfigState.CurrentTradeHwndB);
+
+            var appCloseRequestTimeLocal = DateTimeOffset.Now;
+            var appCloseRequestRawMs = Environment.TickCount64;
+            _activeAutoCloseRecoveryCycle = BuildActiveCloseRecoveryCycle(slot, selectA, selectB);
+            var delayCloseAMs = Math.Max(0, _runtimeConfigState.CurrentDelayCloseAMs);
+            var delayCloseBMs = Math.Max(0, _runtimeConfigState.CurrentDelayCloseBMs);
+
+            System.Windows.Application.Current.Dispatcher.Invoke(() =>
             {
-                var isBuyA = selectA.TradeType.Value == 0;
-                var typeA = SignalLogFormatter.TradeTypeString(selectA.TradeType.Value);
-                var symbolA = selectA.Symbol ?? "-";
-                var closePriceA = SignalLogFormatter.ResolveClosePrice(
-                    _runtimeConfigState.CurrentDashboardMetrics?.ExchangeA.Bid,
-                    _runtimeConfigState.CurrentDashboardMetrics?.ExchangeA.Ask,
-                    isBuyA);
-                SignalLogItems.Insert(0, SignalLogFormatter.FormatAutoClose(now, slot, "A", typeA, symbolA, closePriceA, triggerGapLabel, triggerLastGap, triggerAllGaps));
+                SignalLogItems.Insert(0,
+                    $"    - [{DateTime.Now:HH:mm:ss.fff}] Time delay close A {delayCloseAMs} ms khi close ở sàn A");
+                SignalLogItems.Insert(0,
+                    $"    - [{DateTime.Now:HH:mm:ss.fff}] Time delay close B {delayCloseBMs} ms khi close ở sàn B");
+            });
+
+            // Capture pending request BEFORE executing close to avoid race with shared-memory polling.
+            CapturePendingCloseRequestFromTrigger(selectA, trigger, isExchangeA: true, appCloseRequestTimeLocal, appCloseRequestRawMs, slot);
+            CapturePendingCloseRequestFromTrigger(selectB, trigger, isExchangeA: false, appCloseRequestTimeLocal, appCloseRequestRawMs, slot);
+
+            var closeResult = await _tradeExecutionRouter.ClosePairAsync(
+                new TradeClosePairRequest(
+                    LegA: selectA.Request is null
+                        ? null
+                        : new TradeCloseLegRequest(
+                            Exchange: selectA.Request.Exchange,
+                            Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformA),
+                            TradeHwnd: selectA.Request.TradeHwnd,
+                            Ticket: selectA.Request.Ticket,
+                            Action: TradeLegAction.Close,
+                            DelayMs: delayCloseAMs,
+                            RowIndex: selectA.Request.RowIndex),
+                    LegB: selectB.Request is null
+                        ? null
+                        : new TradeCloseLegRequest(
+                            Exchange: selectB.Request.Exchange,
+                            Platform: ResolveTradeLegPlatform(_runtimeConfigState.CurrentPlatformB),
+                            TradeHwnd: selectB.Request.TradeHwnd,
+                            Ticket: selectB.Request.Ticket,
+                            Action: TradeLegAction.Close,
+                            DelayMs: delayCloseBMs,
+                            RowIndex: selectB.Request.RowIndex)));
+
+            var hadCloseCandidateA = selectA.Request is not null;
+            var hadCloseCandidateB = selectB.Request is not null;
+            var hadCloseCandidateBoth = hadCloseCandidateA && hadCloseCandidateB;
+
+            var successByExchange = closeResult.Legs
+                .GroupBy(x => x.Exchange, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.Any(x => x.Success), StringComparer.OrdinalIgnoreCase);
+
+            var closeSuccessA = !hadCloseCandidateA
+                || (successByExchange.TryGetValue("A", out var successA) && successA);
+            var closeSuccessB = !hadCloseCandidateB
+                || (successByExchange.TryGetValue("B", out var successB) && successB);
+            var hasCloseSuccessBoth = hadCloseCandidateBoth && closeSuccessA && closeSuccessB;
+
+            var reconcileTradeLeft = _tradesSharedMemoryReader.ReadTrades(TradeTab.LeftPanel.TargetMapName);
+            var reconcileTradeRight = _tradesSharedMemoryReader.ReadTrades(TradeTab.RightPanel.TargetMapName);
+            var pairState = GetLivePairTradeState(reconcileTradeLeft, reconcileTradeRight);
+            var immediateFlatObserved = false;
+
+            if (pairState == LivePairTradeState.BothFlat
+                && IsActiveCloseRecoveryCycleClosed(reconcileTradeLeft, reconcileTradeRight, out _))
+            {
+                // Hardening: do NOT finalize close immediately from a single MMF read.
+                // Prime streak and wait polling to confirm stable BothFlat.
+                _closeBothFlatPollStreak = Math.Max(_closeBothFlatPollStreak, 1);
+                immediateFlatObserved = true;
+            }
+            else
+            {
+                _closeBothFlatPollStreak = 0;
             }
 
-            if (selectB.TradeType.HasValue
-                && closeSuccessB)
+            System.Windows.Application.Current.Dispatcher.Invoke(() =>
             {
-                var isBuyB = selectB.TradeType.Value == 0;
-                var typeB = SignalLogFormatter.TradeTypeString(selectB.TradeType.Value);
-                var symbolB = selectB.Symbol ?? "-";
-                var closePriceB = SignalLogFormatter.ResolveClosePrice(
-                    _runtimeConfigState.CurrentDashboardMetrics?.ExchangeB.Bid,
-                    _runtimeConfigState.CurrentDashboardMetrics?.ExchangeB.Ask,
-                    isBuyB);
-                SignalLogItems.Insert(0, SignalLogFormatter.FormatAutoClose(now, slot, "B", typeB, symbolB, closePriceB, triggerGapLabel, triggerLastGap, triggerAllGaps));
-            }
+                // Phase 1 Auto Close log
+                var now = DateTime.Now;
+                var isCloseBuy = trigger.TriggerType is GapSignalTriggerType.CloseByGapBuy;
+                var triggerGapLabel = isCloseBuy ? "Gap BUY" : "Gap SELL";
+                var triggerLastGap = isCloseBuy ? trigger.LastBuyGap : trigger.LastSellGap;
+                var triggerAllGaps = isCloseBuy ? trigger.BuyGaps : trigger.SellGaps;
 
-            AppendCloseSelectionDiagnostics(selectA, selectB);
+                if (selectA.TradeType.HasValue
+                    && closeSuccessA)
+                {
+                    var isBuyA = selectA.TradeType.Value == 0;
+                    var typeA = SignalLogFormatter.TradeTypeString(selectA.TradeType.Value);
+                    var symbolA = selectA.Symbol ?? "-";
+                    var closePriceA = SignalLogFormatter.ResolveClosePrice(
+                        _runtimeConfigState.CurrentDashboardMetrics?.ExchangeA.Bid,
+                        _runtimeConfigState.CurrentDashboardMetrics?.ExchangeA.Ask,
+                        isBuyA);
+                    SignalLogItems.Insert(0, SignalLogFormatter.FormatAutoClose(now, slot, "A", typeA, symbolA, closePriceA, triggerGapLabel, triggerLastGap, triggerAllGaps));
+                }
 
-            LogFlowRecoveryState(
-                pairState,
-                context: "Auto close reconcile",
-                hadCloseCandidateA,
-                hadCloseCandidateB,
-                closeSuccessA,
-                closeSuccessB,
-                hasCloseSuccessBoth,
-                immediateFlatObserved);
+                if (selectB.TradeType.HasValue
+                    && closeSuccessB)
+                {
+                    var isBuyB = selectB.TradeType.Value == 0;
+                    var typeB = SignalLogFormatter.TradeTypeString(selectB.TradeType.Value);
+                    var symbolB = selectB.Symbol ?? "-";
+                    var closePriceB = SignalLogFormatter.ResolveClosePrice(
+                        _runtimeConfigState.CurrentDashboardMetrics?.ExchangeB.Bid,
+                        _runtimeConfigState.CurrentDashboardMetrics?.ExchangeB.Ask,
+                        isBuyB);
+                    SignalLogItems.Insert(0, SignalLogFormatter.FormatAutoClose(now, slot, "B", typeB, symbolB, closePriceB, triggerGapLabel, triggerLastGap, triggerAllGaps));
+                }
 
-            OnPropertyChanged(nameof(CurrentPositionText));
-            OnPropertyChanged(nameof(CurrentPhaseText));
-        });
+                AppendCloseSelectionDiagnostics(selectA, selectB);
+
+                LogFlowRecoveryState(
+                    pairState,
+                    context: "Auto close reconcile",
+                    hadCloseCandidateA,
+                    hadCloseCandidateB,
+                    closeSuccessA,
+                    closeSuccessB,
+                    hasCloseSuccessBoth,
+                    immediateFlatObserved);
+
+                OnPropertyChanged(nameof(CurrentPositionText));
+                OnPropertyChanged(nameof(CurrentPhaseText));
+            });
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _autoCloseInFlight, 0);
+        }
     }
 
     private void CapturePendingOpenRequestFromTrigger(
@@ -1944,6 +1990,7 @@ public sealed class DashboardViewModel : ObservableObject
         _isManualOpenInFlight = false;
         _manualOpenGatePairState = LivePairTradeState.MapUnavailableOrParseError;
         _lastAutoOpenClickAtLocal = null;
+        _autoCloseInFlight = 0;
         _isAutoOpenPausedByInvariant = false;
         _invariantClearStreak = 0;
         _activeAutoCycle = null;
