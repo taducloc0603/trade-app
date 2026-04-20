@@ -2,9 +2,10 @@ namespace TradeDesktop.Application.Models;
 
 public sealed record StateSnapshot
 {
-    public int SchemaVersion { get; init; } = 1;
+    public int SchemaVersion { get; init; } = 2;
     public DateTime SavedAtUtc { get; init; }
     public string Hostname { get; init; } = string.Empty;
+    public bool WasTradingLogicEnabled { get; init; }
 
     public FlowSnapshot Flow { get; init; } = new();
     public Dictionary<string, List<PendingOpenRequestDto>> PendingOpenByMap { get; init; } = new(StringComparer.Ordinal);

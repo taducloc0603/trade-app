@@ -76,8 +76,8 @@ public sealed class DashboardViewModel : ObservableObject
     private static readonly TimeSpan OrderInfoPollInterval = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan OpenPartialRecheckDelay = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan StatePersistInterval = TimeSpan.FromSeconds(2);
-    private const int StateSchemaVersion = 1;
-    private const int MaxRestoreAgeSeconds = 120;
+    private const int StateSchemaVersion = 2;
+    private const int MaxRestoreAgeSeconds = 60;
     private const int InvariantPausePersistWindowSeconds = 60;
     private DispatcherTimer? _statePersistTimer;
     private bool _isStatePersistenceStarted;
@@ -4716,6 +4716,7 @@ public sealed class DashboardViewModel : ObservableObject
             SchemaVersion = StateSchemaVersion,
             SavedAtUtc = DateTime.UtcNow,
             Hostname = Environment.MachineName,
+            WasTradingLogicEnabled = IsTradingLogicEnabled,
             Flow = _tradingFlowEngine.ExportState(),
             PendingOpenByMap = _pendingOpenRequestsByMap.ToDictionary(
                 x => x.Key,
@@ -4825,6 +4826,7 @@ public sealed class DashboardViewModel : ObservableObject
         _isAutoOpenPausedByInvariant = snap.Invariant.IsPaused;
         _invariantClearStreak = Math.Max(0, snap.Invariant.ClearStreak);
         _lastInvariantPauseAtUtc = snap.Invariant.PausedAtUtc;
+        IsTradingLogicEnabled = snap.WasTradingLogicEnabled;
 
         SignalLogItems.Insert(0, $"[{DateTime.Now:HH:mm:ss.fff}] State restored from snapshot at {snap.SavedAtUtc:O}");
         if (_isAutoOpenPausedByInvariant)
@@ -4835,6 +4837,7 @@ public sealed class DashboardViewModel : ObservableObject
 
         OnPropertyChanged(nameof(CurrentPositionText));
         OnPropertyChanged(nameof(CurrentPhaseText));
+        RaiseManualOpenCanExecuteChanged();
     }
 
     public async Task ReconcileWithSharedMemoryAsync()

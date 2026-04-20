@@ -96,6 +96,7 @@ public sealed class StatePersistenceTests : IDisposable
         {
             SavedAtUtc = new DateTime(2026, 4, 20, 12, 0, 0, DateTimeKind.Utc),
             Hostname = "TEST-HOST",
+            WasTradingLogicEnabled = true,
             Flow = new FlowSnapshot
             {
                 Phase = TradingFlowPhase.WaitingCloseFromGapBuy,

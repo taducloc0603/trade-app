@@ -18,6 +18,7 @@ namespace TradeDesktop.App;
 public partial class App : System.Windows.Application
 {
     private IHost? _host;
+    private DashboardViewModel? _dashboardViewModel;
     private static readonly object LogLock = new();
     private static bool _fatalDialogShown;
 
@@ -59,10 +60,21 @@ public partial class App : System.Windows.Application
             await _host.StartAsync();
             WriteStartupLog("Host started successfully.");
 
+            _dashboardViewModel = _host.Services.GetRequiredService<DashboardViewModel>();
+            var persistence = _host.Services.GetRequiredService<IStatePersistence>();
+            var snapshot = persistence.Load();
+            if (snapshot is not null)
+            {
+                _dashboardViewModel.RestoreFromSnapshot(snapshot);
+            }
+
             var mainWindow = _host.Services.GetRequiredService<MainWindow>();
             MainWindow = mainWindow;
             mainWindow.Show();
             WriteStartupLog("MainWindow shown.");
+
+            _dashboardViewModel.StartStatePersistence();
+            _ = _dashboardViewModel.ReconcileWithSharedMemoryAsync();
         }
         catch (Exception ex)
         {
@@ -73,6 +85,15 @@ public partial class App : System.Windows.Application
 
     protected override async void OnExit(ExitEventArgs e)
     {
+        try
+        {
+            _dashboardViewModel?.StopStatePersistence();
+        }
+        catch (Exception ex)
+        {
+            WriteStartupLog($"StopStatePersistence failed on exit: {ex}");
+        }
+
         if (_host is not null)
         {
             await _host.StopAsync();
