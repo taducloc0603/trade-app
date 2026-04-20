@@ -52,6 +52,8 @@ public sealed class DashboardViewModel : ObservableObject
     private int _manualSlot;
     private int _autoSlot;
     private int _autoOpenInFlight;
+    private DateTimeOffset? _lastAutoOpenClickAtLocal;
+    private const int AutoOpenDebounceMs = 1500;
     private int _closeBothFlatPollStreak;
     private int _externalPartialCloseStreak = 0;
     private bool _hadBothOpenRecently = false;
@@ -59,6 +61,8 @@ public sealed class DashboardViewModel : ObservableObject
     private const int ExternalPartialCloseStreakRequired = 2;
     private bool _externalPartialCloseInFlight = false;
     private bool _isAutoOpenPausedByInvariant;
+    private int _invariantClearStreak;
+    private const int InvariantClearPollsRequired = 5;
     private ActiveAutoCycleState? _activeAutoCycle;
     private ActiveAutoCycleState? _activeAutoCloseRecoveryCycle;
     private readonly Queue<SignalEntryGuard.PriceHistoryEntry> _priceHistory = new();
@@ -840,6 +844,31 @@ public sealed class DashboardViewModel : ObservableObject
             var appOpenRequestTimeLocal = DateTimeOffset.Now;
             var appOpenRequestRawMs = Environment.TickCount64;
             var slot = _autoSlot;
+            var pairId = BuildPairId(slot, appOpenRequestRawMs, isAutoFlow: true);
+
+            if (HasUnresolvedAutoPendingOpenCycle(out var blockingPairId))
+            {
+                System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                {
+                    SignalLogItems.Insert(0,
+                        $"    - [{DateTime.Now:HH:mm:ss.fff}] Open blocked: pending auto cycle " +
+                        $"{blockingPairId} not yet fully confirmed (waiting MMF for both legs)");
+                });
+                return;
+            }
+
+            if (_lastAutoOpenClickAtLocal.HasValue
+                && (DateTimeOffset.Now - _lastAutoOpenClickAtLocal.Value).TotalMilliseconds < AutoOpenDebounceMs
+                && !HasAnyToolOpenedTicketInLatestResults())
+            {
+                System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                {
+                    SignalLogItems.Insert(0,
+                        $"    - [{DateTime.Now:HH:mm:ss.fff}] Open blocked: debounce window " +
+                        $"({AutoOpenDebounceMs}ms) since last click at {_lastAutoOpenClickAtLocal.Value:HH:mm:ss.fff}");
+                });
+                return;
+            }
 
             var pairState = ComputeToolAwarePairStateForOpenGate(GetLivePairTradeStateStrict());
             if (pairState != LivePairTradeState.BothFlat)
@@ -853,6 +882,7 @@ public sealed class DashboardViewModel : ObservableObject
             }
 
             BeginActiveAutoCycle(slot, appOpenRequestTimeLocal, appOpenRequestRawMs);
+            _lastAutoOpenClickAtLocal = DateTimeOffset.Now;
 
             _openConfirmBySlot.Remove(slot);
 
@@ -870,7 +900,7 @@ public sealed class DashboardViewModel : ObservableObject
             CapturePendingOpenRequestFromTrigger(TradeTab.LeftPanel.TargetMapName, trigger, isExchangeA: true, tradeType: 0, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
             CapturePendingOpenRequestFromTrigger(TradeTab.RightPanel.TargetMapName, trigger, isExchangeA: false, tradeType: 1, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
 
-            await _tradeExecutionRouter.OpenPairAsync(
+            var openResult = await _tradeExecutionRouter.OpenPairAsync(
                 new TradeOpenPairRequest(
                     new TradeOpenLegRequest(
                         Exchange: "A",
@@ -884,6 +914,15 @@ public sealed class DashboardViewModel : ObservableObject
                         ChartHwnd: hwndColumn.ChartHwndB,
                         Action: TradeLegAction.Sell,
                         DelayMs: delayOpenBMs)));
+
+            if (!openResult.Success && openResult.Legs.All(x => !x.Success))
+            {
+                _lastAutoOpenClickAtLocal = null;
+                if (_pendingOpenPairById.TryGetValue(pairId, out var state))
+                {
+                    state.IsResolved = true;
+                }
+            }
 
             System.Windows.Application.Current.Dispatcher.Invoke(() =>
             {
@@ -935,6 +974,31 @@ public sealed class DashboardViewModel : ObservableObject
             var appOpenRequestTimeLocal = DateTimeOffset.Now;
             var appOpenRequestRawMs = Environment.TickCount64;
             var slot = _autoSlot;
+            var pairId = BuildPairId(slot, appOpenRequestRawMs, isAutoFlow: true);
+
+            if (HasUnresolvedAutoPendingOpenCycle(out var blockingPairId))
+            {
+                System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                {
+                    SignalLogItems.Insert(0,
+                        $"    - [{DateTime.Now:HH:mm:ss.fff}] Open blocked: pending auto cycle " +
+                        $"{blockingPairId} not yet fully confirmed (waiting MMF for both legs)");
+                });
+                return;
+            }
+
+            if (_lastAutoOpenClickAtLocal.HasValue
+                && (DateTimeOffset.Now - _lastAutoOpenClickAtLocal.Value).TotalMilliseconds < AutoOpenDebounceMs
+                && !HasAnyToolOpenedTicketInLatestResults())
+            {
+                System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                {
+                    SignalLogItems.Insert(0,
+                        $"    - [{DateTime.Now:HH:mm:ss.fff}] Open blocked: debounce window " +
+                        $"({AutoOpenDebounceMs}ms) since last click at {_lastAutoOpenClickAtLocal.Value:HH:mm:ss.fff}");
+                });
+                return;
+            }
 
             var pairState = ComputeToolAwarePairStateForOpenGate(GetLivePairTradeStateStrict());
             if (pairState != LivePairTradeState.BothFlat)
@@ -948,6 +1012,7 @@ public sealed class DashboardViewModel : ObservableObject
             }
 
             BeginActiveAutoCycle(slot, appOpenRequestTimeLocal, appOpenRequestRawMs);
+            _lastAutoOpenClickAtLocal = DateTimeOffset.Now;
 
             _openConfirmBySlot.Remove(slot);
 
@@ -965,7 +1030,7 @@ public sealed class DashboardViewModel : ObservableObject
             CapturePendingOpenRequestFromTrigger(TradeTab.LeftPanel.TargetMapName, trigger, isExchangeA: true, tradeType: 1, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
             CapturePendingOpenRequestFromTrigger(TradeTab.RightPanel.TargetMapName, trigger, isExchangeA: false, tradeType: 0, appOpenRequestTimeLocal, appOpenRequestRawMs, slot);
 
-            await _tradeExecutionRouter.OpenPairAsync(
+            var openResult = await _tradeExecutionRouter.OpenPairAsync(
                 new TradeOpenPairRequest(
                     new TradeOpenLegRequest(
                         Exchange: "A",
@@ -979,6 +1044,15 @@ public sealed class DashboardViewModel : ObservableObject
                         ChartHwnd: hwndColumn.ChartHwndB,
                         Action: TradeLegAction.Buy,
                         DelayMs: delayOpenBMs)));
+
+            if (!openResult.Success && openResult.Legs.All(x => !x.Success))
+            {
+                _lastAutoOpenClickAtLocal = null;
+                if (_pendingOpenPairById.TryGetValue(pairId, out var state))
+                {
+                    state.IsResolved = true;
+                }
+            }
 
             System.Windows.Application.Current.Dispatcher.Invoke(() =>
             {
@@ -1869,7 +1943,9 @@ public sealed class DashboardViewModel : ObservableObject
         _autoSlot = 0;
         _isManualOpenInFlight = false;
         _manualOpenGatePairState = LivePairTradeState.MapUnavailableOrParseError;
+        _lastAutoOpenClickAtLocal = null;
         _isAutoOpenPausedByInvariant = false;
+        _invariantClearStreak = 0;
         _activeAutoCycle = null;
         _activeAutoCloseRecoveryCycle = null;
         _closeBothFlatPollStreak = 0;
@@ -2105,6 +2181,16 @@ public sealed class DashboardViewModel : ObservableObject
         SharedMapReadResult<TradeSharedRecord> tradeLeftResult,
         SharedMapReadResult<TradeSharedRecord> tradeRightResult)
     {
+        var bothMapsHealthy = tradeLeftResult.IsMapAvailable
+            && tradeLeftResult.IsParseSuccess
+            && tradeRightResult.IsMapAvailable
+            && tradeRightResult.IsParseSuccess;
+
+        if (!bothMapsHealthy)
+        {
+            return;
+        }
+
         // Chỉ đếm lệnh do tool mở — lệnh EA không ảnh hưởng invariant
         var toolRowsA = CountToolOpenedRows(tradeLeftResult);
         var toolRowsB = CountToolOpenedRows(tradeRightResult);
@@ -2113,8 +2199,22 @@ public sealed class DashboardViewModel : ObservableObject
         var hasInvariantViolation = liveAutoPairCount > 1 || toolRowsA > 1 || toolRowsB > 1;
         if (!hasInvariantViolation)
         {
+            if (_isAutoOpenPausedByInvariant)
+            {
+                _invariantClearStreak++;
+                if (_invariantClearStreak >= InvariantClearPollsRequired)
+                {
+                    _isAutoOpenPausedByInvariant = false;
+                    _invariantClearStreak = 0;
+                    SignalLogItems.Insert(0,
+                        $"    - [{DateTime.Now:HH:mm:ss.fff}] Invariant cleared after " +
+                        $"{InvariantClearPollsRequired} stable polls. Auto-open resumed.");
+                }
+            }
             return;
         }
+
+        _invariantClearStreak = 0;
 
         if (_isAutoOpenPausedByInvariant)
         {
@@ -2211,7 +2311,7 @@ public sealed class DashboardViewModel : ObservableObject
             {
                 state.TimeoutRecheckPending = false;
                 state.TimeoutRecheckRequestedAtLocal = null;
-                state.IsResolved = state.OpenConfirmedA && state.OpenConfirmedB;
+                state.IsResolved = true;
                 continue;
             }
 
@@ -2682,6 +2782,36 @@ public sealed class DashboardViewModel : ObservableObject
         var leftRecords = _latestTradeLeftResult?.Records ?? (IReadOnlyList<TradeSharedRecord>)[];
         var rightRecords = _latestTradeRightResult?.Records ?? (IReadOnlyList<TradeSharedRecord>)[];
         return leftRecords.Concat(rightRecords).Any(r => _pairIdByTicket.ContainsKey(r.Ticket));
+    }
+
+    /// <summary>
+    /// Trả về true nếu có ít nhất 1 auto pending open cycle chưa hoàn tất.
+    /// </summary>
+    private bool HasUnresolvedAutoPendingOpenCycle(out string? blockingPairId)
+    {
+        foreach (var state in _pendingOpenPairById.Values)
+        {
+            if (!state.IsAutoFlow)
+            {
+                continue;
+            }
+
+            if (state.IsResolved || state.TimeoutCloseTriggered)
+            {
+                continue;
+            }
+
+            if (state.OpenConfirmedA && state.OpenConfirmedB)
+            {
+                continue;
+            }
+
+            blockingPairId = state.PairId;
+            return true;
+        }
+
+        blockingPairId = null;
+        return false;
     }
 
     /// <summary>

@@ -83,6 +83,8 @@ public sealed class GapCalculatorTests
         public int CurrentDelayOpenBMs => 0;
         public int CurrentDelayCloseAMs => 0;
         public int CurrentDelayCloseBMs => 0;
+        public int CurrentOpenNumberOfQualifyingTimes => 1;
+        public int CurrentCloseNumberOfQualifyingTimes => 1;
         public string CurrentMapName1 => "A";
         public string CurrentMapName2 => "B";
         public DashboardMetrics? CurrentDashboardMetrics => null;

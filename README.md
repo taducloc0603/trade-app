@@ -139,6 +139,28 @@ File: `TradeDesktop.Application/Services/TradingFlowEngine.cs`
 
 => Mục tiêu nghiệp vụ: hạn chế spam lệnh, tránh vào/ra liên tục theo nhiễu ngắn hạn.
 
+### 5.3 Race protection cho auto-open (3 lớp)
+
+Giữa thời điểm tool click open và thời điểm MMF cập nhật ticket vào cache, có thể có độ trễ vài trăm ms đến vài giây. Để đảm bảo **an toàn vốn** và tránh mở chồng, hệ thống dùng 3 lớp bảo vệ:
+
+1. **Layer 1 — Pending Open Cycle Lock (deterministic):**
+   - Trước khi `AutoBuyAsync/AutoSellAsync` mở lệnh mới, hệ thống check `_pendingOpenPairById`.
+   - Nếu tồn tại cycle auto chưa hoàn tất (`!IsResolved && !TimeoutCloseTriggered && !(OpenConfirmedA && OpenConfirmedB)`) thì block open mới.
+2. **Layer 2 — Debounce ngắn sau click (`AutoOpenDebounceMs=1500ms`):**
+   - Backup chống edge-race trong cửa sổ rất ngắn ngay sau click.
+   - Nếu vừa click và MMF chưa phản ánh ticket tool thì block thêm 1 lần mở mới.
+3. **Layer 3 — Invariant watchdog auto-pause + auto-clear:**
+   - Nếu phát hiện vi phạm `toolA>1` hoặc `toolB>1` / nhiều live auto pairs -> pause auto-open.
+   - Tự clear sau `InvariantClearPollsRequired` poll ổn định khi cả 2 map healthy.
+
+### 5.4 Tunable parameters
+
+| Parameter | Default | Vị trí | Ý nghĩa |
+|---|---|---|---|
+| `CurrentOpenPendingTimeMs` | `1000ms` | `RuntimeConfigState` | Timeout cho pending open cycle |
+| `AutoOpenDebounceMs` | `1500ms` | `DashboardViewModel` | Debounce backup sau lần click open gần nhất |
+| `InvariantClearPollsRequired` | `5` polls | `DashboardViewModel` | Số poll ổn định trước khi auto-resume invariant watchdog |
+
 ---
 
 ## 6) Mapping Trigger -> Instruction -> Log
