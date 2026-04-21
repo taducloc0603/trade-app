@@ -4,6 +4,7 @@ public sealed class TradeRowViewModel
 {
     public TradeRowViewModel(
         string stt,
+        bool isDisplayOnly,
         string pairId,
         string timestamp,
         string count,
@@ -22,6 +23,7 @@ public sealed class TradeRowViewModel
         string openExecution)
     {
         Stt = stt;
+        IsDisplayOnly = isDisplayOnly;
         PairId = pairId;
         Timestamp = timestamp;
         Count = count;
@@ -41,6 +43,8 @@ public sealed class TradeRowViewModel
     }
 
     public string Stt { get; }
+    public bool IsDisplayOnly { get; }
+    public string Mode => IsDisplayOnly ? "EXT" : string.Empty;
     public string PairId { get; }
     public string Timestamp { get; }
     public string Count { get; }

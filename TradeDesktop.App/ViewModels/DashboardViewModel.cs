@@ -41,6 +41,8 @@ public sealed class DashboardViewModel : ObservableObject
     private readonly Dictionary<ulong, PendingOpenRequest> _openRequestByTicket = [];
     private readonly Dictionary<ulong, PendingCloseRequest> _closeRequestByTicket = [];
     private readonly Dictionary<ulong, string> _pairIdByTicket = [];
+    private readonly HashSet<ulong> _displayAdoptedTickets = [];
+    private readonly object _displayAdoptedTicketsLock = new();
     private readonly Dictionary<int, OpenConfirmCycleState> _openConfirmBySlot = [];
     private readonly Dictionary<int, CloseConfirmCycleState> _closeConfirmBySlot = [];
     private readonly Dictionary<ulong, double> _openSlippageByTicket = [];
@@ -72,6 +74,7 @@ public sealed class DashboardViewModel : ObservableObject
     private readonly Queue<SignalEntryGuard.PriceHistoryEntry> _priceHistory = new();
     private SharedMapReadResult<TradeSharedRecord>? _latestTradeLeftResult;
     private SharedMapReadResult<TradeSharedRecord>? _latestTradeRightResult;
+    private volatile bool _isInitialReconcileDone;
 
     private static readonly TimeSpan OrderInfoPollInterval = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan OpenPartialRecheckDelay = TimeSpan.FromSeconds(1);
@@ -2165,12 +2168,36 @@ public sealed class DashboardViewModel : ObservableObject
 
         while (await timer.WaitForNextTickAsync(cancellationToken))
         {
+            if (!_isInitialReconcileDone)
+            {
+                continue;
+            }
+
             List<PendingOpenTimeoutAction> timeoutActions = [];
             List<PendingCloseRetryAction> closeRetryActions = [];
             var tradeLeftResult = _tradesSharedMemoryReader.ReadTrades(TradeTab.LeftPanel.TargetMapName);
             var tradeRightResult = _tradesSharedMemoryReader.ReadTrades(TradeTab.RightPanel.TargetMapName);
             var historyLeftResult = _historySharedMemoryReader.ReadHistory(HistoryTab.LeftPanel.TargetMapName);
             var historyRightResult = _historySharedMemoryReader.ReadHistory(HistoryTab.RightPanel.TargetMapName);
+
+            if (tradeLeftResult.IsMapAvailable && tradeLeftResult.IsParseSuccess
+                && tradeRightResult.IsMapAvailable && tradeRightResult.IsParseSuccess)
+            {
+                var liveTickets = new HashSet<ulong>(tradeLeftResult.Records.Select(r => r.Ticket));
+                liveTickets.UnionWith(tradeRightResult.Records.Select(r => r.Ticket));
+
+                lock (_displayAdoptedTicketsLock)
+                {
+                    var staleAdopted = _displayAdoptedTickets
+                        .Where(t => !liveTickets.Contains(t))
+                        .ToList();
+                    foreach (var t in staleAdopted)
+                    {
+                        _displayAdoptedTickets.Remove(t);
+                    }
+                }
+            }
+
             var shouldApplyTradeLeft = ShouldApplyTradeResult(TradeTab.LeftPanel.TargetMapName, tradeLeftResult);
             var shouldApplyTradeRight = ShouldApplyTradeResult(TradeTab.RightPanel.TargetMapName, tradeRightResult);
             var shouldApplyHistoryLeft = ShouldApplyHistoryResult(HistoryTab.LeftPanel.TargetMapName, historyLeftResult);
@@ -3529,9 +3556,13 @@ public sealed class DashboardViewModel : ObservableObject
         }
 
         RegisterOpenExpectedForNewTickets(panel.TargetMapName, result.Records);
-        var appGeneratedRecords = result.Records
-            .Where(x => IsAppGeneratedTicket(x.Ticket))
-            .ToList();
+        List<TradeSharedRecord> appGeneratedRecords;
+        lock (_displayAdoptedTicketsLock)
+        {
+            appGeneratedRecords = result.Records
+                .Where(x => IsAppGeneratedTicket(x.Ticket) || _displayAdoptedTickets.Contains(x.Ticket))
+                .ToList();
+        }
 
         if (appGeneratedRecords.Count == 0)
         {
@@ -3572,6 +3603,11 @@ public sealed class DashboardViewModel : ObservableObject
     {
         foreach (var row in rows)
         {
+            if (row.IsDisplayOnly)
+            {
+                continue;
+            }
+
             if (!int.TryParse(row.Stt, NumberStyles.Integer, CultureInfo.InvariantCulture, out var stt) || stt <= 0)
             {
                 continue;
@@ -3622,9 +3658,13 @@ public sealed class DashboardViewModel : ObservableObject
         }
 
         RegisterCloseExecutionForNewHistoryTickets(panel.TargetMapName, result.Records);
-        var appGeneratedRecords = result.Records
-            .Where(x => IsAppGeneratedTicket(x.Ticket))
-            .ToList();
+        List<HistorySharedRecord> appGeneratedRecords;
+        lock (_displayAdoptedTicketsLock)
+        {
+            appGeneratedRecords = result.Records
+                .Where(x => IsAppGeneratedTicket(x.Ticket) || _displayAdoptedTickets.Contains(x.Ticket))
+                .ToList();
+        }
 
         if (appGeneratedRecords.Count == 0)
         {
@@ -3671,6 +3711,11 @@ public sealed class DashboardViewModel : ObservableObject
     {
         foreach (var row in rows)
         {
+            if (row.IsDisplayOnly)
+            {
+                continue;
+            }
+
             if (!int.TryParse(row.Stt, NumberStyles.Integer, CultureInfo.InvariantCulture, out var stt) || stt <= 0)
             {
                 continue;
@@ -3712,7 +3757,16 @@ public sealed class DashboardViewModel : ObservableObject
         }
 
         var currentTickets = records.Select(r => r.Ticket).ToHashSet();
-        var newRecords = records.Where(r => !knownTickets.Contains(r.Ticket)).OrderBy(r => r.TimeMsc).ToList();
+        List<TradeSharedRecord> newRecords;
+        lock (_displayAdoptedTicketsLock)
+        {
+            newRecords = records
+                .Where(r => !knownTickets.Contains(r.Ticket))
+                .Where(r => !_pairIdByTicket.ContainsKey(r.Ticket))
+                .Where(r => !_displayAdoptedTickets.Contains(r.Ticket))
+                .OrderBy(r => r.TimeMsc)
+                .ToList();
+        }
         var removedTickets = knownTickets.Where(ticket => !currentTickets.Contains(ticket)).ToList();
 
         foreach (var removedTicket in removedTickets)
@@ -3957,11 +4011,13 @@ public sealed class DashboardViewModel : ObservableObject
             var openExecutionMs = _openExecutionMsByTicket.ContainsKey(record.Ticket) ? openExecutionMsValue : (long?)null;
             _openRequestByTicket.TryGetValue(record.Ticket, out var openRequest);
             var pairId = _pairIdByTicket.TryGetValue(record.Ticket, out var value) ? value : "-";
+            var isDisplayOnly = IsDisplayOnlyTicket(record.Ticket);
             var stt = ResolveStt(pairId);
             var tradeOpenSlippage = CalculateTradeOpenSlippage(record, point);
 
             return new TradeRowViewModel(
                 stt: stt,
+                isDisplayOnly: isDisplayOnly,
                 pairId: pairId,
                 timestamp: FormatRawTimestamp(timestamp),
                 count: count.ToString(CultureInfo.InvariantCulture),
@@ -4004,11 +4060,13 @@ public sealed class DashboardViewModel : ObservableObject
             var closeExecutionMs = _closeExecutionMsByTicket.ContainsKey(record.Ticket) ? closeExecutionMsValue : (long?)null;
             _closeRequestByTicket.TryGetValue(record.Ticket, out var closeRequest);
             var pairId = _pairIdByTicket.TryGetValue(record.Ticket, out var value) ? value : "-";
+            var isDisplayOnly = IsDisplayOnlyTicket(record.Ticket);
             var stt = ResolveStt(pairId);
             var historyCloseSlippage = CalculateHistoryCloseSlippage(record, point);
 
             return new HistoryRowViewModel(
                 stt: stt,
+                isDisplayOnly: isDisplayOnly,
                 pairId: pairId,
                 timestamp: FormatRawTimestamp(timestamp),
                 count: count.ToString(CultureInfo.InvariantCulture),
@@ -4047,6 +4105,19 @@ public sealed class DashboardViewModel : ObservableObject
         var next = _nextStt++;
         _sttByPairId[pairId] = next;
         return next.ToString(CultureInfo.InvariantCulture);
+    }
+
+    private bool IsDisplayOnlyTicket(ulong ticket)
+    {
+        if (_pairIdByTicket.ContainsKey(ticket))
+        {
+            return false;
+        }
+
+        lock (_displayAdoptedTicketsLock)
+        {
+            return _displayAdoptedTickets.Contains(ticket);
+        }
     }
 
     private static string FormatOpenExecutionDebug(ulong openEaTimeLocal, long? appOpenRequestRawMs, long? openExecutionMs)

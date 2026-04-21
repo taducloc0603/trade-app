@@ -4,6 +4,7 @@ public sealed class HistoryRowViewModel
 {
     public HistoryRowViewModel(
         string stt,
+        bool isDisplayOnly,
         string pairId,
         string timestamp,
         string count,
@@ -27,6 +28,7 @@ public sealed class HistoryRowViewModel
         string closeExecution)
     {
         Stt = stt;
+        IsDisplayOnly = isDisplayOnly;
         PairId = pairId;
         Timestamp = timestamp;
         Count = count;
@@ -51,6 +53,8 @@ public sealed class HistoryRowViewModel
     }
 
     public string Stt { get; }
+    public bool IsDisplayOnly { get; }
+    public string Mode => IsDisplayOnly ? "EXT" : string.Empty;
     public string PairId { get; }
     public string Timestamp { get; }
     public string Count { get; }
