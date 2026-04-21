@@ -7,6 +7,7 @@ public sealed class TradingFlowEngine(
     IOpenSignalEngine openSignalEngine,
     ICloseSignalEngine closeSignalEngine) : ITradingFlowEngine
 {
+    private const string GapCooldownSkipReason = "GAP_COOLDOWN_ACTIVE";
     private readonly Random _random = new();
     private static readonly TimeSpan SnapshotWallClockTolerance = TimeSpan.FromMinutes(5);
     private bool _isCloseExecutionPending;
@@ -37,11 +38,14 @@ public sealed class TradingFlowEngine(
     public int CurrentWaitSeconds { get; private set; }
     public int CurrentOpenQualifyingCount => _openQualifyingCount;
     public int CurrentCloseQualifyingCount => _closeQualifyingCount;
+    public TradingFlowSkipDiagnostic? LastSkipDiagnostic { get; private set; }
 
     public GapSignalTriggerResult? ProcessSnapshot(
         GapSignalSnapshot snapshot,
         GapSignalConfirmationConfig config)
     {
+        LastSkipDiagnostic = null;
+
         // FIX: cache config hold range cho close-gate fallback
         _lastSeenStartTimeHold = Math.Max(0, config.StartTimeHold);
         _lastSeenEndTimeHold = Math.Max(0, config.EndTimeHold);
@@ -50,6 +54,7 @@ public sealed class TradingFlowEngine(
         ApplyGapSpikeCoolDown(snapshot, config, effectiveNow);
         if (IsGapCoolDownActive(effectiveNow))
         {
+            SetGapCooldownSkipDiagnostic(config, effectiveNow);
             return null;
         }
 
@@ -375,6 +380,22 @@ public sealed class TradingFlowEngine(
 
     private bool IsGapCoolDownActive(DateTime effectiveNow)
         => _gapCoolDownUntilUtc.HasValue && effectiveNow < _gapCoolDownUntilUtc.Value;
+
+    private void SetGapCooldownSkipDiagnostic(
+        GapSignalConfirmationConfig config,
+        DateTime effectiveNow)
+    {
+        var cooldownLeftMs = _gapCoolDownUntilUtc.HasValue
+            ? Math.Max(0, (int)Math.Ceiling((_gapCoolDownUntilUtc.Value - effectiveNow).TotalMilliseconds))
+            : 0;
+
+        LastSkipDiagnostic = new TradingFlowSkipDiagnostic(
+            Reason: GapCooldownSkipReason,
+            Phase: CurrentPhase,
+            CooldownLeftMs: cooldownLeftMs,
+            OpenGapTick: Math.Max(0, config.OpenGapTick),
+            CloseGapTick: Math.Max(0, config.CloseGapTick));
+    }
 
     private static int CalculateAskDeltaPts(decimal? previousAsk, decimal? currentAsk, int pointMultiplier)
     {

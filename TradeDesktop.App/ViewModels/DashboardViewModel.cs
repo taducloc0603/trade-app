@@ -59,7 +59,10 @@ public sealed class DashboardViewModel : ObservableObject
     private int _externalPartialCloseStreak = 0;
     private bool _hadBothOpenRecently = false;
     private string _lastExternalCloseGuardBlockReason = string.Empty;
+    private string _lastSkipSignalLogSignature = string.Empty;
+    private DateTime _lastSkipSignalLogAtUtc;
     private const int ExternalPartialCloseStreakRequired = 2;
+    private const string GapCooldownSkipReason = "GAP_COOLDOWN_ACTIVE";
     private bool _externalPartialCloseInFlight = false;
     private bool _isAutoOpenPausedByInvariant;
     private int _invariantClearStreak;
@@ -72,6 +75,7 @@ public sealed class DashboardViewModel : ObservableObject
 
     private static readonly TimeSpan OrderInfoPollInterval = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan OpenPartialRecheckDelay = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan SkipSignalLogThrottleInterval = TimeSpan.FromMilliseconds(500);
     private const int StableBothFlatPollsRequired = 2;
 
     private sealed record PendingOpenRequest(
@@ -4555,6 +4559,7 @@ public sealed class DashboardViewModel : ObservableObject
 
             if (trigger is null || !trigger.Triggered)
             {
+                TryLogGapCooldownSkipSignal();
                 return;
             }
 
@@ -4653,6 +4658,33 @@ public sealed class DashboardViewModel : ObservableObject
         _tradingFlowEngine.ResetQualifyingCounters();
         SignalLogItems.Insert(0,
             $"[{DateTime.Now:HH:mm:ss.fff}] [RESET QUALIFY] config N changed, counters cleared");
+    }
+
+    private void TryLogGapCooldownSkipSignal()
+    {
+        var diagnostic = _tradingFlowEngine.LastSkipDiagnostic;
+        if (diagnostic is null
+            || !string.Equals(diagnostic.Reason, GapCooldownSkipReason, StringComparison.Ordinal))
+        {
+            _lastSkipSignalLogSignature = string.Empty;
+            return;
+        }
+
+        var signature = $"{diagnostic.Reason}|{diagnostic.Phase}|{diagnostic.OpenGapTick}|{diagnostic.CloseGapTick}";
+        var nowUtc = DateTime.UtcNow;
+        var shouldLog = !string.Equals(_lastSkipSignalLogSignature, signature, StringComparison.Ordinal)
+            || (nowUtc - _lastSkipSignalLogAtUtc) >= SkipSignalLogThrottleInterval;
+
+        if (!shouldLog)
+        {
+            return;
+        }
+
+        _lastSkipSignalLogSignature = signature;
+        _lastSkipSignalLogAtUtc = nowUtc;
+
+        SignalLogItems.Insert(0,
+            $"[{DateTime.Now:HH:mm:ss.fff}] [SKIP SIGNAL] reason={diagnostic.Reason} phase={diagnostic.Phase} cooldown_left_ms={diagnostic.CooldownLeftMs} open_gap_tick={diagnostic.OpenGapTick} close_gap_tick={diagnostic.CloseGapTick}");
     }
 
     private bool TryAllowAutoOpenByToggle(GapSignalTriggerResult trigger, out string blockedReason)

@@ -13,6 +13,7 @@ public interface ITradingFlowEngine
     int CurrentWaitSeconds { get; }
     int CurrentOpenQualifyingCount { get; }
     int CurrentCloseQualifyingCount { get; }
+    TradingFlowSkipDiagnostic? LastSkipDiagnostic { get; }
 
     GapSignalTriggerResult? ProcessSnapshot(
         GapSignalSnapshot snapshot,

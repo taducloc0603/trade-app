@@ -33,6 +33,13 @@ public enum TradingPositionSide
     Sell = 2
 }
 
+public sealed record TradingFlowSkipDiagnostic(
+    string Reason,
+    TradingFlowPhase Phase,
+    int CooldownLeftMs,
+    int OpenGapTick,
+    int CloseGapTick);
+
 public sealed record GapSignalSnapshot(
     DateTime TimestampUtc,
     decimal? ExchangeABid,

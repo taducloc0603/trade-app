@@ -467,6 +467,12 @@ public sealed class TradingFlowEngineTests
 
         // Ask spike on A: abs(2945.40 - 2945.34) * 100 = 6 > open_gap_tick(2) -> cooldown starts.
         Assert.Null(ProcessWithPrices(sut, start.AddMilliseconds(100), 2945.12m, 2945.40m, 2945.56m, 2945.78m, gapBuy: 8, gapSell: null, config, pointMultiplier: 100));
+        Assert.NotNull(sut.LastSkipDiagnostic);
+        Assert.Equal("GAP_COOLDOWN_ACTIVE", sut.LastSkipDiagnostic!.Reason);
+        Assert.Equal(TradingFlowPhase.WaitingOpen, sut.LastSkipDiagnostic.Phase);
+        Assert.True(sut.LastSkipDiagnostic.CooldownLeftMs > 0);
+        Assert.Equal(2, sut.LastSkipDiagnostic.OpenGapTick);
+        Assert.Equal(2, sut.LastSkipDiagnostic.CloseGapTick);
 
         // During cooldown, open signal must still be blocked.
         Assert.Null(ProcessWithPrices(sut, start.AddMilliseconds(1500), 2945.13m, 2945.41m, 2945.56m, 2945.78m, gapBuy: 8, gapSell: null, config, pointMultiplier: 100));
@@ -476,6 +482,7 @@ public sealed class TradingFlowEngineTests
         var open = ProcessWithPrices(sut, start.AddMilliseconds(2200), 2945.14m, 2945.42m, 2945.57m, 2945.79m, gapBuy: 8, gapSell: null, config, pointMultiplier: 100);
         Assert.NotNull(open);
         Assert.Equal(GapSignalAction.Open, open!.Action);
+        Assert.Null(sut.LastSkipDiagnostic);
     }
 
     [Fact]
@@ -502,6 +509,12 @@ public sealed class TradingFlowEngineTests
 
         // Ask spike while waiting-close: abs(2945.42 - 2945.34) * 100 = 8 > close_gap_tick(2).
         Assert.Null(ProcessWithPrices(sut, start.AddMilliseconds(200), 2945.12m, 2945.42m, 2945.56m, 2945.78m, gapBuy: 20, gapSell: -8, config, pointMultiplier: 100));
+        Assert.NotNull(sut.LastSkipDiagnostic);
+        Assert.Equal("GAP_COOLDOWN_ACTIVE", sut.LastSkipDiagnostic!.Reason);
+        Assert.Equal(TradingFlowPhase.WaitingCloseFromGapBuy, sut.LastSkipDiagnostic.Phase);
+        Assert.True(sut.LastSkipDiagnostic.CooldownLeftMs > 0);
+        Assert.Equal(2, sut.LastSkipDiagnostic.OpenGapTick);
+        Assert.Equal(2, sut.LastSkipDiagnostic.CloseGapTick);
 
         // Close remains blocked within cooldown window.
         Assert.Null(ProcessWithPrices(sut, start.AddMilliseconds(1500), 2945.12m, 2945.43m, 2945.56m, 2945.78m, gapBuy: 20, gapSell: -8, config, pointMultiplier: 100));
