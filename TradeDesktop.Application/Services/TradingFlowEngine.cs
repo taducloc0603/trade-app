@@ -14,6 +14,16 @@ public sealed class TradingFlowEngine(
     private DateTime? _closedAtRuntimeUtc;
     private int _openQualifyingCount;
     private int _closeQualifyingCount;
+    // FIX: Holding floor fallback.
+    // Nếu vì bất kỳ lý do gì mà CurrentHoldingSeconds về 0 khi engine đang
+    // WaitingClose (ví dụ ForceWaitingClose được gọi để sync state với live
+    // pair khi app restart giữa chu kỳ), close-gate trong CanCheckClose sẽ
+    // fallback sang giá trị của config.StartTimeHold gần nhất để không bao
+    // giờ mở cổng close "free" trong khi đang giữ lệnh.
+    // Giá trị này được cache từ config lần cuối engine nhìn thấy trong
+    // ProcessSnapshot (config có tính stateless ở caller).
+    private int _lastSeenStartTimeHold;
+    private int _lastSeenEndTimeHold;
 
     public TradingFlowPhase CurrentPhase { get; private set; } = TradingFlowPhase.WaitingOpen;
     public TradingOpenMode CurrentOpenMode { get; private set; } = TradingOpenMode.None;
@@ -29,6 +39,10 @@ public sealed class TradingFlowEngine(
         GapSignalSnapshot snapshot,
         GapSignalConfirmationConfig config)
     {
+        // FIX: cache config hold range cho close-gate fallback
+        _lastSeenStartTimeHold = Math.Max(0, config.StartTimeHold);
+        _lastSeenEndTimeHold = Math.Max(0, config.EndTimeHold);
+
         if (CurrentPhase == TradingFlowPhase.WaitingOpen)
         {
             if (!CanCheckOpen(snapshot.TimestampUtc))
@@ -218,7 +232,15 @@ public sealed class TradingFlowEngine(
 
         OpenedAtUtc ??= DateTime.UtcNow;
         _openedAtRuntimeUtc ??= DateTime.UtcNow;
-        CurrentHoldingSeconds = 0;
+
+        // FIX: KHÔNG reset CurrentHoldingSeconds về 0.
+        // Nếu đã có giá trị hợp lệ từ trước (random khi open trigger) thì giữ nguyên.
+        // Nếu chưa có (path sync state với live pair khi app vừa start),
+        // random lại từ config hold range gần nhất để close-gate luôn có ý nghĩa.
+        if (CurrentHoldingSeconds <= 0)
+        {
+            CurrentHoldingSeconds = NextSecondsInRange(_lastSeenStartTimeHold, _lastSeenEndTimeHold);
+        }
 
         openSignalEngine.Reset();
         closeSignalEngine.Reset();
@@ -267,15 +289,30 @@ public sealed class TradingFlowEngine(
             return false;
         }
 
-        if (!OpenedAtUtc.HasValue || CurrentHoldingSeconds <= 0)
+        // FIX: close-gate safety floor.
+        // Nếu chưa có OpenedAtUtc → thực sự chưa mở lệnh → cho qua (no-op)
+        if (!OpenedAtUtc.HasValue)
         {
+            return true;
+        }
+
+        // Resolve effective holding seconds với floor từ config đã thấy gần nhất.
+        // Mục tiêu: nếu CurrentHoldingSeconds bị reset về 0 (race/bug/ForceWaitingClose
+        // path cũ), vẫn áp mức sàn = _lastSeenStartTimeHold để không mở cổng close tự do.
+        var effectiveHoldingSeconds = CurrentHoldingSeconds > 0
+            ? CurrentHoldingSeconds
+            : _lastSeenStartTimeHold;
+
+        if (effectiveHoldingSeconds <= 0)
+        {
+            // Config cũng không yêu cầu hold → cho qua (hành vi cũ khi feature tắt)
             return true;
         }
 
         var effectiveNow = ResolveEffectiveNowUtc(snapshotTimestampUtc);
         var baseline = _openedAtRuntimeUtc ?? OpenedAtUtc.Value;
         var elapsed = effectiveNow - baseline;
-        return elapsed >= TimeSpan.FromSeconds(CurrentHoldingSeconds);
+        return elapsed >= TimeSpan.FromSeconds(effectiveHoldingSeconds);
     }
 
     private static DateTime ResolveEffectiveNowUtc(DateTime snapshotTimestampUtc)

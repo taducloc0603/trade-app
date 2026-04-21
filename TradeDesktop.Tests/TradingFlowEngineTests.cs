@@ -346,6 +346,106 @@ public sealed class TradingFlowEngineTests
         Assert.Equal(0, sut.CurrentWaitSeconds);
     }
 
+    [Fact]
+    public void ForceWaitingClose_WhenHoldingSecondsAlreadySet_Preserves()
+    {
+        // Bug cũ: ForceWaitingClose set CurrentHoldingSeconds = 0,
+        // làm CanCheckClose return true ngay → close signal chạy tự do.
+        // Fix: giữ nguyên giá trị đã random lúc open trigger.
+
+        var sut = new TradingFlowEngine(new GapSignalConfirmationEngine(), new CloseSignalEngine());
+        var start = new DateTime(2026, 3, 18, 17, 0, 0, DateTimeKind.Utc);
+
+        // Happy-path open → CurrentHoldingSeconds = 2 (vì Start=End=2 trong ConfigWithTimeGuards)
+        _ = Process(sut, start.AddMilliseconds(0), gapBuy: 5, gapSell: null, ConfigWithTimeGuards);
+        _ = Process(sut, start.AddMilliseconds(200), gapBuy: 6, gapSell: null, ConfigWithTimeGuards);
+        var open = Process(sut, start.AddMilliseconds(550), gapBuy: 8, gapSell: null, ConfigWithTimeGuards);
+        Assert.NotNull(open);
+        Assert.Equal(2, sut.CurrentHoldingSeconds);
+
+        // Giả lập sync state từ live pair (ví dụ app restart giữa chu kỳ) —
+        // caller có thể gọi ForceWaitingClose để restore phase.
+        sut.ForceWaitingClose(TradingPositionSide.Buy);
+
+        // Với fix: giữ nguyên holding đã có.
+        Assert.Equal(2, sut.CurrentHoldingSeconds);
+    }
+
+    [Fact]
+    public void ForceWaitingClose_WhenHoldingSecondsZero_UsesConfigFloorFromLastSeen()
+    {
+        // Kịch bản: app vừa start, chưa từng trigger open trong engine;
+        // caller gọi ForceWaitingClose để sync state vì MMF có lệnh tool từ session trước.
+        // Fix: phải random lại hold từ config đã thấy gần nhất, không để = 0.
+
+        var sut = new TradingFlowEngine(new GapSignalConfirmationEngine(), new CloseSignalEngine());
+        var start = new DateTime(2026, 3, 18, 17, 5, 0, DateTimeKind.Utc);
+
+        // Chỉ feed 1 snapshot để engine cache _lastSeenStartTimeHold/_lastSeenEndTimeHold = 2
+        _ = Process(sut, start, gapBuy: null, gapSell: null, ConfigWithTimeGuards);
+        Assert.Equal(0, sut.CurrentHoldingSeconds);
+
+        sut.ForceWaitingClose(TradingPositionSide.Sell);
+
+        // Không còn = 0 nữa — fallback về [StartTimeHold..EndTimeHold] = [2..2]
+        Assert.Equal(2, sut.CurrentHoldingSeconds);
+    }
+
+    [Fact]
+    public void ProcessSnapshot_AfterForceWaitingClose_CloseStillGatedByHolding()
+    {
+        // End-to-end: sau khi ForceWaitingClose, close-gate vẫn phải chặn
+        // signal close nếu chưa đủ holding seconds.
+
+        var sut = new TradingFlowEngine(new GapSignalConfirmationEngine(), new CloseSignalEngine());
+        var start = new DateTime(2026, 3, 18, 17, 10, 0, DateTimeKind.Utc);
+
+        // Open bình thường
+        _ = Process(sut, start.AddMilliseconds(0), gapBuy: 5, gapSell: null, ConfigWithTimeGuards);
+        _ = Process(sut, start.AddMilliseconds(200), gapBuy: 6, gapSell: null, ConfigWithTimeGuards);
+        var open = Process(sut, start.AddMilliseconds(550), gapBuy: 8, gapSell: null, ConfigWithTimeGuards);
+        Assert.NotNull(open);
+        Assert.Equal(2, sut.CurrentHoldingSeconds);
+
+        // Ngay lập tức ForceWaitingClose (simulate sync path)
+        sut.ForceWaitingClose(TradingPositionSide.Buy);
+        Assert.Equal(2, sut.CurrentHoldingSeconds); // không reset về 0
+
+        // 1 giây sau open — close signal xuất hiện nhưng chưa đủ 2s hold → phải bị chặn
+        Assert.Null(Process(sut, start.AddMilliseconds(1500), gapBuy: null, gapSell: -8, ConfigWithTimeGuards));
+        Assert.Equal(TradingFlowPhase.WaitingCloseFromGapBuy, sut.CurrentPhase);
+
+        // 2.6s sau open — close-gate mở, engine bắt đầu cho close-signal engine chạy.
+        // Cần bơm đủ tick (CloseHoldConfirmMs=400, ClosePts=8 trong ConfigWithTimeGuards)
+        Assert.Null(Process(sut, start.AddMilliseconds(2600), gapBuy: null, gapSell: -5, ConfigWithTimeGuards));
+        Assert.Null(Process(sut, start.AddMilliseconds(2800), gapBuy: null, gapSell: -6, ConfigWithTimeGuards));
+        var close = Process(sut, start.AddMilliseconds(3200), gapBuy: null, gapSell: -8, ConfigWithTimeGuards);
+        Assert.NotNull(close);
+        Assert.Equal(GapSignalAction.Close, close!.Action);
+    }
+
+    [Fact]
+    public void CanCheckClose_FallbackFloor_EvenWhenHoldingSecondsExternallyZero()
+    {
+        // Defense-in-depth: nếu vì bất kỳ lý do nào CurrentHoldingSeconds = 0
+        // trong khi phase là WaitingClose và OpenedAtUtc có giá trị,
+        // close-gate phải dùng _lastSeenStartTimeHold làm floor.
+
+        var sut = new TradingFlowEngine(new GapSignalConfirmationEngine(), new CloseSignalEngine());
+        var start = new DateTime(2026, 3, 18, 17, 20, 0, DateTimeKind.Utc);
+
+        // Feed 1 tick để engine cache config hold range = [2..2]
+        _ = Process(sut, start, gapBuy: null, gapSell: null, ConfigWithTimeGuards);
+
+        // ForceWaitingClose sẽ random hold từ [2..2] = 2 do CurrentHoldingSeconds=0
+        sut.ForceWaitingClose(TradingPositionSide.Sell);
+        Assert.Equal(2, sut.CurrentHoldingSeconds);
+
+        // Tại T=500ms sau force — close signal KHÔNG được fire (chưa đủ 2s)
+        Assert.Null(Process(sut, start.AddMilliseconds(500), gapBuy: 8, gapSell: null, ConfigWithTimeGuards));
+        Assert.Equal(TradingFlowPhase.WaitingCloseFromGapSell, sut.CurrentPhase);
+    }
+
     private static GapSignalTriggerResult? Process(
         TradingFlowEngine sut,
         DateTime timestampUtc,
