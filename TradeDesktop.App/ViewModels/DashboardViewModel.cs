@@ -48,6 +48,7 @@ public sealed class DashboardViewModel : ObservableObject
     private readonly Dictionary<ulong, long> _openExecutionMsByTicket = [];
     private readonly Dictionary<ulong, long> _closeExecutionMsByTicket = [];
     private readonly Dictionary<string, int> _sttByPairId = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _persistRemovedPairIds = new(StringComparer.Ordinal);
     private readonly Dictionary<string, PendingOpenPairState> _pendingOpenPairById = new(StringComparer.Ordinal);
     private readonly Dictionary<string, PendingClosePairState> _pendingClosePairById = new(StringComparer.Ordinal);
     private int _nextStt = 1;
@@ -330,11 +331,256 @@ public sealed class DashboardViewModel : ObservableObject
         _runtimeConfigState.StateChanged += (_, _) => ApplyRuntimeConfig();
         _runtimeConfigState.QualifyingConfigChanged += OnQualifyingConfigChanged;
         ApplyRuntimeConfig();
-        _ = InitializeRuntimeConfigAsync();
+        _ = InitializeAndReconcileAsync();
 
         exchangePairReader.SnapshotReceived += OnSnapshotReceived;
         _ = StartExchangeReaderSafeAsync(exchangePairReader);
         _ = RunOrderInfoPollingAsync(_orderInfoPollingCts.Token);
+    }
+
+    private async Task InitializeAndReconcileAsync()
+    {
+        await InitializeRuntimeConfigAsync();
+        await ReconcileSessionAtStartupAsync(CancellationToken.None);
+    }
+
+    private PersistedPair? TryBuildPersistedPair(PendingOpenPairState state)
+    {
+        if (!state.OpenConfirmedA || !state.OpenConfirmedB || !state.OpenedTicketA.HasValue || !state.OpenedTicketB.HasValue)
+        {
+            return null;
+        }
+
+        var pairId = state.PairId;
+        if (string.IsNullOrWhiteSpace(pairId))
+        {
+            return null;
+        }
+
+        var openedAtUtc = _tradingFlowEngine.OpenedAtUtc ?? DateTime.UtcNow;
+        var stt = _sttByPairId.TryGetValue(pairId, out var existingStt) ? existingStt : 0;
+
+        return new PersistedPair
+        {
+            PairId = pairId,
+            IsAutoFlow = state.IsAutoFlow,
+            SlotNumber = state.SlotNumber,
+            OpenedAtUtc = openedAtUtc,
+            CurrentHoldingSeconds = Math.Max(0, _tradingFlowEngine.CurrentHoldingSeconds),
+            CurrentPhase = _tradingFlowEngine.CurrentPhase,
+            CurrentPositionSide = _tradingFlowEngine.CurrentPositionSide,
+            CurrentOpenMode = _tradingFlowEngine.CurrentOpenMode,
+            LastSeenStartTimeHold = Math.Max(0, _runtimeConfigState.CurrentStartTimeHold),
+            LastSeenEndTimeHold = Math.Max(0, _runtimeConfigState.CurrentEndTimeHold),
+            Stt = stt,
+            LegA = new PersistedPairLeg
+            {
+                MapName = NormalizeMapName(state.TradeMapNameA),
+                Ticket = state.OpenedTicketA.Value,
+                Symbol = state.SymbolA ?? string.Empty,
+                Volume = state.VolumeA ?? 0,
+                TradeType = state.TradeTypeA ?? 0,
+                OpenPrice = 0,
+                OpenEaTimeLocal = 0,
+                AppOpenRequestRawMs = _openRequestByTicket.TryGetValue(state.OpenedTicketA.Value, out var reqA) ? reqA.AppOpenRequestRawMs : 0,
+                Platform = _runtimeConfigState.CurrentPlatformA,
+                OpenExecutionMs = _openExecutionMsByTicket.TryGetValue(state.OpenedTicketA.Value, out var openExecA) ? openExecA : null
+            },
+            LegB = new PersistedPairLeg
+            {
+                MapName = NormalizeMapName(state.TradeMapNameB),
+                Ticket = state.OpenedTicketB.Value,
+                Symbol = state.SymbolB ?? string.Empty,
+                Volume = state.VolumeB ?? 0,
+                TradeType = state.TradeTypeB ?? 0,
+                OpenPrice = 0,
+                OpenEaTimeLocal = 0,
+                AppOpenRequestRawMs = _openRequestByTicket.TryGetValue(state.OpenedTicketB.Value, out var reqB) ? reqB.AppOpenRequestRawMs : 0,
+                Platform = _runtimeConfigState.CurrentPlatformB,
+                OpenExecutionMs = _openExecutionMsByTicket.TryGetValue(state.OpenedTicketB.Value, out var openExecB) ? openExecB : null
+            }
+        };
+    }
+
+    private void PersistPairResolvedState(PendingOpenPairState state)
+    {
+        var persistedPair = TryBuildPersistedPair(state);
+        if (persistedPair is null)
+        {
+            return;
+        }
+
+        _sessionPersistenceService.EnqueueUpsertPair(persistedPair);
+        _sessionPersistenceService.FlushAsync(CancellationToken.None).GetAwaiter().GetResult();
+    }
+
+    private void RemovePersistedPairIfNeeded(string? pairId)
+    {
+        if (string.IsNullOrWhiteSpace(pairId) || _persistRemovedPairIds.Contains(pairId))
+        {
+            return;
+        }
+
+        _persistRemovedPairIds.Add(pairId);
+        _sessionPersistenceService.EnqueueRemovePair(pairId);
+        _sessionPersistenceService.FlushAsync(CancellationToken.None).GetAwaiter().GetResult();
+    }
+
+    private async Task ReconcileSessionAtStartupAsync(CancellationToken cancellationToken)
+    {
+        _isReconciling = true;
+        StartTradingLogicCommand.RaiseCanExecuteChanged();
+        RaiseManualOpenCanExecuteChanged();
+
+        try
+        {
+            LoadingMessage = "Đang đồng bộ trạng thái phiên...";
+            await _sessionPersistenceService.AcquireInstanceLockAsync(cancellationToken);
+
+            var reconcileResult = await _sessionReconciler.ReconcileAsync(cancellationToken);
+
+            if (reconcileResult.IsSnapshotUnavailable)
+            {
+                IsTradingLogicEnabled = false;
+                ShowConfigError("[Session] Không thể đọc snapshot trade map để reconcile. Auto trading đã tắt.");
+                return;
+            }
+
+            if (reconcileResult.IsMapMismatch)
+            {
+                IsTradingLogicEnabled = false;
+                ShowConfigError("[Session] Map name trong session persist không khớp config hiện tại. Auto trading đã tắt.");
+                return;
+            }
+
+            foreach (var decision in reconcileResult.PairDecisions)
+            {
+                ApplyReconciledPairDecision(decision);
+            }
+
+            if (reconcileResult.WaitWindowToRestore is not null)
+            {
+                _tradingFlowEngine.RestoreWaitingOpenWithWait(
+                    reconcileResult.WaitWindowToRestore.ClosedAtUtc,
+                    reconcileResult.WaitWindowToRestore.CurrentWaitSeconds,
+                    reconcileResult.WaitWindowToRestore.LastSeenStartWaitTime,
+                    reconcileResult.WaitWindowToRestore.LastSeenEndWaitTime,
+                    reconcileResult.WaitWindowToRestore.LastSeenStartTimeHold,
+                    reconcileResult.WaitWindowToRestore.LastSeenEndTimeHold);
+            }
+
+            if (reconcileResult.Orphans.Count > 0)
+            {
+                IsTradingLogicEnabled = false;
+                ShowConfigError($"[Session] Phát hiện {reconcileResult.Orphans.Count} orphan ticket. Auto trading đã tắt để an toàn.");
+            }
+            else
+            {
+                ClearConfigError();
+            }
+        }
+        catch (Exception ex)
+        {
+            IsTradingLogicEnabled = false;
+            ShowConfigError($"[Session] Reconcile failed: {ex.Message}");
+        }
+        finally
+        {
+            _isReconciling = false;
+            StartTradingLogicCommand.RaiseCanExecuteChanged();
+            RaiseManualOpenCanExecuteChanged();
+
+            if (string.Equals(LoadingMessage, "Đang đồng bộ trạng thái phiên...", StringComparison.Ordinal))
+            {
+                LoadingMessage = "Đang chờ dữ liệu shared memory...";
+            }
+        }
+    }
+
+    private void ApplyReconciledPairDecision(ReconciledPairDecision decision)
+    {
+        var pair = decision.Pair;
+
+        if (decision.Status == ReconciledPairStatus.Purged)
+        {
+            _persistRemovedPairIds.Add(pair.PairId);
+            return;
+        }
+
+        if (decision.Status is ReconciledPairStatus.Full or ReconciledPairStatus.HalfA)
+        {
+            _pairIdByTicket[pair.LegA.Ticket] = pair.PairId;
+            if (pair.LegA.OpenExecutionMs.HasValue)
+            {
+                _openExecutionMsByTicket[pair.LegA.Ticket] = pair.LegA.OpenExecutionMs.Value;
+            }
+        }
+
+        if (decision.Status is ReconciledPairStatus.Full or ReconciledPairStatus.HalfB)
+        {
+            _pairIdByTicket[pair.LegB.Ticket] = pair.PairId;
+            if (pair.LegB.OpenExecutionMs.HasValue)
+            {
+                _openExecutionMsByTicket[pair.LegB.Ticket] = pair.LegB.OpenExecutionMs.Value;
+            }
+        }
+
+        if (!_sttByPairId.ContainsKey(pair.PairId))
+        {
+            _sttByPairId[pair.PairId] = pair.Stt > 0 ? pair.Stt : _nextStt;
+            _nextStt = Math.Max(_nextStt, _sttByPairId[pair.PairId] + 1);
+        }
+
+        if (decision.Status == ReconciledPairStatus.Full)
+        {
+            _tradingFlowEngine.RestoreWaitingClose(
+                pair.CurrentPhase,
+                pair.CurrentOpenMode,
+                pair.CurrentPositionSide,
+                pair.OpenedAtUtc,
+                pair.CurrentHoldingSeconds,
+                pair.LastSeenStartTimeHold,
+                pair.LastSeenEndTimeHold);
+
+            _pendingOpenPairById[pair.PairId] = new PendingOpenPairState
+            {
+                PairId = pair.PairId,
+                IsAutoFlow = pair.IsAutoFlow,
+                SlotNumber = pair.SlotNumber,
+                CreatedAtLocal = DateTimeOffset.Now,
+                OpenPendingTimeoutMs = Math.Max(0, _runtimeConfigState.CurrentOpenPendingTimeMs),
+                OpenConfirmedA = true,
+                OpenConfirmedB = true,
+                OpenedTicketA = pair.LegA.Ticket,
+                OpenedTicketB = pair.LegB.Ticket,
+                TradeMapNameA = NormalizeMapName(pair.LegA.MapName),
+                TradeMapNameB = NormalizeMapName(pair.LegB.MapName),
+                TradeTypeA = pair.LegA.TradeType,
+                TradeTypeB = pair.LegB.TradeType,
+                SymbolA = pair.LegA.Symbol,
+                SymbolB = pair.LegB.Symbol,
+                VolumeA = pair.LegA.Volume,
+                VolumeB = pair.LegB.Volume,
+                IsResolved = true
+            };
+
+            if (pair.IsAutoFlow)
+            {
+                _activeAutoCycle = new ActiveAutoCycleState
+                {
+                    Slot = pair.SlotNumber,
+                    OpenedAtLocal = pair.OpenedAtUtc,
+                    PairIdA = pair.PairId,
+                    PairIdB = pair.PairId,
+                    TicketA = pair.LegA.Ticket,
+                    TicketB = pair.LegB.Ticket
+                };
+            }
+        }
+        else
+        {
+            _persistRemovedPairIds.Add(pair.PairId);
+        }
     }
 
     public string RuntimeSummary
@@ -2199,26 +2445,30 @@ public sealed class DashboardViewModel : ObservableObject
                 }
 
                 RefreshManualOpenAvailability(ComputeToolAwarePairStateForOpenGate(livePairStateFromPoll));
-                SyncTradingFlowWithLivePairState(livePairStateFromPoll);
 
-                EvaluateAndApplyAutoOpenInvariantWatchdog(tradeLeftResult, tradeRightResult);
-
-                TryRecoverWaitingCloseFromPolling(livePairStateFromPoll);
-
-                // Track BothOpen state để watchdog hoạt động kể cả khi phase bị reset sang WaitingOpen
-                if (livePairStateFromPoll == LivePairTradeState.BothOpen)
+                if (!_isReconciling)
                 {
-                    _hadBothOpenRecently = true;
-                }
-                else if (livePairStateFromPoll == LivePairTradeState.BothFlat && !_externalPartialCloseInFlight)
-                {
-                    _hadBothOpenRecently = false;
-                }
+                    SyncTradingFlowWithLivePairState(livePairStateFromPoll);
 
-                TryDetectAndHandleExternalPartialClose(livePairStateFromPoll);
+                    EvaluateAndApplyAutoOpenInvariantWatchdog(tradeLeftResult, tradeRightResult);
 
-                timeoutActions = CollectPendingOpenTimeoutActions();
-                closeRetryActions = CollectPendingCloseRetryActions();
+                    TryRecoverWaitingCloseFromPolling(livePairStateFromPoll);
+
+                    // Track BothOpen state để watchdog hoạt động kể cả khi phase bị reset sang WaitingOpen
+                    if (livePairStateFromPoll == LivePairTradeState.BothOpen)
+                    {
+                        _hadBothOpenRecently = true;
+                    }
+                    else if (livePairStateFromPoll == LivePairTradeState.BothFlat && !_externalPartialCloseInFlight)
+                    {
+                        _hadBothOpenRecently = false;
+                    }
+
+                    TryDetectAndHandleExternalPartialClose(livePairStateFromPoll);
+
+                    timeoutActions = CollectPendingOpenTimeoutActions();
+                    closeRetryActions = CollectPendingCloseRetryActions();
+                }
             });
 
             if (timeoutActions.Count > 0)
@@ -3831,7 +4081,12 @@ public sealed class DashboardViewModel : ObservableObject
 
         if (state.OpenConfirmedA && state.OpenConfirmedB)
         {
+            var wasResolved = state.IsResolved;
             state.IsResolved = true;
+            if (!wasResolved)
+            {
+                PersistPairResolvedState(state);
+            }
         }
     }
 
@@ -3928,6 +4183,7 @@ public sealed class DashboardViewModel : ObservableObject
                         var waitSeconds = _tradingFlowEngine.CurrentWaitSeconds;
                         SignalLogItems.Insert(0,
                             SignalLogFormatter.FormatRandomWaitingTime(closeCompletedAtLocal, waitSeconds));
+                        RemovePersistedPairIfNeeded(pendingRequest.PairId);
                         OnPropertyChanged(nameof(CurrentPositionText));
                         OnPropertyChanged(nameof(CurrentPhaseText));
                     }
@@ -4526,6 +4782,11 @@ public sealed class DashboardViewModel : ObservableObject
             BindDashboardMetrics(metrics);
             RefreshTradeRowsFromSnapshot(metrics, _runtimeConfigState.CurrentPoint);
             SignalEntryGuard.TrackPriceHistory(_priceHistory, metrics);
+
+            if (_isReconciling)
+            {
+                return;
+            }
 
             if (!IsTradingLogicEnabled)
             {
