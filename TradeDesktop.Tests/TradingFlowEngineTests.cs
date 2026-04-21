@@ -446,6 +446,73 @@ public sealed class TradingFlowEngineTests
         Assert.Equal(TradingFlowPhase.WaitingCloseFromGapSell, sut.CurrentPhase);
     }
 
+    [Fact]
+    public void ProcessSnapshot_WhenOpenSpikeDetected_StartsCooldownAndBlocksOpenUntilElapsed()
+    {
+        var sut = new TradingFlowEngine(new GapSignalConfirmationEngine(), new CloseSignalEngine());
+        var config = new GapSignalConfirmationConfig(
+            ConfirmGapPts: 5,
+            OpenPts: 8,
+            HoldConfirmMs: 0,
+            CloseConfirmGapPts: 5,
+            ClosePts: 8,
+            CloseHoldConfirmMs: 0,
+            OpenGapTick: 2,
+            CloseGapTick: 2,
+            CoolDownGapTick: 2);
+        var start = new DateTime(2026, 3, 18, 18, 0, 0, DateTimeKind.Utc);
+
+        // Establish previous ask values.
+        Assert.Null(ProcessWithPrices(sut, start, 2945.12m, 2945.34m, 2945.56m, 2945.78m, gapBuy: null, gapSell: null, config, pointMultiplier: 100));
+
+        // Ask spike on A: abs(2945.40 - 2945.34) * 100 = 6 > open_gap_tick(2) -> cooldown starts.
+        Assert.Null(ProcessWithPrices(sut, start.AddMilliseconds(100), 2945.12m, 2945.40m, 2945.56m, 2945.78m, gapBuy: 8, gapSell: null, config, pointMultiplier: 100));
+
+        // During cooldown, open signal must still be blocked.
+        Assert.Null(ProcessWithPrices(sut, start.AddMilliseconds(1500), 2945.13m, 2945.41m, 2945.56m, 2945.78m, gapBuy: 8, gapSell: null, config, pointMultiplier: 100));
+        Assert.Equal(TradingFlowPhase.WaitingOpen, sut.CurrentPhase);
+
+        // After cooldown elapsed, open can trigger again.
+        var open = ProcessWithPrices(sut, start.AddMilliseconds(2200), 2945.14m, 2945.42m, 2945.57m, 2945.79m, gapBuy: 8, gapSell: null, config, pointMultiplier: 100);
+        Assert.NotNull(open);
+        Assert.Equal(GapSignalAction.Open, open!.Action);
+    }
+
+    [Fact]
+    public void ProcessSnapshot_WhenCloseSpikeDetected_StartsCooldownAndBlocksCloseUntilElapsed()
+    {
+        var sut = new TradingFlowEngine(new GapSignalConfirmationEngine(), new CloseSignalEngine());
+        var config = new GapSignalConfirmationConfig(
+            ConfirmGapPts: 5,
+            OpenPts: 8,
+            HoldConfirmMs: 0,
+            CloseConfirmGapPts: 5,
+            ClosePts: 8,
+            CloseHoldConfirmMs: 0,
+            OpenGapTick: 2,
+            CloseGapTick: 2,
+            CoolDownGapTick: 2);
+        var start = new DateTime(2026, 3, 18, 18, 10, 0, DateTimeKind.Utc);
+
+        // Open first to enter waiting-close phase.
+        Assert.Null(ProcessWithPrices(sut, start, 2945.12m, 2945.34m, 2945.56m, 2945.78m, gapBuy: 5, gapSell: null, config, pointMultiplier: 100));
+        var open = ProcessWithPrices(sut, start.AddMilliseconds(100), 2945.12m, 2945.34m, 2945.56m, 2945.78m, gapBuy: 8, gapSell: null, config, pointMultiplier: 100);
+        Assert.NotNull(open);
+        Assert.Equal(TradingFlowPhase.WaitingCloseFromGapBuy, sut.CurrentPhase);
+
+        // Ask spike while waiting-close: abs(2945.42 - 2945.34) * 100 = 8 > close_gap_tick(2).
+        Assert.Null(ProcessWithPrices(sut, start.AddMilliseconds(200), 2945.12m, 2945.42m, 2945.56m, 2945.78m, gapBuy: 20, gapSell: -8, config, pointMultiplier: 100));
+
+        // Close remains blocked within cooldown window.
+        Assert.Null(ProcessWithPrices(sut, start.AddMilliseconds(1500), 2945.12m, 2945.43m, 2945.56m, 2945.78m, gapBuy: 20, gapSell: -8, config, pointMultiplier: 100));
+        Assert.Equal(TradingFlowPhase.WaitingCloseFromGapBuy, sut.CurrentPhase);
+
+        // After cooldown elapsed, close can trigger.
+        var close = ProcessWithPrices(sut, start.AddMilliseconds(2300), 2945.12m, 2945.44m, 2945.56m, 2945.78m, gapBuy: 20, gapSell: -8, config, pointMultiplier: 100);
+        Assert.NotNull(close);
+        Assert.Equal(GapSignalAction.Close, close!.Action);
+    }
+
     private static GapSignalTriggerResult? Process(
         TradingFlowEngine sut,
         DateTime timestampUtc,
@@ -455,4 +522,19 @@ public sealed class TradingFlowEngineTests
         => sut.ProcessSnapshot(
             new GapSignalSnapshot(timestampUtc, 2945.12m, 2945.34m, 2945.56m, 2945.78m, gapBuy, gapSell, 1),
             config ?? Config);
+
+    private static GapSignalTriggerResult? ProcessWithPrices(
+        TradingFlowEngine sut,
+        DateTime timestampUtc,
+        decimal? aBid,
+        decimal? aAsk,
+        decimal? bBid,
+        decimal? bAsk,
+        int? gapBuy,
+        int? gapSell,
+        GapSignalConfirmationConfig config,
+        int pointMultiplier)
+        => sut.ProcessSnapshot(
+            new GapSignalSnapshot(timestampUtc, aBid, aAsk, bBid, bAsk, gapBuy, gapSell, pointMultiplier),
+            config);
 }

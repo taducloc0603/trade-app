@@ -73,7 +73,10 @@ public sealed class ConfigService(
             record.DelayCloseAMs,
             record.DelayCloseBMs,
             record.OpenNumberOfQualifyingTimes,
-            record.CloseNumberOfQualifyingTimes);
+            record.CloseNumberOfQualifyingTimes,
+            record.OpenGapTick,
+            record.CloseGapTick,
+            record.CoolDownGapTick);
     }
 
     public async Task<ConfigSaveResult> SaveByMachineHostNameAsync(
@@ -158,7 +161,10 @@ public sealed record ConfigLoadResult(
     int DelayCloseAMs,
     int DelayCloseBMs,
     int OpenNumberOfQualifyingTimes,
-    int CloseNumberOfQualifyingTimes)
+    int CloseNumberOfQualifyingTimes,
+    int OpenGapTick,
+    int CloseGapTick,
+    int CoolDownGapTick)
 {
     public static ConfigLoadResult Success(
         string machineHostName,
@@ -192,7 +198,10 @@ public sealed record ConfigLoadResult(
         int delayCloseAMs = 0,
         int delayCloseBMs = 0,
         int openNumberOfQualifyingTimes = 1,
-        int closeNumberOfQualifyingTimes = 1) =>
+        int closeNumberOfQualifyingTimes = 1,
+        int openGapTick = 0,
+        int closeGapTick = 0,
+        int coolDownGapTick = 0) =>
         new(
             true,
             true,
@@ -228,13 +237,16 @@ public sealed record ConfigLoadResult(
             Math.Max(0, delayCloseAMs),
             Math.Max(0, delayCloseBMs),
             Math.Max(1, openNumberOfQualifyingTimes),
-            Math.Max(1, closeNumberOfQualifyingTimes));
+            Math.Max(1, closeNumberOfQualifyingTimes),
+            Math.Max(0, openGapTick),
+            Math.Max(0, closeGapTick),
+            Math.Max(0, coolDownGapTick));
 
     public static ConfigLoadResult NotFound(string machineHostName) =>
-        new(false, false, machineHostName, [ManualHwndColumnConfig.Empty], "mt5", "mt5", 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", null, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1);
+        new(false, false, machineHostName, [ManualHwndColumnConfig.Empty], "mt5", "mt5", 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", null, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0);
 
     public static ConfigLoadResult Failed(string machineHostName, string error) =>
-        new(false, true, machineHostName, [ManualHwndColumnConfig.Empty], "mt5", "mt5", 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", error, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1);
+        new(false, true, machineHostName, [ManualHwndColumnConfig.Empty], "mt5", "mt5", 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", error, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0);
 
     private static IReadOnlyList<ManualHwndColumnConfig> NormalizeColumns(IReadOnlyList<ManualHwndColumnConfig>? columns)
     {

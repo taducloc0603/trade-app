@@ -4427,7 +4427,10 @@ public sealed class DashboardViewModel : ObservableObject
                     result.DelayCloseAMs,
                     result.DelayCloseBMs,
                     result.OpenNumberOfQualifyingTimes,
-                    result.CloseNumberOfQualifyingTimes);
+                    result.CloseNumberOfQualifyingTimes,
+                    result.OpenGapTick,
+                    result.CloseGapTick,
+                    result.CoolDownGapTick);
                 _runtimeConfigState.UpdateManualTradeHwnd(result.ManualHwndColumns);
                 ResetTradingLogicState();
 
@@ -4542,7 +4545,10 @@ public sealed class DashboardViewModel : ObservableObject
                     StartWaitTime: _runtimeConfigState.CurrentStartWaitTime,
                     EndWaitTime: _runtimeConfigState.CurrentEndWaitTime,
                     OpenMaxTimesTick: _runtimeConfigState.CurrentOpenMaxTimesTick,
-                    CloseMaxTimesTick: _runtimeConfigState.CurrentCloseMaxTimesTick));
+                    CloseMaxTimesTick: _runtimeConfigState.CurrentCloseMaxTimesTick,
+                    OpenGapTick: _runtimeConfigState.CurrentOpenGapTick,
+                    CloseGapTick: _runtimeConfigState.CurrentCloseGapTick,
+                    CoolDownGapTick: _runtimeConfigState.CurrentCoolDownGapTick));
 
             OnPropertyChanged(nameof(CurrentPositionText));
             OnPropertyChanged(nameof(CurrentPhaseText));

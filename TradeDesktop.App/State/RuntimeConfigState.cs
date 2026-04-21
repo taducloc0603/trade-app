@@ -33,6 +33,9 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
     public int CurrentDelayCloseBMs { get; private set; }
     public int CurrentOpenNumberOfQualifyingTimes { get; private set; } = 1;
     public int CurrentCloseNumberOfQualifyingTimes { get; private set; } = 1;
+    public int CurrentOpenGapTick { get; private set; }
+    public int CurrentCloseGapTick { get; private set; }
+    public int CurrentCoolDownGapTick { get; private set; }
     public string CurrentMapName1 { get; private set; } = string.Empty;
     public string CurrentMapName2 { get; private set; } = string.Empty;
     public string CurrentPlatformA { get; private set; } = "mt5";
@@ -77,6 +80,9 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
     public int DelayCloseBMs => CurrentDelayCloseBMs;
     public int OpenNumberOfQualifyingTimes => CurrentOpenNumberOfQualifyingTimes;
     public int CloseNumberOfQualifyingTimes => CurrentCloseNumberOfQualifyingTimes;
+    public int OpenGapTick => CurrentOpenGapTick;
+    public int CloseGapTick => CurrentCloseGapTick;
+    public int CoolDownGapTick => CurrentCoolDownGapTick;
 
     public event EventHandler? StateChanged;
     public event EventHandler? QualifyingConfigChanged;
@@ -108,7 +114,10 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
         int delayCloseAMs = -1,
         int delayCloseBMs = -1,
         int openNumberOfQualifyingTimes = -1,
-        int closeNumberOfQualifyingTimes = -1)
+        int closeNumberOfQualifyingTimes = -1,
+        int openGapTick = -1,
+        int closeGapTick = -1,
+        int coolDownGapTick = -1)
         => Update(
             machineHostName,
             mapName1,
@@ -138,7 +147,10 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
             delayCloseAMs,
             delayCloseBMs,
             openNumberOfQualifyingTimes,
-            closeNumberOfQualifyingTimes);
+            closeNumberOfQualifyingTimes,
+            openGapTick,
+            closeGapTick,
+            coolDownGapTick);
 
     public void Update(
         string machineHostName,
@@ -169,7 +181,10 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
         int delayCloseAMs = -1,
         int delayCloseBMs = -1,
         int openNumberOfQualifyingTimes = -1,
-        int closeNumberOfQualifyingTimes = -1)
+        int closeNumberOfQualifyingTimes = -1,
+        int openGapTick = -1,
+        int closeGapTick = -1,
+        int coolDownGapTick = -1)
     {
         var oldOpenN = CurrentOpenNumberOfQualifyingTimes;
         var oldCloseN = CurrentCloseNumberOfQualifyingTimes;
@@ -223,6 +238,18 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
         {
             CurrentCloseNumberOfQualifyingTimes = Math.Max(1, closeNumberOfQualifyingTimes);
         }
+        if (openGapTick >= 0)
+        {
+            CurrentOpenGapTick = Math.Max(0, openGapTick);
+        }
+        if (closeGapTick >= 0)
+        {
+            CurrentCloseGapTick = Math.Max(0, closeGapTick);
+        }
+        if (coolDownGapTick >= 0)
+        {
+            CurrentCoolDownGapTick = Math.Max(0, coolDownGapTick);
+        }
         CurrentMapName1 = (mapName1 ?? string.Empty).Trim();
         CurrentMapName2 = (mapName2 ?? string.Empty).Trim();
         CurrentPlatformA = NormalizePlatform(platformA);
@@ -273,7 +300,10 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
             CurrentDelayCloseAMs,
             CurrentDelayCloseBMs,
             CurrentOpenNumberOfQualifyingTimes,
-            CurrentCloseNumberOfQualifyingTimes);
+            CurrentCloseNumberOfQualifyingTimes,
+            CurrentOpenGapTick,
+            CurrentCloseGapTick,
+            CurrentCoolDownGapTick);
 
     public void Update(string machineHostName, string mapName1, string mapName2)
         => Update(
@@ -305,7 +335,10 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
             CurrentDelayCloseAMs,
             CurrentDelayCloseBMs,
             CurrentOpenNumberOfQualifyingTimes,
-            CurrentCloseNumberOfQualifyingTimes);
+            CurrentCloseNumberOfQualifyingTimes,
+            CurrentOpenGapTick,
+            CurrentCloseGapTick,
+            CurrentCoolDownGapTick);
 
     public void UpdatePlatform(string platformA, string platformB)
     {

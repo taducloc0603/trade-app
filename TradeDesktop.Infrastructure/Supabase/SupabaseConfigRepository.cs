@@ -68,7 +68,10 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
             DelayCloseAMs: row.DelayCloseAMs,
             DelayCloseBMs: row.DelayCloseBMs,
             OpenNumberOfQualifyingTimes: row.OpenNumberOfQualifyingTimes,
-            CloseNumberOfQualifyingTimes: row.CloseNumberOfQualifyingTimes);
+            CloseNumberOfQualifyingTimes: row.CloseNumberOfQualifyingTimes,
+            OpenGapTick: row.OpenGapTick,
+            CloseGapTick: row.CloseGapTick,
+            CoolDownGapTick: row.CoolDownGapTick);
     }
 
     public async Task<bool> UpdateSansAndHostNameByHostNameAsync(
@@ -172,6 +175,9 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
         first.TryGetProperty("delay_close_b_ms", out var delayCloseBMsElement);
         first.TryGetProperty("open_number_of_qualifying_times", out var openQtElement);
         first.TryGetProperty("close_number_of_qualifying_times", out var closeQtElement);
+        first.TryGetProperty("open_gap_tick", out var openGapTickElement);
+        first.TryGetProperty("close_gap_tick", out var closeGapTickElement);
+        first.TryGetProperty("cool_down_gap_tick", out var coolDownGapTickElement);
         first.TryGetProperty("platform_a", out var platformAElement);
         first.TryGetProperty("platform_b", out var platformBElement);
 
@@ -214,6 +220,9 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
             DelayCloseBMs = delayCloseBMsElement.ValueKind == JsonValueKind.Number && delayCloseBMsElement.TryGetInt32(out var delayCloseBMs) ? delayCloseBMs : 0,
             OpenNumberOfQualifyingTimes = openQtElement.ValueKind == JsonValueKind.Number && openQtElement.TryGetInt32(out var openQt) ? openQt : 1,
             CloseNumberOfQualifyingTimes = closeQtElement.ValueKind == JsonValueKind.Number && closeQtElement.TryGetInt32(out var closeQt) ? closeQt : 1,
+            OpenGapTick = openGapTickElement.ValueKind == JsonValueKind.Number && openGapTickElement.TryGetInt32(out var openGapTick) ? openGapTick : 0,
+            CloseGapTick = closeGapTickElement.ValueKind == JsonValueKind.Number && closeGapTickElement.TryGetInt32(out var closeGapTick) ? closeGapTick : 0,
+            CoolDownGapTick = coolDownGapTickElement.ValueKind == JsonValueKind.Number && coolDownGapTickElement.TryGetInt32(out var coolDownGapTick) ? coolDownGapTick : 0,
             PlatformA = platformAElement.ValueKind == JsonValueKind.String ? platformAElement.GetString() : null,
             PlatformB = platformBElement.ValueKind == JsonValueKind.String ? platformBElement.GetString() : null
         };
@@ -274,6 +283,9 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
         first.TryGetProperty("delay_close_b_ms", out var delayCloseBMsElement);
         first.TryGetProperty("open_number_of_qualifying_times", out var openQtElement);
         first.TryGetProperty("close_number_of_qualifying_times", out var closeQtElement);
+        first.TryGetProperty("open_gap_tick", out var openGapTickElement);
+        first.TryGetProperty("close_gap_tick", out var closeGapTickElement);
+        first.TryGetProperty("cool_down_gap_tick", out var coolDownGapTickElement);
         first.TryGetProperty("platform_a", out var platformAElement);
         first.TryGetProperty("platform_b", out var platformBElement);
 
@@ -314,6 +326,9 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
             DelayCloseBMs = delayCloseBMsElement.ValueKind == JsonValueKind.Number && delayCloseBMsElement.TryGetInt32(out var delayCloseBMs) ? delayCloseBMs : 0,
             OpenNumberOfQualifyingTimes = openQtElement.ValueKind == JsonValueKind.Number && openQtElement.TryGetInt32(out var openQt) ? openQt : 1,
             CloseNumberOfQualifyingTimes = closeQtElement.ValueKind == JsonValueKind.Number && closeQtElement.TryGetInt32(out var closeQt) ? closeQt : 1,
+            OpenGapTick = openGapTickElement.ValueKind == JsonValueKind.Number && openGapTickElement.TryGetInt32(out var openGapTick) ? openGapTick : 0,
+            CloseGapTick = closeGapTickElement.ValueKind == JsonValueKind.Number && closeGapTickElement.TryGetInt32(out var closeGapTick) ? closeGapTick : 0,
+            CoolDownGapTick = coolDownGapTickElement.ValueKind == JsonValueKind.Number && coolDownGapTickElement.TryGetInt32(out var coolDownGapTick) ? coolDownGapTick : 0,
             PlatformA = platformAElement.ValueKind == JsonValueKind.String ? platformAElement.GetString() : null,
             PlatformB = platformBElement.ValueKind == JsonValueKind.String ? platformBElement.GetString() : null
         };
@@ -448,6 +463,15 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
 
         [JsonPropertyName("close_number_of_qualifying_times")]
         public int CloseNumberOfQualifyingTimes { get; set; } = 1;
+
+        [JsonPropertyName("open_gap_tick")]
+        public int OpenGapTick { get; set; }
+
+        [JsonPropertyName("close_gap_tick")]
+        public int CloseGapTick { get; set; }
+
+        [JsonPropertyName("cool_down_gap_tick")]
+        public int CoolDownGapTick { get; set; }
 
         [JsonPropertyName("platform_a")]
         public string? PlatformA { get; set; }

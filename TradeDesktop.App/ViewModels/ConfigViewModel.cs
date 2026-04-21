@@ -410,7 +410,10 @@ public sealed class ConfigViewModel : ObservableObject
                 loadResult.DelayCloseAMs,
                 loadResult.DelayCloseBMs,
                 loadResult.OpenNumberOfQualifyingTimes,
-                loadResult.CloseNumberOfQualifyingTimes);
+                loadResult.CloseNumberOfQualifyingTimes,
+                loadResult.OpenGapTick,
+                loadResult.CloseGapTick,
+                loadResult.CoolDownGapTick);
             _runtimeConfigState.UpdateManualTradeHwnd(BuildManualHwndColumns());
 
             IsExistingRecordLoaded = true;

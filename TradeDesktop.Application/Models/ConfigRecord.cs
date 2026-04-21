@@ -29,4 +29,7 @@ public sealed record ConfigRecord(
     int DelayCloseAMs,
     int DelayCloseBMs,
     int OpenNumberOfQualifyingTimes,
-    int CloseNumberOfQualifyingTimes);
+    int CloseNumberOfQualifyingTimes,
+    int OpenGapTick,
+    int CloseGapTick,
+    int CoolDownGapTick);

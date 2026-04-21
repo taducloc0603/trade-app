@@ -14,6 +14,9 @@ public sealed class TradingFlowEngine(
     private DateTime? _closedAtRuntimeUtc;
     private int _openQualifyingCount;
     private int _closeQualifyingCount;
+    private decimal? _previousAAsk;
+    private decimal? _previousBAsk;
+    private DateTime? _gapCoolDownUntilUtc;
     // FIX: Holding floor fallback.
     // Nếu vì bất kỳ lý do gì mà CurrentHoldingSeconds về 0 khi engine đang
     // WaitingClose (ví dụ ForceWaitingClose được gọi để sync state với live
@@ -42,6 +45,13 @@ public sealed class TradingFlowEngine(
         // FIX: cache config hold range cho close-gate fallback
         _lastSeenStartTimeHold = Math.Max(0, config.StartTimeHold);
         _lastSeenEndTimeHold = Math.Max(0, config.EndTimeHold);
+
+        var effectiveNow = ResolveEffectiveNowUtc(snapshot.TimestampUtc);
+        ApplyGapSpikeCoolDown(snapshot, config, effectiveNow);
+        if (IsGapCoolDownActive(effectiveNow))
+        {
+            return null;
+        }
 
         if (CurrentPhase == TradingFlowPhase.WaitingOpen)
         {
@@ -271,12 +281,17 @@ public sealed class TradingFlowEngine(
 
     private bool CanCheckOpen(DateTime snapshotTimestampUtc)
     {
+        var effectiveNow = ResolveEffectiveNowUtc(snapshotTimestampUtc);
+        if (IsGapCoolDownActive(effectiveNow))
+        {
+            return false;
+        }
+
         if (!ClosedAtUtc.HasValue || CurrentWaitSeconds <= 0)
         {
             return true;
         }
 
-        var effectiveNow = ResolveEffectiveNowUtc(snapshotTimestampUtc);
         var baseline = _closedAtRuntimeUtc ?? ClosedAtUtc.Value;
         var elapsed = effectiveNow - baseline;
         return elapsed >= TimeSpan.FromSeconds(CurrentWaitSeconds);
@@ -285,6 +300,12 @@ public sealed class TradingFlowEngine(
     private bool CanCheckClose(DateTime snapshotTimestampUtc)
     {
         if (_isCloseExecutionPending)
+        {
+            return false;
+        }
+
+        var effectiveNow = ResolveEffectiveNowUtc(snapshotTimestampUtc);
+        if (IsGapCoolDownActive(effectiveNow))
         {
             return false;
         }
@@ -309,10 +330,61 @@ public sealed class TradingFlowEngine(
             return true;
         }
 
-        var effectiveNow = ResolveEffectiveNowUtc(snapshotTimestampUtc);
         var baseline = _openedAtRuntimeUtc ?? OpenedAtUtc.Value;
         var elapsed = effectiveNow - baseline;
         return elapsed >= TimeSpan.FromSeconds(effectiveHoldingSeconds);
+    }
+
+    private void ApplyGapSpikeCoolDown(
+        GapSignalSnapshot snapshot,
+        GapSignalConfirmationConfig config,
+        DateTime effectiveNow)
+    {
+        var thresholdPts = CurrentPhase == TradingFlowPhase.WaitingOpen
+            ? Math.Max(0, config.OpenGapTick)
+            : Math.Max(0, config.CloseGapTick);
+
+        var coolDownSeconds = Math.Max(0, config.CoolDownGapTick);
+        var pointMultiplier = Math.Max(1, snapshot.PointMultiplier);
+
+        var currentAAsk = snapshot.ExchangeAAsk;
+        var currentBAsk = snapshot.ExchangeBAsk;
+
+        var deltaAPts = CalculateAskDeltaPts(_previousAAsk, currentAAsk, pointMultiplier);
+        var deltaBPts = CalculateAskDeltaPts(_previousBAsk, currentBAsk, pointMultiplier);
+
+        if (thresholdPts > 0 && coolDownSeconds > 0 && (deltaAPts > thresholdPts || deltaBPts > thresholdPts))
+        {
+            var nextUntil = effectiveNow.AddSeconds(coolDownSeconds);
+            if (!_gapCoolDownUntilUtc.HasValue || nextUntil > _gapCoolDownUntilUtc.Value)
+            {
+                _gapCoolDownUntilUtc = nextUntil;
+            }
+        }
+
+        if (currentAAsk.HasValue)
+        {
+            _previousAAsk = currentAAsk;
+        }
+
+        if (currentBAsk.HasValue)
+        {
+            _previousBAsk = currentBAsk;
+        }
+    }
+
+    private bool IsGapCoolDownActive(DateTime effectiveNow)
+        => _gapCoolDownUntilUtc.HasValue && effectiveNow < _gapCoolDownUntilUtc.Value;
+
+    private static int CalculateAskDeltaPts(decimal? previousAsk, decimal? currentAsk, int pointMultiplier)
+    {
+        if (!previousAsk.HasValue || !currentAsk.HasValue)
+        {
+            return 0;
+        }
+
+        var delta = Math.Abs(currentAsk.Value - previousAsk.Value);
+        return (int)(delta * pointMultiplier);
     }
 
     private static DateTime ResolveEffectiveNowUtc(DateTime snapshotTimestampUtc)
