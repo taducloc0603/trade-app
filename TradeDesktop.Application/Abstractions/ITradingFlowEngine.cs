@@ -37,5 +37,22 @@ public interface ITradingFlowEngine
 
     void ForceWaitingOpen();
 
+    void RestoreWaitingClose(
+        TradingFlowPhase phase,
+        TradingOpenMode openMode,
+        TradingPositionSide side,
+        DateTime openedAtUtc,
+        int holdingSeconds,
+        int lastSeenStartHold,
+        int lastSeenEndHold);
+
+    void RestoreWaitingOpenWithWait(
+        DateTime closedAtUtc,
+        int waitSeconds,
+        int lastSeenStartWait,
+        int lastSeenEndWait,
+        int lastSeenStartHold,
+        int lastSeenEndHold);
+
     void Reset();
 }

@@ -28,6 +28,8 @@ public sealed class DashboardViewModel : ObservableObject
     private readonly IHistorySharedMemoryReader _historySharedMemoryReader;
     private readonly ITradeExecutionRouter _tradeExecutionRouter;
     private readonly IMt5ManualTradeService _mt5ManualTradeService;
+    private readonly ISessionPersistenceService _sessionPersistenceService;
+    private readonly SessionReconciler _sessionReconciler;
     private readonly string _normalizedHostName;
     private readonly CancellationTokenSource _orderInfoPollingCts = new();
     private readonly Dictionary<string, ulong> _lastTradeTimestampByMap = new(StringComparer.Ordinal);
@@ -264,6 +266,7 @@ public sealed class DashboardViewModel : ObservableObject
     private OrderTabType _selectedOrderTab = OrderTabType.Trade;
     private int _selectedOrderTabIndex;
     private string _historyRealtimeProfitSummary = "0.00 | 0.00 $";
+    private volatile bool _isReconciling = true;
 
     public DashboardViewModel(
         IServiceProvider serviceProvider,
@@ -278,7 +281,9 @@ public sealed class DashboardViewModel : ObservableObject
         ITradesSharedMemoryReader tradesSharedMemoryReader,
         IHistorySharedMemoryReader historySharedMemoryReader,
         ITradeExecutionRouter tradeExecutionRouter,
-        IMt5ManualTradeService mt5ManualTradeService)
+        IMt5ManualTradeService mt5ManualTradeService,
+        ISessionPersistenceService sessionPersistenceService,
+        SessionReconciler sessionReconciler)
     {
         _serviceProvider = serviceProvider;
         _runtimeConfigState = runtimeConfigState;
@@ -292,6 +297,8 @@ public sealed class DashboardViewModel : ObservableObject
         _historySharedMemoryReader = historySharedMemoryReader;
         _tradeExecutionRouter = tradeExecutionRouter;
         _mt5ManualTradeService = mt5ManualTradeService;
+        _sessionPersistenceService = sessionPersistenceService;
+        _sessionReconciler = sessionReconciler;
 
         var normalizedHostName = _machineIdentityService.GetHostName();
         _normalizedHostName = normalizedHostName;
@@ -521,16 +528,18 @@ public sealed class DashboardViewModel : ObservableObject
     public IAsyncRelayCommand SellCommand { get; }
     public IAsyncRelayCommand CloseOrderCommand { get; }
 
-    private bool CanStartTradingLogic() => !IsTradingLogicEnabled;
+    private bool CanStartTradingLogic() => !IsTradingLogicEnabled && !_isReconciling;
     private bool CanStopTradingLogic() => IsTradingLogicEnabled;
     private bool CanManualOpen()
-        => IsTradingLogicEnabled
+        => !_isReconciling
+           && IsTradingLogicEnabled
            && HasManualTradeHwndConfig
            && !_isManualOpenInFlight
            && _manualOpenGatePairState == LivePairTradeState.BothFlat;
 
     private bool CanManualClose()
-        => IsTradingLogicEnabled
+        => !_isReconciling
+           && IsTradingLogicEnabled
            && HasManualTradeHwndConfig;
 
     private void RaiseManualOpenCanExecuteChanged()

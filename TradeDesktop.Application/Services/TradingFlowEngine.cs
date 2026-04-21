@@ -274,6 +274,69 @@ public sealed class TradingFlowEngine(
         ResetQualifyingCounters();
     }
 
+    public void RestoreWaitingClose(
+        TradingFlowPhase phase,
+        TradingOpenMode openMode,
+        TradingPositionSide side,
+        DateTime openedAtUtc,
+        int holdingSeconds,
+        int lastSeenStartHold,
+        int lastSeenEndHold)
+    {
+        if (phase != TradingFlowPhase.WaitingCloseFromGapBuy && phase != TradingFlowPhase.WaitingCloseFromGapSell)
+        {
+            return;
+        }
+
+        if (openMode == TradingOpenMode.None || side == TradingPositionSide.None)
+        {
+            return;
+        }
+
+        _isCloseExecutionPending = false;
+        CurrentPhase = phase;
+        CurrentOpenMode = openMode;
+        CurrentPositionSide = side;
+        OpenedAtUtc = openedAtUtc;
+        _openedAtRuntimeUtc = openedAtUtc;
+        ClosedAtUtc = null;
+        _closedAtRuntimeUtc = null;
+        CurrentHoldingSeconds = Math.Max(0, holdingSeconds);
+        CurrentWaitSeconds = 0;
+        _lastSeenStartTimeHold = Math.Max(0, lastSeenStartHold);
+        _lastSeenEndTimeHold = Math.Max(0, lastSeenEndHold);
+        openSignalEngine.Reset();
+        closeSignalEngine.Reset();
+        ResetQualifyingCounters();
+    }
+
+    public void RestoreWaitingOpenWithWait(
+        DateTime closedAtUtc,
+        int waitSeconds,
+        int lastSeenStartWait,
+        int lastSeenEndWait,
+        int lastSeenStartHold,
+        int lastSeenEndHold)
+    {
+        _isCloseExecutionPending = false;
+        CurrentPhase = TradingFlowPhase.WaitingOpen;
+        CurrentOpenMode = TradingOpenMode.None;
+        CurrentPositionSide = TradingPositionSide.None;
+        OpenedAtUtc = null;
+        _openedAtRuntimeUtc = null;
+        ClosedAtUtc = closedAtUtc;
+        _closedAtRuntimeUtc = closedAtUtc;
+        CurrentHoldingSeconds = 0;
+        CurrentWaitSeconds = Math.Max(0, waitSeconds);
+        _lastSeenStartTimeHold = Math.Max(0, lastSeenStartHold);
+        _lastSeenEndTimeHold = Math.Max(0, lastSeenEndHold);
+        _ = Math.Max(0, lastSeenStartWait);
+        _ = Math.Max(0, lastSeenEndWait);
+        openSignalEngine.Reset();
+        closeSignalEngine.Reset();
+        ResetQualifyingCounters();
+    }
+
     public void Reset()
     {
         ForceWaitingOpen();
