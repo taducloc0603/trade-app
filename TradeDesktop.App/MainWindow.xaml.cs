@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Windows;
 using TradeDesktop.App.ViewModels;
 
@@ -9,5 +10,20 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         DataContext = viewModel;
+        Closing += OnMainWindowClosing;
+    }
+
+    private void OnMainWindowClosing(object? sender, CancelEventArgs e)
+    {
+        var confirm = MessageBox.Show(
+            "Bạn có chắc muốn tắt ứng dụng không?",
+            "Xác nhận thoát",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question);
+
+        if (confirm != MessageBoxResult.Yes)
+        {
+            e.Cancel = true;
+        }
     }
 }
