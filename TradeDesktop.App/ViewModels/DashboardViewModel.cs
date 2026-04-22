@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.Diagnostics;
 using System.Windows.Media;
 using Microsoft.Extensions.DependencyInjection;
@@ -28,6 +29,7 @@ public sealed class DashboardViewModel : ObservableObject
     private readonly IHistorySharedMemoryReader _historySharedMemoryReader;
     private readonly ITradeExecutionRouter _tradeExecutionRouter;
     private readonly IMt5ManualTradeService _mt5ManualTradeService;
+    private readonly ITradeSessionFileLogger _tradeSessionFileLogger;
     private readonly string _normalizedHostName;
     private readonly CancellationTokenSource _orderInfoPollingCts = new();
     private readonly Dictionary<string, ulong> _lastTradeTimestampByMap = new(StringComparer.Ordinal);
@@ -282,7 +284,8 @@ public sealed class DashboardViewModel : ObservableObject
         ITradesSharedMemoryReader tradesSharedMemoryReader,
         IHistorySharedMemoryReader historySharedMemoryReader,
         ITradeExecutionRouter tradeExecutionRouter,
-        IMt5ManualTradeService mt5ManualTradeService)
+        IMt5ManualTradeService mt5ManualTradeService,
+        ITradeSessionFileLogger tradeSessionFileLogger)
     {
         _serviceProvider = serviceProvider;
         _runtimeConfigState = runtimeConfigState;
@@ -296,6 +299,7 @@ public sealed class DashboardViewModel : ObservableObject
         _historySharedMemoryReader = historySharedMemoryReader;
         _tradeExecutionRouter = tradeExecutionRouter;
         _mt5ManualTradeService = mt5ManualTradeService;
+        _tradeSessionFileLogger = tradeSessionFileLogger;
 
         var normalizedHostName = _machineIdentityService.GetHostName();
         _normalizedHostName = normalizedHostName;
@@ -323,6 +327,7 @@ public sealed class DashboardViewModel : ObservableObject
             new OrderPanelStatusViewModel("Sàn B", OrderRecordLayoutMode.HistoryTable));
 
         OrderTabs = [TradeTab, HistoryTab];
+        SignalLogItems.CollectionChanged += OnSignalLogItemsCollectionChanged;
 
         _runtimeConfigState.StateChanged += (_, _) => ApplyRuntimeConfig();
         _runtimeConfigState.QualifyingConfigChanged += OnQualifyingConfigChanged;
@@ -573,6 +578,9 @@ public sealed class DashboardViewModel : ObservableObject
             return Task.CompletedTask;
         }
 
+        _tradeSessionFileLogger.StartSession(DateTimeOffset.Now, _normalizedHostName);
+        _tradeSessionFileLogger.Log("Trading logic start confirmed by user");
+
         ResetTradingLogicState();
         IsTradingLogicEnabled = true;
         SyncTradingFlowWithLivePairState(GetLivePairTradeStateStrict());
@@ -588,10 +596,49 @@ public sealed class DashboardViewModel : ObservableObject
             return Task.CompletedTask;
         }
 
+        _tradeSessionFileLogger.Log("Trading logic stop requested");
+
         IsTradingLogicEnabled = false;
         ResetTradingLogicState();
         LastSignalText = "-";
+        _tradeSessionFileLogger.StopSession(DateTimeOffset.Now);
         return Task.CompletedTask;
+    }
+
+    private void OnSignalLogItemsCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.Action is not NotifyCollectionChangedAction.Add || e.NewItems is null || e.NewItems.Count == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            if (e.NewStartingIndex == 0 && e.NewItems.Count > 1)
+            {
+                for (var i = e.NewItems.Count - 1; i >= 0; i--)
+                {
+                    if (e.NewItems[i] is string line && !string.IsNullOrWhiteSpace(line))
+                    {
+                        _tradeSessionFileLogger.Log(line);
+                    }
+                }
+
+                return;
+            }
+
+            foreach (var item in e.NewItems)
+            {
+                if (item is string line && !string.IsNullOrWhiteSpace(line))
+                {
+                    _tradeSessionFileLogger.Log(line);
+                }
+            }
+        }
+        catch
+        {
+            // Phase A requirement: never break runtime flow because of file logging.
+        }
     }
 
     private async Task BuyAsync()

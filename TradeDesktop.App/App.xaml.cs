@@ -42,6 +42,7 @@ public partial class App : System.Windows.Application
                         .AddApplication()
                         .AddInfrastructure(configuration);
 
+                    services.AddSingleton<ITradeSessionFileLogger, TradeSessionFileLogger>();
                     services.AddSingleton<RuntimeConfigState>();
                     services.AddSingleton<IMt5ManualTradeService, Mt5ManualTradeService>();
                     services.AddSingleton<ITradePlatformExecutor, Mt5TradeExecutor>();
@@ -73,6 +74,15 @@ public partial class App : System.Windows.Application
 
     protected override async void OnExit(ExitEventArgs e)
     {
+        try
+        {
+            _host?.Services.GetService<ITradeSessionFileLogger>()?.StopSession(DateTimeOffset.Now);
+        }
+        catch
+        {
+            // ignore logger shutdown errors
+        }
+
         if (_host is not null)
         {
             await _host.StopAsync();
