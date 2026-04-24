@@ -14,6 +14,7 @@ public interface IConfigService
         string platformB,
         IReadOnlyList<ManualHwndColumnConfig>? manualHwndColumns = null,
         CancellationToken cancellationToken = default);
+    Task SaveCurrentTicksAsync(string currentTickA, string currentTickB, CancellationToken cancellationToken = default);
 }
 
 public sealed class ConfigService(
@@ -77,7 +78,20 @@ public sealed class ConfigService(
             record.OpenGapTick,
             record.CloseGapTick,
             record.CoolDownGapTick,
-            record.IsShowConfig);
+            record.IsShowConfig,
+            record.CurrentTickA,
+            record.CurrentTickB);
+    }
+
+    public async Task SaveCurrentTicksAsync(string currentTickA, string currentTickB, CancellationToken cancellationToken = default)
+    {
+        var hostName = machineIdentityService.GetHostName();
+        if (string.IsNullOrWhiteSpace(hostName))
+        {
+            return;
+        }
+
+        await configRepository.UpdateCurrentTicksAsync(hostName, currentTickA, currentTickB, cancellationToken);
     }
 
     public async Task<ConfigSaveResult> SaveByMachineHostNameAsync(
@@ -166,7 +180,9 @@ public sealed record ConfigLoadResult(
     int OpenGapTick,
     int CloseGapTick,
     int CoolDownGapTick,
-    int IsShowConfig = 0)
+    int IsShowConfig = 0,
+    string CurrentTickA = "",
+    string CurrentTickB = "")
 {
     public static ConfigLoadResult Success(
         string machineHostName,
@@ -204,7 +220,9 @@ public sealed record ConfigLoadResult(
         int openGapTick = 0,
         int closeGapTick = 0,
         int coolDownGapTick = 0,
-        int isShowConfig = 0) =>
+        int isShowConfig = 0,
+        string currentTickA = "",
+        string currentTickB = "") =>
         new(
             true,
             true,
@@ -244,13 +262,15 @@ public sealed record ConfigLoadResult(
             Math.Max(0, openGapTick),
             Math.Max(0, closeGapTick),
             Math.Max(0, coolDownGapTick),
-            isShowConfig);
+            isShowConfig,
+            currentTickA ?? string.Empty,
+            currentTickB ?? string.Empty);
 
     public static ConfigLoadResult NotFound(string machineHostName) =>
-        new(false, false, machineHostName, [ManualHwndColumnConfig.Empty], "mt5", "mt5", 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", null, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0);
+        new(false, false, machineHostName, [ManualHwndColumnConfig.Empty], "mt5", "mt5", 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", null, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, "", "");
 
     public static ConfigLoadResult Failed(string machineHostName, string error) =>
-        new(false, true, machineHostName, [ManualHwndColumnConfig.Empty], "mt5", "mt5", 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", error, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0);
+        new(false, true, machineHostName, [ManualHwndColumnConfig.Empty], "mt5", "mt5", 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", error, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, "", "");
 
     private static IReadOnlyList<ManualHwndColumnConfig> NormalizeColumns(IReadOnlyList<ManualHwndColumnConfig>? columns)
     {

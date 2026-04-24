@@ -11,4 +11,9 @@ public interface IConfigRepository
         string platformA,
         string platformB,
         CancellationToken cancellationToken = default);
+    Task<bool> UpdateCurrentTicksAsync(
+        string hostName,
+        string currentTickA,
+        string currentTickB,
+        CancellationToken cancellationToken = default);
 }

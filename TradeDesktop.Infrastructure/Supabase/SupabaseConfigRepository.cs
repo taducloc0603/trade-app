@@ -72,7 +72,61 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
             OpenGapTick: row.OpenGapTick,
             CloseGapTick: row.CloseGapTick,
             CoolDownGapTick: row.CoolDownGapTick,
-            IsShowConfig: row.IsShowConfig);
+            IsShowConfig: row.IsShowConfig,
+            CurrentTickA: row.CurrentTickA ?? string.Empty,
+            CurrentTickB: row.CurrentTickB ?? string.Empty);
+    }
+
+    public async Task<bool> UpdateCurrentTicksAsync(
+        string hostName,
+        string currentTickA,
+        string currentTickB,
+        CancellationToken cancellationToken = default)
+    {
+        if (!IsConfigured())
+        {
+            throw new InvalidOperationException("Thiếu SUPABASE_URL hoặc SUPABASE_KEY/SUPABASE_ANON_KEY.");
+        }
+
+        if (string.IsNullOrWhiteSpace(hostName))
+        {
+            return false;
+        }
+
+        var normalizedHostName = NormalizeHostName(hostName);
+
+        var payload = JsonSerializer.Serialize(new
+        {
+            current_tick_a = currentTickA ?? string.Empty,
+            current_tick_b = currentTickB ?? string.Empty
+        });
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Patch,
+            $"{_supabaseUrl}/rest/v1/configs?hostname=eq.{Uri.EscapeDataString(normalizedHostName)}")
+        {
+            Content = new StringContent(payload, Encoding.UTF8, "application/json")
+        };
+
+        AddAuthHeaders(request);
+        request.Headers.TryAddWithoutValidation("Prefer", "return=representation");
+
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
+            throw new HttpRequestException(
+                $"Supabase UpdateCurrentTicksAsync thất bại. Status={(int)response.StatusCode}, Body={errorBody}");
+        }
+
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return false;
+        }
+
+        using var doc = JsonDocument.Parse(body);
+        return doc.RootElement.ValueKind == JsonValueKind.Array && doc.RootElement.GetArrayLength() > 0;
     }
 
     public async Task<bool> UpdateSansAndHostNameByHostNameAsync(
@@ -182,6 +236,8 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
         first.TryGetProperty("platform_a", out var platformAElement);
         first.TryGetProperty("platform_b", out var platformBElement);
         first.TryGetProperty("is_show_config", out var isShowConfigElement);
+        first.TryGetProperty("current_tick_a", out var currentTickAElement);
+        first.TryGetProperty("current_tick_b", out var currentTickBElement);
 
         // DB column name is lowercase: hostname
         var hasHostName = first.TryGetProperty("hostname", out var hostNameElement);
@@ -227,7 +283,9 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
             CoolDownGapTick = coolDownGapTickElement.ValueKind == JsonValueKind.Number && coolDownGapTickElement.TryGetInt32(out var coolDownGapTick) ? coolDownGapTick : 0,
             PlatformA = platformAElement.ValueKind == JsonValueKind.String ? platformAElement.GetString() : null,
             PlatformB = platformBElement.ValueKind == JsonValueKind.String ? platformBElement.GetString() : null,
-            IsShowConfig = isShowConfigElement.ValueKind == JsonValueKind.Number && isShowConfigElement.TryGetInt32(out var isShowConfig) ? isShowConfig : 0
+            IsShowConfig = isShowConfigElement.ValueKind == JsonValueKind.Number && isShowConfigElement.TryGetInt32(out var isShowConfig) ? isShowConfig : 0,
+            CurrentTickA = currentTickAElement.ValueKind == JsonValueKind.String ? currentTickAElement.GetString() : null,
+            CurrentTickB = currentTickBElement.ValueKind == JsonValueKind.String ? currentTickBElement.GetString() : null
         };
     }
 
@@ -292,6 +350,8 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
         first.TryGetProperty("platform_a", out var platformAElement);
         first.TryGetProperty("platform_b", out var platformBElement);
         first.TryGetProperty("is_show_config", out var isShowConfigElement);
+        first.TryGetProperty("current_tick_a", out var currentTickAElement);
+        first.TryGetProperty("current_tick_b", out var currentTickBElement);
 
         var hasHostName = first.TryGetProperty("hostname", out var hostNameElement);
         if (!hasHostName)
@@ -335,7 +395,9 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
             CoolDownGapTick = coolDownGapTickElement.ValueKind == JsonValueKind.Number && coolDownGapTickElement.TryGetInt32(out var coolDownGapTick) ? coolDownGapTick : 0,
             PlatformA = platformAElement.ValueKind == JsonValueKind.String ? platformAElement.GetString() : null,
             PlatformB = platformBElement.ValueKind == JsonValueKind.String ? platformBElement.GetString() : null,
-            IsShowConfig = isShowConfigElement.ValueKind == JsonValueKind.Number && isShowConfigElement.TryGetInt32(out var isShowConfig) ? isShowConfig : 0
+            IsShowConfig = isShowConfigElement.ValueKind == JsonValueKind.Number && isShowConfigElement.TryGetInt32(out var isShowConfig) ? isShowConfig : 0,
+            CurrentTickA = currentTickAElement.ValueKind == JsonValueKind.String ? currentTickAElement.GetString() : null,
+            CurrentTickB = currentTickBElement.ValueKind == JsonValueKind.String ? currentTickBElement.GetString() : null
         };
     }
 
@@ -486,5 +548,11 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
 
         [JsonPropertyName("is_show_config")]
         public int IsShowConfig { get; set; }
+
+        [JsonPropertyName("current_tick_a")]
+        public string? CurrentTickA { get; set; }
+
+        [JsonPropertyName("current_tick_b")]
+        public string? CurrentTickB { get; set; }
     }
 }

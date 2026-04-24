@@ -33,4 +33,6 @@ public sealed record ConfigRecord(
     int OpenGapTick,
     int CloseGapTick,
     int CoolDownGapTick,
-    int IsShowConfig = 0);
+    int IsShowConfig = 0,
+    string CurrentTickA = "",
+    string CurrentTickB = "");

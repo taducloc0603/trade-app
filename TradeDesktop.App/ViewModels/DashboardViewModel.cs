@@ -2016,6 +2016,20 @@ public sealed class DashboardViewModel : ObservableObject
     {
         _activeAutoCloseRecoveryCycle = null;
         _activeAutoCycle = null;
+
+        // Clear persisted tickets from Supabase on close finalize
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await _configService.SaveCurrentTicksAsync("", "");
+                SafeVmLog("[RECOVERY][INFO] Cleared current ticks from DB after close finalize");
+            }
+            catch (Exception ex)
+            {
+                SafeVmLog($"[RECOVERY][WARN] Failed to clear current ticks: {ex.Message}");
+            }
+        });
     }
 
     private bool IsPendingCloseStateForActiveCycle(PendingClosePairState state)
@@ -4258,6 +4272,25 @@ public sealed class DashboardViewModel : ObservableObject
         {
             state.IsResolved = true;
             SafeVmLog($"[CYCLE][INFO] Pending open resolved: pairId={pendingRequest.PairId} ticketA={state.OpenedTicketA} ticketB={state.OpenedTicketB}");
+
+            // Persist current tickets to Supabase for recovery on restart
+            if (state.OpenedTicketA.HasValue && state.OpenedTicketB.HasValue)
+            {
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await _configService.SaveCurrentTicksAsync(
+                            state.OpenedTicketA.Value.ToString(),
+                            state.OpenedTicketB.Value.ToString());
+                        SafeVmLog($"[RECOVERY][INFO] Saved current ticks to DB: ticketA={state.OpenedTicketA.Value} ticketB={state.OpenedTicketB.Value}");
+                    }
+                    catch (Exception ex)
+                    {
+                        SafeVmLog($"[RECOVERY][WARN] Failed to save current ticks: {ex.Message}");
+                    }
+                });
+            }
         }
     }
 
@@ -4873,6 +4906,9 @@ public sealed class DashboardViewModel : ObservableObject
                 IsShowConfigVisible = result.IsShowConfig == 1;
                 ResetTradingLogicState();
 
+                // Recovery: restore active tickets from DB if tool was restarted with open trades
+                await TryRecoverTicketsFromConfigAsync(result.CurrentTickA, result.CurrentTickB);
+
                 if (string.Equals(result.MachineHostName, InlineDbHostName, StringComparison.OrdinalIgnoreCase))
                 {
                     DbInlineData =
@@ -5333,6 +5369,83 @@ public sealed class DashboardViewModel : ObservableObject
 
     private static string FormatTextOrDash(string? value)
         => string.IsNullOrWhiteSpace(value) ? "-" : value;
+
+    private async Task TryRecoverTicketsFromConfigAsync(string currentTickA, string currentTickB)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(currentTickA) || string.IsNullOrWhiteSpace(currentTickB))
+            {
+                return;
+            }
+
+            if (!ulong.TryParse(currentTickA, out var ticketA) || ticketA == 0
+                || !ulong.TryParse(currentTickB, out var ticketB) || ticketB == 0)
+            {
+                return;
+            }
+
+            SafeVmLog($"[RECOVERY][INFO] Found persisted tickets in DB: ticketA={ticketA} ticketB={ticketB}. Checking shared memory...");
+
+            var tradeMapNameA = TradeTab.LeftPanel.TargetMapName;
+            var tradeMapNameB = TradeTab.RightPanel.TargetMapName;
+
+            if (string.IsNullOrWhiteSpace(tradeMapNameA) || string.IsNullOrWhiteSpace(tradeMapNameB))
+            {
+                SafeVmLog("[RECOVERY][WARN] Trade map names not available yet, cannot recover tickets.");
+                await _configService.SaveCurrentTicksAsync("", "");
+                return;
+            }
+
+            var tradeResultA = _tradesSharedMemoryReader.ReadTrades(tradeMapNameA);
+            var tradeResultB = _tradesSharedMemoryReader.ReadTrades(tradeMapNameB);
+
+            var foundA = tradeResultA.IsMapAvailable && tradeResultA.IsParseSuccess
+                         && tradeResultA.Records.Any(r => r.Ticket == ticketA);
+            var foundB = tradeResultB.IsMapAvailable && tradeResultB.IsParseSuccess
+                         && tradeResultB.Records.Any(r => r.Ticket == ticketB);
+
+            if (!foundA || !foundB)
+            {
+                SafeVmLog($"[RECOVERY][INFO] Previous tickets not found in shared memory (foundA={foundA} foundB={foundB}). Clearing DB.");
+                await _configService.SaveCurrentTicksAsync("", "");
+                return;
+            }
+
+            // Both tickets exist in shared memory — register them into tool tracking
+            var recoveryPairId = $"RECOVERY-0-{Environment.TickCount64}";
+
+            _pairIdByTicket[ticketA] = recoveryPairId;
+            _pairIdByTicket[ticketB] = recoveryPairId;
+
+            var keyA = NormalizeMapName(tradeMapNameA);
+            var keyB = NormalizeMapName(tradeMapNameB);
+
+            if (!_knownTradeTicketsByMap.ContainsKey(keyA))
+                _knownTradeTicketsByMap[keyA] = new HashSet<ulong>();
+            _knownTradeTicketsByMap[keyA].Add(ticketA);
+
+            if (!_knownTradeTicketsByMap.ContainsKey(keyB))
+                _knownTradeTicketsByMap[keyB] = new HashSet<ulong>();
+            _knownTradeTicketsByMap[keyB].Add(ticketB);
+
+            _activeAutoCycle = new ActiveAutoCycleState
+            {
+                Slot = 0,
+                OpenedAtLocal = DateTimeOffset.Now,
+                PairIdA = recoveryPairId,
+                PairIdB = recoveryPairId,
+                TicketA = ticketA,
+                TicketB = ticketB
+            };
+
+            SafeVmLog($"[RECOVERY][INFO] Recovered tickets from previous session: ticketA={ticketA} ticketB={ticketB} pairId={recoveryPairId}");
+        }
+        catch (Exception ex)
+        {
+            SafeVmLog($"[RECOVERY][ERROR] Failed to recover tickets: {ex.Message}");
+        }
+    }
 
     private void SafeVmLog(string message)
     {
