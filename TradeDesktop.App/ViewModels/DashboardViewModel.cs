@@ -2044,19 +2044,8 @@ public sealed class DashboardViewModel : ObservableObject
         if (isError)
         {
             TryCopyToClipboard(detail);
-            System.Windows.MessageBox.Show(
-                detail + "\n\n(Đã copy lỗi vào clipboard)",
-                $"{actionName} FAILED",
-                System.Windows.MessageBoxButton.OK,
-                System.Windows.MessageBoxImage.Warning);
-            return;
+            SafeVmLog($"[MANUAL][ERROR] {actionName} FAILED: {detail}");
         }
-
-        System.Windows.MessageBox.Show(
-            detail,
-            $"{actionName} SUCCESS",
-            System.Windows.MessageBoxButton.OK,
-            System.Windows.MessageBoxImage.Information);
     }
 
     private static string BuildManualTradeFeedbackText(string actionName, ManualTradeResult result)
