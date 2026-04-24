@@ -3,6 +3,7 @@ using System.Collections.Specialized;
 using System.ComponentModel;
 using TradeDesktop.App.Commands;
 using TradeDesktop.App.Helpers;
+using TradeDesktop.App.Services;
 using TradeDesktop.App.State;
 using TradeDesktop.Application.Models;
 using TradeDesktop.Application.Services;
@@ -13,6 +14,7 @@ public sealed class ConfigViewModel : ObservableObject
 {
     private readonly RuntimeConfigState _runtimeConfigState;
     private readonly IConfigService _configService;
+    private readonly ITradeSessionFileLogger _tradeSessionFileLogger;
     private string _machineHostName = string.Empty;
 
     private string _mapName1 = string.Empty;
@@ -33,10 +35,14 @@ public sealed class ConfigViewModel : ObservableObject
     private bool _areMapNamesEnabled;
     private bool _canSave;
 
-    public ConfigViewModel(RuntimeConfigState runtimeConfigState, IConfigService configService)
+    public ConfigViewModel(
+        RuntimeConfigState runtimeConfigState,
+        IConfigService configService,
+        ITradeSessionFileLogger tradeSessionFileLogger)
     {
         _runtimeConfigState = runtimeConfigState;
         _configService = configService;
+        _tradeSessionFileLogger = tradeSessionFileLogger;
 
         CheckMap1Command = new AsyncRelayCommand(CheckMap1Async, CanCheckMap1);
         CheckMap2Command = new AsyncRelayCommand(CheckMap2Async, CanCheckMap2);
@@ -489,6 +495,10 @@ public sealed class ConfigViewModel : ObservableObject
             _runtimeConfigState.Update(MachineHostName, MapName1, MapName2, _runtimeConfigState.CurrentPoint);
             _runtimeConfigState.UpdatePlatform(PlatformA, PlatformB);
             _runtimeConfigState.UpdateManualTradeHwnd(columns);
+            SafeConfigLog(
+                $"[CONFIG][INFO] Runtime config updated: host={MachineHostName} " +
+                $"map1={MapName1} map2={MapName2} platformA={PlatformA} platformB={PlatformB} " +
+                $"manualColumns={columns.Count}");
             RequestClose?.Invoke(true);
         }
         catch (Exception ex)
@@ -653,5 +663,17 @@ public sealed class ConfigViewModel : ObservableObject
     {
         var normalized = (platform ?? string.Empty).Trim().ToLower();
         return normalized is "mt4" or "mt5" ? normalized : "mt5";
+    }
+
+    private void SafeConfigLog(string message)
+    {
+        try
+        {
+            _tradeSessionFileLogger.Log(message);
+        }
+        catch
+        {
+            // ignored by design
+        }
     }
 }

@@ -275,7 +275,50 @@ Chức năng:
 
 ---
 
-## 11) Build / Run / Test
+## 11) Logging
+
+### 11.1 Cấu hình `.env`
+
+| Biến | Mô tả | Giá trị mặc định |
+|------|--------|-------------------|
+| `LOG_LEVEL` | Mức log tối thiểu ghi vào file. Giá trị: `DEBUG`, `INFO`, `WARN`, `ERROR` | `INFO` |
+| `LOG_MAX_FILE_SIZE_MB` | Kích thước tối đa mỗi file log (MB) trước khi rotation | `50` |
+
+Ví dụ trong `.env`:
+
+```env
+LOG_LEVEL=INFO
+LOG_MAX_FILE_SIZE_MB=50
+```
+
+### 11.2 Log rotation
+
+- Khi file log đạt ngưỡng `LOG_MAX_FILE_SIZE_MB`, hệ thống tự động tạo file mới với suffix `.001.log`, `.002.log`, ...
+- Mỗi file mới có header continuation ghi rõ session gốc, thời điểm rotate, host name.
+- File structure ví dụ:
+
+```
+Desktop/trade-log/
+├── 20260424_143020-trade-log.log       (50MB, full)
+├── 20260424_143020-trade-log.001.log   (50MB, full)
+├── 20260424_143020-trade-log.002.log   (đang ghi)
+└── 20260424_150000-trade-log.log       (session khác)
+```
+
+### 11.3 Level filter
+
+- Method `Log(string message)` tự suy level từ substring: `][ERROR]` → Error, `][WARN]` → Warn, `][DEBUG]` → Debug, còn lại → Info.
+- Method `Log(TradeLogLevel level, string message)` dùng level truyền vào trực tiếp.
+- Dòng log có level thấp hơn `LOG_LEVEL` sẽ bị bỏ qua, không ghi vào file.
+
+### 11.4 UI menu
+
+- **Log Folder**: mở thư mục `Desktop/trade-log` trong Explorer/Finder.
+- **Current Log**: mở file log hiện tại bằng editor mặc định (Notepad/VSCode/...). Nếu chưa Start session → hiện thông báo.
+
+---
+
+## 12) Build / Run / Test
 
 ```bash
 dotnet restore TradeDesktop.sln

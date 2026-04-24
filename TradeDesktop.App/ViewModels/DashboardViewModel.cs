@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.IO;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.Diagnostics;
@@ -36,6 +37,12 @@ public sealed class DashboardViewModel : ObservableObject
     private readonly Dictionary<string, ulong> _lastHistoryTimestampByMap = new(StringComparer.Ordinal);
     private readonly Dictionary<string, HashSet<ulong>> _knownTradeTicketsByMap = new(StringComparer.Ordinal);
     private readonly Dictionary<string, HashSet<ulong>> _knownHistoryTicketsByMap = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _initialTradeTicketScanDoneMaps = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _initialHistoryTicketScanDoneMaps = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, HashSet<ulong>> _loggedTradeTicketsByMap = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, HashSet<ulong>> _loggedHistoryTicketsByMap = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, bool?> _lastMmfAvailability = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, bool?> _lastMmfParseSuccess = new(StringComparer.Ordinal);
     private readonly Dictionary<string, List<PendingOpenRequest>> _pendingOpenRequestsByMap = new(StringComparer.Ordinal);
     private readonly Dictionary<string, List<PendingCloseRequest>> _pendingCloseRequestsByMap = new(StringComparer.Ordinal);
     private readonly Dictionary<ulong, PendingOpenRequest> _openRequestByTicket = [];
@@ -66,9 +73,26 @@ public sealed class DashboardViewModel : ObservableObject
     private const int ExternalPartialCloseStreakRequired = 2;
     private const string GapCooldownSkipReason = "GAP_COOLDOWN_ACTIVE";
     private bool _externalPartialCloseInFlight = false;
+    private double? _lastLoggedLatencyA;
+    private double? _lastLoggedLatencyB;
+    private DateTime _lastLatencyLogAtUtc = DateTime.MinValue;
+    private const double LatencySpikeThresholdMs = 500.0;
+    private const int LatencyLogMinIntervalSeconds = 5;
+    private string? _lastTickTokenA;
+    private string? _lastTickTokenB;
+    private DateTime _lastTickObservedAtA = DateTime.UtcNow;
+    private DateTime _lastTickObservedAtB = DateTime.UtcNow;
+    private bool _isStaleA;
+    private bool _isStaleB;
+    private const int StaleTickThresholdSeconds = 10;
+    private DateTime _lastPerfSummaryAtUtc = DateTime.MinValue;
+    private const int PerfSummaryIntervalSeconds = 60;
     private bool _isAutoOpenPausedByInvariant;
     private int _invariantClearStreak;
     private const int InvariantClearPollsRequired = 5;
+    private TradingFlowPhase _lastLoggedPhase = TradingFlowPhase.WaitingOpen;
+    private TradingOpenMode _lastLoggedOpenMode = TradingOpenMode.None;
+    private TradingPositionSide _lastLoggedPositionSide = TradingPositionSide.None;
     private ActiveAutoCycleState? _activeAutoCycle;
     private ActiveAutoCycleState? _activeAutoCloseRecoveryCycle;
     private readonly Queue<SignalEntryGuard.PriceHistoryEntry> _priceHistory = new();
@@ -308,6 +332,8 @@ public sealed class DashboardViewModel : ObservableObject
         OpenConfigCommand = new AsyncRelayCommand(OpenConfigAsync);
         ReconnectConfigCommand = new AsyncRelayCommand(ReconnectConfigAsync);
         CopyHostNameCommand = new AsyncRelayCommand(CopyHostNameAsync);
+        OpenLogFolderCommand = new AsyncRelayCommand(OpenLogFolderAsync);
+        OpenCurrentLogCommand = new AsyncRelayCommand(OpenCurrentLogAsync);
         StartTradingLogicCommand = new AsyncRelayCommand(StartTradingLogicAsync, CanStartTradingLogic);
         StopTradingLogicCommand = new AsyncRelayCommand(StopTradingLogicAsync, CanStopTradingLogic);
         BuyCommand = new AsyncRelayCommand(BuyAsync, CanManualOpen);
@@ -512,18 +538,36 @@ public sealed class DashboardViewModel : ObservableObject
     public bool IsOpenGapBuyEnabled
     {
         get => _isOpenGapBuyEnabled;
-        set => SetProperty(ref _isOpenGapBuyEnabled, value);
+        set
+        {
+            if (!SetProperty(ref _isOpenGapBuyEnabled, value))
+            {
+                return;
+            }
+
+            SafeVmLog($"[UI][INFO] Toggle changed: IsOpenGapBuyEnabled={value}");
+        }
     }
 
     public bool IsOpenGapSellEnabled
     {
         get => _isOpenGapSellEnabled;
-        set => SetProperty(ref _isOpenGapSellEnabled, value);
+        set
+        {
+            if (!SetProperty(ref _isOpenGapSellEnabled, value))
+            {
+                return;
+            }
+
+            SafeVmLog($"[UI][INFO] Toggle changed: IsOpenGapSellEnabled={value}");
+        }
     }
 
     public AsyncRelayCommand OpenConfigCommand { get; }
     public AsyncRelayCommand ReconnectConfigCommand { get; }
     public AsyncRelayCommand CopyHostNameCommand { get; }
+    public AsyncRelayCommand OpenLogFolderCommand { get; }
+    public AsyncRelayCommand OpenCurrentLogCommand { get; }
     public AsyncRelayCommand StartTradingLogicCommand { get; }
     public AsyncRelayCommand StopTradingLogicCommand { get; }
     public IAsyncRelayCommand BuyCommand { get; }
@@ -584,6 +628,10 @@ public sealed class DashboardViewModel : ObservableObject
         ResetTradingLogicState();
         IsTradingLogicEnabled = true;
         SyncTradingFlowWithLivePairState(GetLivePairTradeStateStrict());
+        _lastLoggedPhase = _tradingFlowEngine.CurrentPhase;
+        _lastLoggedOpenMode = _tradingFlowEngine.CurrentOpenMode;
+        _lastLoggedPositionSide = _tradingFlowEngine.CurrentPositionSide;
+        SafeVmLog($"[FLOW][INFO] Session start: phase={_lastLoggedPhase} openMode={_lastLoggedOpenMode} side={_lastLoggedPositionSide}");
         LastSignalText = "-";
         SignalLogItems.Clear();
         return Task.CompletedTask;
@@ -597,6 +645,7 @@ public sealed class DashboardViewModel : ObservableObject
         }
 
         _tradeSessionFileLogger.Log("Trading logic stop requested");
+        SafeVmLog($"[FLOW][INFO] Session stop: phase={_tradingFlowEngine.CurrentPhase} openMode={_tradingFlowEngine.CurrentOpenMode} side={_tradingFlowEngine.CurrentPositionSide}");
 
         IsTradingLogicEnabled = false;
         ResetTradingLogicState();
@@ -635,9 +684,10 @@ public sealed class DashboardViewModel : ObservableObject
                 }
             }
         }
-        catch
+        catch (Exception ex)
         {
             // Phase A requirement: never break runtime flow because of file logging.
+            SafeVmLog($"[VM][WARN] Suppressed exception at OnSignalLogItemsCollectionChanged: {ex.Message}");
         }
     }
 
@@ -687,6 +737,7 @@ public sealed class DashboardViewModel : ObservableObject
             if (result.Success || result.Legs.Any(x => x.Success))
             {
                 _tradingFlowEngine.ForceWaitingClose(TradingPositionSide.Buy);
+                LogFlowTransitionIfChanged("force-waiting-close-side=buy");
                 OnPropertyChanged(nameof(CurrentPositionText));
                 OnPropertyChanged(nameof(CurrentPhaseText));
             }
@@ -746,6 +797,7 @@ public sealed class DashboardViewModel : ObservableObject
             if (result.Success || result.Legs.Any(x => x.Success))
             {
                 _tradingFlowEngine.ForceWaitingClose(TradingPositionSide.Sell);
+                LogFlowTransitionIfChanged("force-waiting-close-side=sell");
                 OnPropertyChanged(nameof(CurrentPositionText));
                 OnPropertyChanged(nameof(CurrentPhaseText));
             }
@@ -848,14 +900,17 @@ public sealed class DashboardViewModel : ObservableObject
         }
         catch (Exception ex)
         {
+            SafeVmLog($"[VM][ERROR] Auto trade error: {ex}");
             if (trigger.Action == GapSignalAction.Close)
             {
                 _tradingFlowEngine.AbortPendingCloseExecution();
+                LogFlowTransitionIfChanged("close-aborted-by-exception");
             }
             else if (trigger.Action == GapSignalAction.Open)
             {
                 // Open execution failed before confirmation -> rollback transient WaitingClose state.
                 _tradingFlowEngine.AbortPendingOpenExecution();
+                LogFlowTransitionIfChanged("open-aborted-by-exception");
             }
 
             System.Windows.Application.Current.Dispatcher.Invoke(() =>
@@ -995,8 +1050,9 @@ public sealed class DashboardViewModel : ObservableObject
                 _autoSlot++;
             });
         }
-        catch
+        catch (Exception ex)
         {
+            SafeVmLog($"[VM][ERROR] AutoBuyAsync cleanup after exception: {ex}");
             // Cleanup when router throws to avoid stale pending cycle blocking next opens.
             _lastAutoOpenClickAtLocal = null;
             if (_pendingOpenPairById.TryGetValue(pairId, out var state))
@@ -1139,8 +1195,9 @@ public sealed class DashboardViewModel : ObservableObject
                 _autoSlot++;
             });
         }
-        catch
+        catch (Exception ex)
         {
+            SafeVmLog($"[VM][ERROR] AutoSellAsync cleanup after exception: {ex}");
             // Cleanup when router throws to avoid stale pending cycle blocking next opens.
             _lastAutoOpenClickAtLocal = null;
             if (_pendingOpenPairById.TryGetValue(pairId, out var state))
@@ -1237,8 +1294,8 @@ public sealed class DashboardViewModel : ObservableObject
                 || (successByExchange.TryGetValue("B", out var successB) && successB);
             var hasCloseSuccessBoth = hadCloseCandidateBoth && closeSuccessA && closeSuccessB;
 
-            var reconcileTradeLeft = _tradesSharedMemoryReader.ReadTrades(TradeTab.LeftPanel.TargetMapName);
-            var reconcileTradeRight = _tradesSharedMemoryReader.ReadTrades(TradeTab.RightPanel.TargetMapName);
+            var reconcileTradeLeft = ReadTradesWithMmfLog(TradeTab.LeftPanel.TargetMapName);
+            var reconcileTradeRight = ReadTradesWithMmfLog(TradeTab.RightPanel.TargetMapName);
             var pairState = GetLivePairTradeState(reconcileTradeLeft, reconcileTradeRight);
             var immediateFlatObserved = false;
 
@@ -1398,7 +1455,7 @@ public sealed class DashboardViewModel : ObservableObject
     {
         try
         {
-            var result = _tradesSharedMemoryReader.ReadTrades(tradeMapName);
+            var result = ReadTradesWithMmfLog(tradeMapName);
             if (!result.IsMapAvailable || !result.IsParseSuccess)
             {
                 return null;
@@ -1412,9 +1469,10 @@ public sealed class DashboardViewModel : ObservableObject
                 }
             }
         }
-        catch
+        catch (Exception ex)
         {
             // ignore and fallback to null
+            SafeVmLog($"[VM][WARN] Suppressed exception at FindRowIndexForTicket: {ex.Message}");
         }
 
         return null;
@@ -1422,7 +1480,7 @@ public sealed class DashboardViewModel : ObservableObject
 
     private CloseSelectionResult SelectCloseCandidateForExchange(string exchangeLabel, string tradeMapName, string tradeHwnd)
     {
-        var result = _tradesSharedMemoryReader.ReadTrades(tradeMapName);
+        var result = ReadTradesWithMmfLog(tradeMapName);
 
         if (!result.IsMapAvailable)
         {
@@ -1617,6 +1675,10 @@ public sealed class DashboardViewModel : ObservableObject
 
         pendingList.Add(pending);
         RegisterOrUpdatePendingOpenPairState(pending);
+        SafeVmLog(
+            $"[CYCLE][INFO] Pending open captured: pairId={pending.PairId} slot={pending.SlotNumber} " +
+            $"exchange={pending.ExchangeLabel} tradeType={pending.TradeType} map={pending.TradeMapName} " +
+            $"requestTime={pending.AppOpenRequestTimeLocal:HH:mm:ss.fff}");
         Debug.WriteLine($"[ExecOpen][Capture] map={key}, type={tradeType}, slot={slotNumber}, label={exchangeLabel}, app_open_request_time={pending.AppOpenRequestTimeLocal:O}, app_open_request_raw_ms={pending.AppOpenRequestRawMs}");
     }
 
@@ -2021,21 +2083,23 @@ public sealed class DashboardViewModel : ObservableObject
         return string.Join(Environment.NewLine, lines);
     }
 
-    private static void TryCopyToClipboard(string text)
+    private void TryCopyToClipboard(string text)
     {
         try
         {
             System.Windows.Clipboard.SetText(text);
         }
-        catch
+        catch (Exception ex)
         {
             // Ignore clipboard failures.
+            SafeVmLog($"[VM][WARN] Suppressed exception at TryCopyToClipboard: {ex.Message}");
         }
     }
 
     private void ResetTradingLogicState()
     {
         _tradingFlowEngine.Reset();
+        LogFlowTransitionIfChanged("engine-reset");
         _manualSlot = 0;
         _autoSlot = 0;
         _isManualOpenInFlight = false;
@@ -2051,6 +2115,22 @@ public sealed class DashboardViewModel : ObservableObject
         _externalPartialCloseInFlight = false;
         _lastExternalCloseGuardBlockReason = string.Empty;
         _hadBothOpenRecently = false;
+        _lastMmfAvailability.Clear();
+        _lastMmfParseSuccess.Clear();
+        _initialTradeTicketScanDoneMaps.Clear();
+        _initialHistoryTicketScanDoneMaps.Clear();
+        _loggedTradeTicketsByMap.Clear();
+        _loggedHistoryTicketsByMap.Clear();
+        _lastLoggedLatencyA = null;
+        _lastLoggedLatencyB = null;
+        _lastLatencyLogAtUtc = DateTime.MinValue;
+        _lastTickTokenA = null;
+        _lastTickTokenB = null;
+        _lastTickObservedAtA = DateTime.UtcNow;
+        _lastTickObservedAtB = DateTime.UtcNow;
+        _isStaleA = false;
+        _isStaleB = false;
+        _lastPerfSummaryAtUtc = DateTime.MinValue;
         _sttByPairId.Clear();
         _nextStt = 1;
         _profitSnapshotByTicket.Clear();
@@ -2077,9 +2157,67 @@ public sealed class DashboardViewModel : ObservableObject
 
             System.Windows.Clipboard.SetText(hostNameToCopy);
         }
-        catch
+        catch (Exception ex)
         {
             // Ignore clipboard failures to keep UI responsive.
+            SafeVmLog($"[VM][WARN] Suppressed exception at CopyHostNameAsync: {ex.Message}");
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private Task OpenLogFolderAsync()
+    {
+        try
+        {
+            var desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+            var logDirectory = Path.Combine(desktopPath, "trade-log");
+            if (!Directory.Exists(logDirectory))
+            {
+                System.Windows.MessageBox.Show(
+                    $"Folder chưa tồn tại: {logDirectory}\nBấm Start để tạo file log đầu tiên.",
+                    "Log Folder",
+                    System.Windows.MessageBoxButton.OK,
+                    System.Windows.MessageBoxImage.Information);
+                return Task.CompletedTask;
+            }
+
+            Process.Start(new ProcessStartInfo("explorer.exe", logDirectory)
+            {
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            SafeVmLog($"[UI][WARN] Open log folder failed: {ex.Message}");
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private Task OpenCurrentLogAsync()
+    {
+        try
+        {
+            var currentLogPath = _tradeSessionFileLogger.CurrentLogFilePath;
+            if (string.IsNullOrWhiteSpace(currentLogPath) || !File.Exists(currentLogPath))
+            {
+                System.Windows.MessageBox.Show(
+                    "Chưa có session log nào đang mở. Bấm Start trước.",
+                    "Current Log",
+                    System.Windows.MessageBoxButton.OK,
+                    System.Windows.MessageBoxImage.Information);
+                return Task.CompletedTask;
+            }
+
+            Process.Start(new ProcessStartInfo(currentLogPath)
+            {
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            SafeVmLog($"[UI][WARN] Open current log failed: {ex.Message}");
         }
 
         return Task.CompletedTask;
@@ -2204,10 +2342,14 @@ public sealed class DashboardViewModel : ObservableObject
         {
             List<PendingOpenTimeoutAction> timeoutActions = [];
             List<PendingCloseRetryAction> closeRetryActions = [];
-            var tradeLeftResult = _tradesSharedMemoryReader.ReadTrades(TradeTab.LeftPanel.TargetMapName);
-            var tradeRightResult = _tradesSharedMemoryReader.ReadTrades(TradeTab.RightPanel.TargetMapName);
-            var historyLeftResult = _historySharedMemoryReader.ReadHistory(HistoryTab.LeftPanel.TargetMapName);
-            var historyRightResult = _historySharedMemoryReader.ReadHistory(HistoryTab.RightPanel.TargetMapName);
+            var tradeLeftResult = ReadTradesWithMmfLog(TradeTab.LeftPanel.TargetMapName);
+            var tradeRightResult = ReadTradesWithMmfLog(TradeTab.RightPanel.TargetMapName);
+            var historyLeftResult = ReadHistoryWithMmfLog(HistoryTab.LeftPanel.TargetMapName);
+            var historyRightResult = ReadHistoryWithMmfLog(HistoryTab.RightPanel.TargetMapName);
+            LogTradeTicketChangeIfNeeded(TradeTab.LeftPanel.TargetMapName, tradeLeftResult);
+            LogTradeTicketChangeIfNeeded(TradeTab.RightPanel.TargetMapName, tradeRightResult);
+            LogHistoryTicketChangeIfNeeded(HistoryTab.LeftPanel.TargetMapName, historyLeftResult);
+            LogHistoryTicketChangeIfNeeded(HistoryTab.RightPanel.TargetMapName, historyRightResult);
             var shouldApplyTradeLeft = ShouldApplyTradeResult(TradeTab.LeftPanel.TargetMapName, tradeLeftResult);
             var shouldApplyTradeRight = ShouldApplyTradeResult(TradeTab.RightPanel.TargetMapName, tradeRightResult);
             var shouldApplyHistoryLeft = ShouldApplyHistoryResult(HistoryTab.LeftPanel.TargetMapName, historyLeftResult);
@@ -2275,6 +2417,223 @@ public sealed class DashboardViewModel : ObservableObject
         }
     }
 
+    private SharedMapReadResult<TradeSharedRecord> ReadTradesWithMmfLog(string mapName)
+    {
+        var result = _tradesSharedMemoryReader.ReadTrades(mapName);
+        LogMmfStateIfChanged("MMF_TRADES", mapName, result.IsMapAvailable, result.IsParseSuccess);
+        return result;
+    }
+
+    private SharedMapReadResult<HistorySharedRecord> ReadHistoryWithMmfLog(string mapName)
+    {
+        var result = _historySharedMemoryReader.ReadHistory(mapName);
+        LogMmfStateIfChanged("MMF_HISTORY", mapName, result.IsMapAvailable, result.IsParseSuccess);
+        return result;
+    }
+
+    private void LogMmfStateIfChanged(string category, string mapName, bool isAvailable, bool isParseSuccess)
+    {
+        try
+        {
+            _lastMmfAvailability.TryGetValue(mapName, out var lastAvail);
+            _lastMmfParseSuccess.TryGetValue(mapName, out var lastParse);
+
+            if (lastAvail != isAvailable)
+            {
+                var level = isAvailable ? "INFO" : "WARN";
+                SafeVmLog($"[{category}][{level}] Map availability changed: map={mapName} {lastAvail?.ToString() ?? "unknown"} -> {isAvailable}");
+                _lastMmfAvailability[mapName] = isAvailable;
+            }
+
+            if (isAvailable && lastParse != isParseSuccess)
+            {
+                var level = isParseSuccess ? "INFO" : "WARN";
+                SafeVmLog($"[{category}][{level}] Map parse status changed: map={mapName} {lastParse?.ToString() ?? "unknown"} -> {isParseSuccess}");
+                _lastMmfParseSuccess[mapName] = isParseSuccess;
+            }
+        }
+        catch
+        {
+            // swallow by design
+        }
+    }
+
+    private void LogTradeTicketChangeIfNeeded(string mapName, SharedMapReadResult<TradeSharedRecord> result)
+    {
+        if (!result.IsMapAvailable || !result.IsParseSuccess)
+        {
+            return;
+        }
+
+        var key = NormalizeMapName(mapName);
+        var currentTickets = result.Records.Select(x => x.Ticket).ToHashSet();
+        if (!_initialTradeTicketScanDoneMaps.Contains(key))
+        {
+            _initialTradeTicketScanDoneMaps.Add(key);
+            _loggedTradeTicketsByMap[key] = currentTickets;
+            return;
+        }
+
+        if (!_loggedTradeTicketsByMap.TryGetValue(key, out var previousTickets))
+        {
+            previousTickets = [];
+        }
+
+        var added = currentTickets.Where(x => !previousTickets.Contains(x)).Take(5).ToArray();
+        var removed = previousTickets.Where(x => !currentTickets.Contains(x)).Take(5).ToArray();
+        var hasChange = added.Length > 0 || removed.Length > 0 || currentTickets.Count != previousTickets.Count;
+        if (!hasChange)
+        {
+            return;
+        }
+
+        SafeVmLog(
+            $"[MMF_TRADES][INFO] Ticket set changed: map={key} total={currentTickets.Count} " +
+            $"added={added.Length} [{string.Join(',', added)}] removed={removed.Length} [{string.Join(',', removed)}]");
+        _loggedTradeTicketsByMap[key] = currentTickets;
+    }
+
+    private void LogHistoryTicketChangeIfNeeded(string mapName, SharedMapReadResult<HistorySharedRecord> result)
+    {
+        if (!result.IsMapAvailable || !result.IsParseSuccess)
+        {
+            return;
+        }
+
+        var key = NormalizeMapName(mapName);
+        var currentTickets = result.Records.Select(x => x.Ticket).ToHashSet();
+        if (!_initialHistoryTicketScanDoneMaps.Contains(key))
+        {
+            _initialHistoryTicketScanDoneMaps.Add(key);
+            _loggedHistoryTicketsByMap[key] = currentTickets;
+            return;
+        }
+
+        if (!_loggedHistoryTicketsByMap.TryGetValue(key, out var previousTickets))
+        {
+            previousTickets = [];
+        }
+
+        var added = currentTickets.Where(x => !previousTickets.Contains(x)).Take(5).ToArray();
+        var removed = previousTickets.Where(x => !currentTickets.Contains(x)).Take(5).ToArray();
+        var hasChange = added.Length > 0 || removed.Length > 0 || currentTickets.Count != previousTickets.Count;
+        if (!hasChange)
+        {
+            return;
+        }
+
+        SafeVmLog(
+            $"[MMF_HISTORY][INFO] Ticket set changed: map={key} total={currentTickets.Count} " +
+            $"added={added.Length} [{string.Join(',', added)}] removed={removed.Length} [{string.Join(',', removed)}]");
+        _loggedHistoryTicketsByMap[key] = currentTickets;
+    }
+
+    private void LogLatencyAnomalyIfNeeded(DashboardMetrics metrics)
+    {
+        var nowUtc = DateTime.UtcNow;
+        var loggedA = LogLatencySpikeForExchange("A", metrics.ExchangeA.LatencyMs, ref _lastLoggedLatencyA, nowUtc);
+        var loggedB = LogLatencySpikeForExchange("B", metrics.ExchangeB.LatencyMs, ref _lastLoggedLatencyB, nowUtc);
+        if (loggedA || loggedB)
+        {
+            _lastLatencyLogAtUtc = nowUtc;
+        }
+    }
+
+    private bool LogLatencySpikeForExchange(string exchange, decimal? latencyMs, ref double? lastLatencyMs, DateTime nowUtc)
+    {
+        var currentLatency = latencyMs.HasValue ? (double?)latencyMs.Value : null;
+        var wasHigh = lastLatencyMs.HasValue && lastLatencyMs.Value >= LatencySpikeThresholdMs;
+        var isHigh = currentLatency.HasValue && currentLatency.Value >= LatencySpikeThresholdMs;
+        lastLatencyMs = currentLatency;
+
+        if (!isHigh)
+        {
+            return false;
+        }
+
+        var canRepeat = (nowUtc - _lastLatencyLogAtUtc) >= TimeSpan.FromSeconds(LatencyLogMinIntervalSeconds);
+        if (!wasHigh || canRepeat)
+        {
+            SafeVmLog($"[MARKET][WARN] Latency spike: exchange={exchange} latencyMs={currentLatency:0.##} thresholdMs={LatencySpikeThresholdMs:0.##}");
+            return true;
+        }
+
+        return false;
+    }
+
+    private void LogStaleTickIfNeeded(DashboardMetrics metrics)
+    {
+        var nowUtc = DateTime.UtcNow;
+        LogStaleTickForExchange(
+            exchange: "A",
+            token: BuildTickToken(metrics.ExchangeA, metrics.TimestampUtc),
+            ref _lastTickTokenA,
+            ref _lastTickObservedAtA,
+            ref _isStaleA,
+            nowUtc);
+
+        LogStaleTickForExchange(
+            exchange: "B",
+            token: BuildTickToken(metrics.ExchangeB, metrics.TimestampUtc),
+            ref _lastTickTokenB,
+            ref _lastTickObservedAtB,
+            ref _isStaleB,
+            nowUtc);
+    }
+
+    private void LogStaleTickForExchange(
+        string exchange,
+        string token,
+        ref string? lastToken,
+        ref DateTime lastObservedAtUtc,
+        ref bool isStale,
+        DateTime nowUtc)
+    {
+        if (!string.Equals(lastToken, token, StringComparison.Ordinal))
+        {
+            lastToken = token;
+            lastObservedAtUtc = nowUtc;
+            if (isStale)
+            {
+                SafeVmLog($"[MARKET][INFO] Tick resumed: exchange={exchange} staleSec={StaleTickThresholdSeconds}");
+                isStale = false;
+            }
+
+            return;
+        }
+
+        if (isStale)
+        {
+            return;
+        }
+
+        var staleDuration = nowUtc - lastObservedAtUtc;
+        if (staleDuration >= TimeSpan.FromSeconds(StaleTickThresholdSeconds))
+        {
+            SafeVmLog($"[MARKET][WARN] Stale tick detected: exchange={exchange} staleForMs={(long)staleDuration.TotalMilliseconds}");
+            isStale = true;
+        }
+    }
+
+    private static string BuildTickToken(ExchangeDashboardMetrics exchange, DateTime timestampUtc)
+        => $"{timestampUtc:O}|{exchange.Time}|{exchange.Bid?.ToString(CultureInfo.InvariantCulture) ?? "-"}|{exchange.Ask?.ToString(CultureInfo.InvariantCulture) ?? "-"}";
+
+    private void LogPerfSummaryIfDue(DashboardMetrics metrics)
+    {
+        var nowUtc = DateTime.UtcNow;
+        if (_lastPerfSummaryAtUtc != DateTime.MinValue
+            && (nowUtc - _lastPerfSummaryAtUtc) < TimeSpan.FromSeconds(PerfSummaryIntervalSeconds))
+        {
+            return;
+        }
+
+        SafeVmLog(
+            "[MARKET][INFO] Perf summary: " +
+            $"A(tps={FormatOneDecimalOrDash(metrics.ExchangeA.Tps)},lat={FormatNumberOrDash(metrics.ExchangeA.LatencyMs, 0)},avg={FormatNumberOrDash(metrics.ExchangeA.AvgLatMs, 0)},max={FormatNumberOrDash(metrics.ExchangeA.MaxLatMs, 0)}) " +
+            $"B(tps={FormatOneDecimalOrDash(metrics.ExchangeB.Tps)},lat={FormatNumberOrDash(metrics.ExchangeB.LatencyMs, 0)},avg={FormatNumberOrDash(metrics.ExchangeB.AvgLatMs, 0)},max={FormatNumberOrDash(metrics.ExchangeB.MaxLatMs, 0)})");
+        _lastPerfSummaryAtUtc = nowUtc;
+    }
+
     private void EvaluateAndApplyAutoOpenInvariantWatchdog(
         SharedMapReadResult<TradeSharedRecord> tradeLeftResult,
         SharedMapReadResult<TradeSharedRecord> tradeRightResult)
@@ -2300,13 +2659,17 @@ public sealed class DashboardViewModel : ObservableObject
             if (_isAutoOpenPausedByInvariant)
             {
                 _invariantClearStreak++;
+                if (_invariantClearStreak == 1)
+                {
+                    SafeVmLog($"[WATCHDOG][INFO] Invariant clear counting started: 1/{InvariantClearPollsRequired}");
+                }
+
                 if (_invariantClearStreak >= InvariantClearPollsRequired)
                 {
                     _isAutoOpenPausedByInvariant = false;
                     _invariantClearStreak = 0;
-                    SignalLogItems.Insert(0,
-                        $"    - [{DateTime.Now:HH:mm:ss.fff}] Invariant cleared after " +
-                        $"{InvariantClearPollsRequired} stable polls. Auto-open resumed.");
+                    SafeVmLog(
+                        $"[WATCHDOG][INFO] Invariant cleared after {InvariantClearPollsRequired} stable polls. state=RESUMED");
                 }
             }
             return;
@@ -2320,8 +2683,9 @@ public sealed class DashboardViewModel : ObservableObject
         }
 
         _isAutoOpenPausedByInvariant = true;
-        SignalLogItems.Insert(0,
-            $"    - [{DateTime.Now:HH:mm:ss.fff}] Invariant violation: multiple live auto pairs detected (toolA={toolRowsA},toolB={toolRowsB}). Auto-open paused.");
+        SafeVmLog(
+            $"[WATCHDOG][WARN] Invariant violation: multiple live auto pairs detected " +
+            $"(toolA={toolRowsA},toolB={toolRowsB},autoPairs={liveAutoPairCount}). state=PAUSED");
     }
 
     private static int GetOpenRowCount(SharedMapReadResult<TradeSharedRecord> tradeResult)
@@ -2431,6 +2795,9 @@ public sealed class DashboardViewModel : ObservableObject
             state.TimeoutCloseTriggered = true;
             state.TimeoutRecheckPending = false;
             state.TimeoutRecheckRequestedAtLocal = null;
+            SafeVmLog(
+                $"[CYCLE][ERROR] Pending open timeout: pairId={state.PairId} elapsedMs={(now - state.CreatedAtLocal).TotalMilliseconds:0} " +
+                $"confirmedA={state.OpenConfirmedA} confirmedB={state.OpenConfirmedB}");
 
             if (hasOnlyA)
             {
@@ -2697,11 +3064,14 @@ public sealed class DashboardViewModel : ObservableObject
             closeCompletedAtUtc,
             _runtimeConfigState.CurrentStartWaitTime,
             _runtimeConfigState.CurrentEndWaitTime);
+        LogFlowTransitionIfChanged("begin-wait-after-close-from-pending");
 
         if (_tradingFlowEngine.ClosedAtUtc != closeCompletedAtUtc)
         {
             return;
         }
+
+        SafeVmLog($"[CYCLE][INFO] Close cycle resolved: slot={state.SlotNumber} closeCompletedAtUtc={closeCompletedAtUtc:O}");
 
         var waitSeconds = _tradingFlowEngine.CurrentWaitSeconds;
         SignalLogItems.Insert(0,
@@ -2715,8 +3085,8 @@ public sealed class DashboardViewModel : ObservableObject
 
     private LivePairTradeState GetLivePairTradeState()
     {
-        var tradeLeftResult = _tradesSharedMemoryReader.ReadTrades(TradeTab.LeftPanel.TargetMapName);
-        var tradeRightResult = _tradesSharedMemoryReader.ReadTrades(TradeTab.RightPanel.TargetMapName);
+        var tradeLeftResult = ReadTradesWithMmfLog(TradeTab.LeftPanel.TargetMapName);
+        var tradeRightResult = ReadTradesWithMmfLog(TradeTab.RightPanel.TargetMapName);
         return GetLivePairTradeState(tradeLeftResult, tradeRightResult);
     }
 
@@ -2724,12 +3094,13 @@ public sealed class DashboardViewModel : ObservableObject
     {
         try
         {
-            var tradeLeftResult = _tradesSharedMemoryReader.ReadTrades(TradeTab.LeftPanel.TargetMapName);
-            var tradeRightResult = _tradesSharedMemoryReader.ReadTrades(TradeTab.RightPanel.TargetMapName);
+            var tradeLeftResult = ReadTradesWithMmfLog(TradeTab.LeftPanel.TargetMapName);
+            var tradeRightResult = ReadTradesWithMmfLog(TradeTab.RightPanel.TargetMapName);
             return GetLivePairTradeState(tradeLeftResult, tradeRightResult);
         }
-        catch
+        catch (Exception ex)
         {
+            SafeVmLog($"[VM][WARN] Suppressed exception at GetLivePairTradeStateStrict: {ex.Message}");
             return LivePairTradeState.MapUnavailableOrParseError;
         }
     }
@@ -2776,6 +3147,7 @@ public sealed class DashboardViewModel : ObservableObject
             if (_tradingFlowEngine.CurrentPhase != TradingFlowPhase.WaitingOpen)
             {
                 _tradingFlowEngine.ForceWaitingOpen();
+                LogFlowTransitionIfChanged("sync-force-waiting-open-both-flat");
                 OnPropertyChanged(nameof(CurrentPositionText));
                 OnPropertyChanged(nameof(CurrentPhaseText));
             }
@@ -2792,8 +3164,8 @@ public sealed class DashboardViewModel : ObservableObject
         //        Lệnh mở từ EA/bên ngoài không được ảnh hưởng state machine
         {
             // Đọc fresh để tính isToolFlat — không dùng cache tránh stale 1 nhịp
-            var freshLeftSync = _tradesSharedMemoryReader.ReadTrades(TradeTab.LeftPanel.TargetMapName);
-            var freshRightSync = _tradesSharedMemoryReader.ReadTrades(TradeTab.RightPanel.TargetMapName);
+            var freshLeftSync = ReadTradesWithMmfLog(TradeTab.LeftPanel.TargetMapName);
+            var freshRightSync = ReadTradesWithMmfLog(TradeTab.RightPanel.TargetMapName);
             var hasToolTicket = (freshLeftSync.IsMapAvailable && freshLeftSync.IsParseSuccess
                                  && freshLeftSync.Records.Any(r => _pairIdByTicket.ContainsKey(r.Ticket)))
                              || (freshRightSync.IsMapAvailable && freshRightSync.IsParseSuccess
@@ -2816,6 +3188,7 @@ public sealed class DashboardViewModel : ObservableObject
                             $"cycle={(_activeAutoCloseRecoveryCycle is null ? "null" : $"slot={_activeAutoCloseRecoveryCycle.Slot}")} " +
                             $"source=SyncTradingFlow");
                         _tradingFlowEngine.ForceWaitingOpen();
+                        LogFlowTransitionIfChanged("sync-force-waiting-open-tool-flat");
                         OnPropertyChanged(nameof(CurrentPositionText));
                         OnPropertyChanged(nameof(CurrentPhaseText));
                     }
@@ -2835,6 +3208,7 @@ public sealed class DashboardViewModel : ObservableObject
             && _tradingFlowEngine.CurrentPhase != TradingFlowPhase.WaitingCloseFromGapSell)
         {
             _tradingFlowEngine.ForceWaitingClose(side);
+            LogFlowTransitionIfChanged($"sync-force-waiting-close-side={side}");
             OnPropertyChanged(nameof(CurrentPositionText));
             OnPropertyChanged(nameof(CurrentPhaseText));
             return;
@@ -2843,6 +3217,7 @@ public sealed class DashboardViewModel : ObservableObject
         if (_tradingFlowEngine.CurrentPositionSide != side)
         {
             _tradingFlowEngine.ForceWaitingClose(side);
+            LogFlowTransitionIfChanged($"sync-force-waiting-close-correct-side={side}");
             OnPropertyChanged(nameof(CurrentPositionText));
             OnPropertyChanged(nameof(CurrentPhaseText));
         }
@@ -2852,8 +3227,8 @@ public sealed class DashboardViewModel : ObservableObject
     {
         try
         {
-            var left = _latestTradeLeftResult ?? _tradesSharedMemoryReader.ReadTrades(TradeTab.LeftPanel.TargetMapName);
-            var right = _latestTradeRightResult ?? _tradesSharedMemoryReader.ReadTrades(TradeTab.RightPanel.TargetMapName);
+            var left = _latestTradeLeftResult ?? ReadTradesWithMmfLog(TradeTab.LeftPanel.TargetMapName);
+            var right = _latestTradeRightResult ?? ReadTradesWithMmfLog(TradeTab.RightPanel.TargetMapName);
 
             var candidate = left.Records.FirstOrDefault() ?? right.Records.FirstOrDefault();
             if (candidate is null)
@@ -2865,8 +3240,9 @@ public sealed class DashboardViewModel : ObservableObject
                 ? TradingPositionSide.Buy
                 : TradingPositionSide.Sell;
         }
-        catch
+        catch (Exception ex)
         {
+            SafeVmLog($"[VM][WARN] Suppressed exception at ResolveLivePositionSideFromMaps: {ex.Message}");
             return TradingPositionSide.None;
         }
     }
@@ -2905,6 +3281,7 @@ public sealed class DashboardViewModel : ObservableObject
             }
 
             blockingPairId = state.PairId;
+            SafeVmLog($"[CYCLE][WARN] Auto open blocked by unresolved pending cycle: blockingPairId={blockingPairId}");
             return true;
         }
 
@@ -2931,8 +3308,8 @@ public sealed class DashboardViewModel : ObservableObject
 
     private bool FinalizeCloseFlowIfPairFlat(string source)
     {
-        var tradeLeftResult = _tradesSharedMemoryReader.ReadTrades(TradeTab.LeftPanel.TargetMapName);
-        var tradeRightResult = _tradesSharedMemoryReader.ReadTrades(TradeTab.RightPanel.TargetMapName);
+        var tradeLeftResult = ReadTradesWithMmfLog(TradeTab.LeftPanel.TargetMapName);
+        var tradeRightResult = ReadTradesWithMmfLog(TradeTab.RightPanel.TargetMapName);
         if (!IsActiveCloseRecoveryCycleClosed(tradeLeftResult, tradeRightResult, out var blockReason))
         {
             SignalLogItems.Insert(0,
@@ -2947,11 +3324,14 @@ public sealed class DashboardViewModel : ObservableObject
             closeCompletedAtUtc,
             _runtimeConfigState.CurrentStartWaitTime,
             _runtimeConfigState.CurrentEndWaitTime);
+        LogFlowTransitionIfChanged($"finalize-close-flow source={source}");
 
         if (_tradingFlowEngine.ClosedAtUtc != closeCompletedAtUtc)
         {
             return false;
         }
+
+        SafeVmLog($"[CYCLE][INFO] Close cycle resolved: source={source} closeCompletedAtUtc={closeCompletedAtUtc:O}");
 
         var waitSeconds = _tradingFlowEngine.CurrentWaitSeconds;
         SignalLogItems.Insert(0,
@@ -2984,6 +3364,7 @@ public sealed class DashboardViewModel : ObservableObject
             closeCompletedAtUtc,
             _runtimeConfigState.CurrentStartWaitTime,
             _runtimeConfigState.CurrentEndWaitTime);
+        LogFlowTransitionIfChanged($"finalize-close-flow(cached) source={source}");
 
         if (_tradingFlowEngine.ClosedAtUtc != closeCompletedAtUtc)
         {
@@ -3015,8 +3396,8 @@ public sealed class DashboardViewModel : ObservableObject
         }
 
         // Đọc SharedMemory 1 lần duy nhất cho nhịp này — dùng lại cho cả isToolFlat và finalize
-        var freshLeft = _tradesSharedMemoryReader.ReadTrades(TradeTab.LeftPanel.TargetMapName);
-        var freshRight = _tradesSharedMemoryReader.ReadTrades(TradeTab.RightPanel.TargetMapName);
+        var freshLeft = ReadTradesWithMmfLog(TradeTab.LeftPanel.TargetMapName);
+        var freshRight = ReadTradesWithMmfLog(TradeTab.RightPanel.TargetMapName);
 
         if (pairState != LivePairTradeState.BothFlat)
         {
@@ -3108,9 +3489,9 @@ public sealed class DashboardViewModel : ObservableObject
             // Kiểm tra cycle có bị stale không (ticket đã đóng từ lâu, không còn liên quan)
             // bằng cách dùng _latestTradeLeftResult / _latestTradeRightResult đang có sẵn
             var leftForCycleCheck = _latestTradeLeftResult
-                ?? _tradesSharedMemoryReader.ReadTrades(TradeTab.LeftPanel.TargetMapName);
+                ?? ReadTradesWithMmfLog(TradeTab.LeftPanel.TargetMapName);
             var rightForCycleCheck = _latestTradeRightResult
-                ?? _tradesSharedMemoryReader.ReadTrades(TradeTab.RightPanel.TargetMapName);
+                ?? ReadTradesWithMmfLog(TradeTab.RightPanel.TargetMapName);
 
             if (IsActiveCloseRecoveryCycleClosed(leftForCycleCheck, rightForCycleCheck, out _))
             {
@@ -3149,8 +3530,8 @@ public sealed class DashboardViewModel : ObservableObject
         // Nếu ticket không có trong _pairIdByTicket -> lệnh mở trực tiếp trên EA -> bỏ qua
         var remainingExchange = currentPairState == LivePairTradeState.OnlyAOpen ? "A" : "B";
         var remainingResult = remainingExchange == "A"
-            ? (_latestTradeLeftResult ?? _tradesSharedMemoryReader.ReadTrades(TradeTab.LeftPanel.TargetMapName))
-            : (_latestTradeRightResult ?? _tradesSharedMemoryReader.ReadTrades(TradeTab.RightPanel.TargetMapName));
+            ? (_latestTradeLeftResult ?? ReadTradesWithMmfLog(TradeTab.LeftPanel.TargetMapName))
+            : (_latestTradeRightResult ?? ReadTradesWithMmfLog(TradeTab.RightPanel.TargetMapName));
         var remainingTicket = remainingResult?.Records.FirstOrDefault()?.Ticket;
         if (!remainingTicket.HasValue || !_pairIdByTicket.ContainsKey(remainingTicket.Value))
         {
@@ -3336,6 +3717,7 @@ public sealed class DashboardViewModel : ObservableObject
         }
         catch (Exception ex)
         {
+            SafeVmLog($"[VM][ERROR] Error closing remaining leg after external close: {ex}");
             System.Windows.Application.Current.Dispatcher.Invoke(() =>
             {
                 SignalLogItems.Insert(0,
@@ -3483,7 +3865,7 @@ public sealed class DashboardViewModel : ObservableObject
             return false;
         }
 
-        var result = _tradesSharedMemoryReader.ReadTrades(tradeMapName);
+        var result = ReadTradesWithMmfLog(tradeMapName);
         if (!result.IsMapAvailable || !result.IsParseSuccess)
         {
             return false;
@@ -3855,6 +4237,11 @@ public sealed class DashboardViewModel : ObservableObject
             state.TradeTypeB ??= pendingRequest.TradeType;
         }
 
+        SafeVmLog(
+            $"[CYCLE][INFO] Pending open leg confirmed: pairId={pendingRequest.PairId} exchange={pendingRequest.ExchangeLabel} " +
+            $"ticket={ticket} symbol={symbol} volume={volume.ToString(CultureInfo.InvariantCulture)} " +
+            $"bothConfirmed={(state.OpenConfirmedA && state.OpenConfirmedB)}");
+
         if (_activeAutoCycle is not null
             && pendingRequest.IsAutoFlow
             && pendingRequest.SlotNumber == _activeAutoCycle.Slot)
@@ -3874,6 +4261,7 @@ public sealed class DashboardViewModel : ObservableObject
         if (state.OpenConfirmedA && state.OpenConfirmedB)
         {
             state.IsResolved = true;
+            SafeVmLog($"[CYCLE][INFO] Pending open resolved: pairId={pendingRequest.PairId} ticketA={state.OpenedTicketA} ticketB={state.OpenedTicketB}");
         }
     }
 
@@ -3964,6 +4352,7 @@ public sealed class DashboardViewModel : ObservableObject
                         closeCompletedAtUtc,
                         _runtimeConfigState.CurrentStartWaitTime,
                         _runtimeConfigState.CurrentEndWaitTime);
+                    LogFlowTransitionIfChanged("history-close-confirm-both-legs");
 
                     if (_tradingFlowEngine.ClosedAtUtc == closeCompletedAtUtc)
                     {
@@ -4401,7 +4790,7 @@ public sealed class DashboardViewModel : ObservableObject
             ? $"{value.Value.ToString(CultureInfo.InvariantCulture)} ms"
             : "-";
 
-    private static string FormatTradeTime(ulong timeMsc)
+    private string FormatTradeTime(ulong timeMsc)
     {
         if (timeMsc == 0)
         {
@@ -4413,13 +4802,14 @@ public sealed class DashboardViewModel : ObservableObject
             var clamped = timeMsc > long.MaxValue ? long.MaxValue : (long)timeMsc;
             return DateTimeOffset.FromUnixTimeMilliseconds(clamped).ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture);
         }
-        catch
+        catch (Exception ex)
         {
+            SafeVmLog($"[VM][WARN] Suppressed exception at FormatTradeTime: {ex.Message}");
             return FormatRawTimestamp(timeMsc);
         }
     }
 
-    private static string FormatEaLocalTime(ulong timeMsc)
+    private string FormatEaLocalTime(ulong timeMsc)
     {
         if (timeMsc == 0)
         {
@@ -4432,8 +4822,9 @@ public sealed class DashboardViewModel : ObservableObject
             var time = TimeSpan.FromMilliseconds(clamped);
             return $"{time.Hours:00}:{time.Minutes:00}:{time.Seconds:00}.{time.Milliseconds:000}";
         }
-        catch
+        catch (Exception ex)
         {
+            SafeVmLog($"[VM][WARN] Suppressed exception at FormatEaLocalTime: {ex.Message}");
             return FormatRawTimestamp(timeMsc);
         }
     }
@@ -4533,6 +4924,7 @@ public sealed class DashboardViewModel : ObservableObject
         }
         catch (Exception ex)
         {
+            SafeVmLog($"[VM][ERROR] InitializeRuntimeConfigAsync failed: {ex}");
             System.Windows.Application.Current.Dispatcher.Invoke(() =>
             {
                 ShowConfigError($"[Config] Lỗi tải config runtime: {ex.Message}");
@@ -4549,6 +4941,7 @@ public sealed class DashboardViewModel : ObservableObject
         }
         catch (Exception ex)
         {
+            SafeVmLog($"[VM][ERROR] StartExchangeReaderSafeAsync failed: {ex}");
             System.Windows.Application.Current.Dispatcher.Invoke(() =>
             {
                 ShowConfigError($"[Reader] Không thể start shared memory reader: {ex.Message}");
@@ -4566,6 +4959,9 @@ public sealed class DashboardViewModel : ObservableObject
             IsLoading = false;
 
             BindDashboardMetrics(metrics);
+            LogLatencyAnomalyIfNeeded(metrics);
+            LogStaleTickIfNeeded(metrics);
+            LogPerfSummaryIfDue(metrics);
             RefreshTradeRowsFromSnapshot(metrics, _runtimeConfigState.CurrentPoint);
             SignalEntryGuard.TrackPriceHistory(_priceHistory, metrics);
 
@@ -4600,6 +4996,7 @@ public sealed class DashboardViewModel : ObservableObject
                     OpenGapTick: _runtimeConfigState.CurrentOpenGapTick,
                     CloseGapTick: _runtimeConfigState.CurrentCloseGapTick,
                     CoolDownGapTick: _runtimeConfigState.CurrentCoolDownGapTick));
+            LogFlowTransitionIfChanged("process-snapshot");
 
             OnPropertyChanged(nameof(CurrentPositionText));
             OnPropertyChanged(nameof(CurrentPhaseText));
@@ -4622,15 +5019,23 @@ public sealed class DashboardViewModel : ObservableObject
             var guardResult = SignalEntryGuard.Check(trigger, metrics, guardConfig, _priceHistory, holdMs);
             if (!guardResult.CanTrade)
             {
+                SafeVmLog(
+                    "[GUARD][WARN] Auto trade rejected: " +
+                    $"trigger={trigger.TriggerType} side={trigger.PrimarySide} action={trigger.Action} " +
+                    $"reason=\"{guardResult.SkipReason}\" gap={(trigger.LastBuyGap ?? trigger.LastSellGap)} " +
+                    $"confirmLatencyMs={guardConfig.ConfirmLatencyMs} maxGap={guardConfig.MaxGap} maxSpread={guardConfig.MaxSpread}");
+
                 if (trigger.Action == GapSignalAction.Close)
                 {
                     _tradingFlowEngine.AbortPendingCloseExecution();
+                    LogFlowTransitionIfChanged("close-aborted-by-guard");
                 }
                 else if (trigger.Action == GapSignalAction.Open)
                 {
                     // Open phase is switched to WaitingClose immediately when trigger is produced.
                     // If guard rejects execution, rollback to WaitingOpen to keep UI/state consistent.
                     _tradingFlowEngine.AbortPendingOpenExecution();
+                    LogFlowTransitionIfChanged("open-aborted-by-guard");
                 }
 
                 OnPropertyChanged(nameof(CurrentPositionText));
@@ -4648,6 +5053,7 @@ public sealed class DashboardViewModel : ObservableObject
                 // Open trigger already moved flow to WaitingClose inside engine.
                 // Rollback to WaitingOpen when user toggle disables this open side.
                 _tradingFlowEngine.AbortPendingOpenExecution();
+                LogFlowTransitionIfChanged("open-aborted-by-toggle");
                 OnPropertyChanged(nameof(CurrentPositionText));
                 OnPropertyChanged(nameof(CurrentPhaseText));
 
@@ -4667,6 +5073,7 @@ public sealed class DashboardViewModel : ObservableObject
                         $"[{DateTime.Now:HH:mm:ss.fff}] [SKIP OPEN] qualifying {current}/{requiredN} - side={trigger.PrimarySide}");
 
                     _tradingFlowEngine.AbortPendingOpenExecution();
+                    LogFlowTransitionIfChanged("open-aborted-by-qualifying");
                     OnPropertyChanged(nameof(CurrentPositionText));
                     OnPropertyChanged(nameof(CurrentPhaseText));
                     return;
@@ -4686,6 +5093,7 @@ public sealed class DashboardViewModel : ObservableObject
                         $"[{DateTime.Now:HH:mm:ss.fff}] [SKIP CLOSE] qualifying {current}/{requiredN} - mode={_tradingFlowEngine.CurrentOpenMode}");
 
                     _tradingFlowEngine.AbortPendingCloseExecution();
+                    LogFlowTransitionIfChanged("close-aborted-by-qualifying");
                     OnPropertyChanged(nameof(CurrentPositionText));
                     OnPropertyChanged(nameof(CurrentPhaseText));
                     return;
@@ -4703,8 +5111,33 @@ public sealed class DashboardViewModel : ObservableObject
     private void OnQualifyingConfigChanged(object? sender, EventArgs e)
     {
         _tradingFlowEngine.ResetQualifyingCounters();
+        LogFlowTransitionIfChanged("qualifying-config-changed");
         SignalLogItems.Insert(0,
             $"[{DateTime.Now:HH:mm:ss.fff}] [RESET QUALIFY] config N changed, counters cleared");
+    }
+
+    private void LogFlowTransitionIfChanged(string reason)
+    {
+        var phase = _tradingFlowEngine.CurrentPhase;
+        var openMode = _tradingFlowEngine.CurrentOpenMode;
+        var side = _tradingFlowEngine.CurrentPositionSide;
+
+        if (phase == _lastLoggedPhase
+            && openMode == _lastLoggedOpenMode
+            && side == _lastLoggedPositionSide)
+        {
+            return;
+        }
+
+        SafeVmLog(
+            $"[FLOW][TRANSITION] reason={reason} " +
+            $"phase={_lastLoggedPhase}->{phase} " +
+            $"openMode={_lastLoggedOpenMode}->{openMode} " +
+            $"side={_lastLoggedPositionSide}->{side}");
+
+        _lastLoggedPhase = phase;
+        _lastLoggedOpenMode = openMode;
+        _lastLoggedPositionSide = side;
     }
 
     private void TryLogGapCooldownSkipSignal()
@@ -4903,5 +5336,17 @@ public sealed class DashboardViewModel : ObservableObject
 
     private static string FormatTextOrDash(string? value)
         => string.IsNullOrWhiteSpace(value) ? "-" : value;
+
+    private void SafeVmLog(string message)
+    {
+        try
+        {
+            _tradeSessionFileLogger.Log(message);
+        }
+        catch
+        {
+            // ignored by design
+        }
+    }
 
 }

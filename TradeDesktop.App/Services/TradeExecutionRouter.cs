@@ -6,14 +6,16 @@ public sealed class TradeExecutionRouter : ITradeExecutionRouter
 {
     private readonly ITradePlatformExecutor _mt4Executor;
     private readonly ITradePlatformExecutor _mt5Executor;
+    private readonly ITradeSessionFileLogger _logger;
 
-    public TradeExecutionRouter(IEnumerable<ITradePlatformExecutor> executors)
+    public TradeExecutionRouter(IEnumerable<ITradePlatformExecutor> executors, ITradeSessionFileLogger logger)
     {
         _mt4Executor = executors.First(x => x.Platform == TradeLegPlatform.Mt4);
         _mt5Executor = executors.First(x => x.Platform == TradeLegPlatform.Mt5);
+        _logger = logger;
     }
 
-    public Task<ManualTradeResult> OpenPairAsync(TradeOpenPairRequest request, CancellationToken cancellationToken = default)
+    public async Task<ManualTradeResult> OpenPairAsync(TradeOpenPairRequest request, CancellationToken cancellationToken = default)
     {
         if (request is null)
         {
@@ -23,18 +25,48 @@ public sealed class TradeExecutionRouter : ITradeExecutionRouter
         ValidatePlatformOrThrow(request.LegA.Platform, request.LegA.Exchange);
         ValidatePlatformOrThrow(request.LegB.Platform, request.LegB.Exchange);
 
+        var stopwatch = Stopwatch.StartNew();
+        SafeLog(
+            "[ROUTER][INFO] Open pair request: " +
+            $"legA={{platform={request.LegA.Platform},action={request.LegA.Action},hwnd={request.LegA.ChartHwnd},delay={request.LegA.DelayMs}ms}} " +
+            $"legB={{platform={request.LegB.Platform},action={request.LegB.Action},hwnd={request.LegB.ChartHwnd},delay={request.LegB.DelayMs}ms}}");
+
         Debug.WriteLine($"[TradeRouter][Open] leg={request.LegA.Exchange}, platform={request.LegA.Platform}, action={request.LegA.Action}, chartHwnd={request.LegA.ChartHwnd}");
         Debug.WriteLine($"[TradeRouter][Open] leg={request.LegB.Exchange}, platform={request.LegB.Platform}, action={request.LegB.Action}, chartHwnd={request.LegB.ChartHwnd}");
 
-        return ExecuteOpenPairPerLegAsync(request, cancellationToken);
+        try
+        {
+            var result = await ExecuteOpenPairPerLegAsync(request, cancellationToken);
+            stopwatch.Stop();
+            var legA = result.Legs.FirstOrDefault(x => string.Equals(x.Exchange, "A", StringComparison.OrdinalIgnoreCase));
+            var legB = result.Legs.FirstOrDefault(x => string.Equals(x.Exchange, "B", StringComparison.OrdinalIgnoreCase));
+            SafeLog(
+                $"[ROUTER][{(result.Success ? "INFO" : "WARN")}] Open pair result: success={result.Success} " +
+                $"legA={{ok={legA?.Success},detail={legA?.Detail}}} " +
+                $"legB={{ok={legB?.Success},detail={legB?.Detail}}} " +
+                $"elapsed={stopwatch.ElapsedMilliseconds}ms");
+            return result;
+        }
+        catch (Exception ex)
+        {
+            stopwatch.Stop();
+            SafeLog($"[ROUTER][ERROR] Open pair threw after {stopwatch.ElapsedMilliseconds}ms: {ex}");
+            throw;
+        }
     }
 
-    public Task<ManualTradeResult> ClosePairAsync(TradeClosePairRequest request, CancellationToken cancellationToken = default)
+    public async Task<ManualTradeResult> ClosePairAsync(TradeClosePairRequest request, CancellationToken cancellationToken = default)
     {
         if (request is null)
         {
             throw new ArgumentNullException(nameof(request));
         }
+
+        var stopwatch = Stopwatch.StartNew();
+        SafeLog(
+            "[ROUTER][INFO] Close pair request: " +
+            $"legA={{platform={request.LegA?.Platform},action={request.LegA?.Action},hwnd={request.LegA?.TradeHwnd},ticket={request.LegA?.Ticket},delay={request.LegA?.DelayMs}ms}} " +
+            $"legB={{platform={request.LegB?.Platform},action={request.LegB?.Action},hwnd={request.LegB?.TradeHwnd},ticket={request.LegB?.Ticket},delay={request.LegB?.DelayMs}ms}}");
 
         var platformA = request.LegA?.Platform;
         var platformB = request.LegB?.Platform;
@@ -59,7 +91,25 @@ public sealed class TradeExecutionRouter : ITradeExecutionRouter
             Debug.WriteLine("[TradeRouter][Close] leg=B, skipped (no close request)");
         }
 
-        return ExecuteClosePairPerLegAsync(request, cancellationToken);
+        try
+        {
+            var result = await ExecuteClosePairPerLegAsync(request, cancellationToken);
+            stopwatch.Stop();
+            var legA = result.Legs.FirstOrDefault(x => string.Equals(x.Exchange, "A", StringComparison.OrdinalIgnoreCase));
+            var legB = result.Legs.FirstOrDefault(x => string.Equals(x.Exchange, "B", StringComparison.OrdinalIgnoreCase));
+            SafeLog(
+                $"[ROUTER][{(result.Success ? "INFO" : "WARN")}] Close pair result: success={result.Success} " +
+                $"legA={{ok={legA?.Success},detail={legA?.Detail}}} " +
+                $"legB={{ok={legB?.Success},detail={legB?.Detail}}} " +
+                $"elapsed={stopwatch.ElapsedMilliseconds}ms");
+            return result;
+        }
+        catch (Exception ex)
+        {
+            stopwatch.Stop();
+            SafeLog($"[ROUTER][ERROR] Close pair threw after {stopwatch.ElapsedMilliseconds}ms: {ex}");
+            throw;
+        }
     }
 
     private static void ValidatePlatformOrThrow(TradeLegPlatform platform, string exchange)
@@ -158,5 +208,17 @@ public sealed class TradeExecutionRouter : ITradeExecutionRouter
             TradeLegPlatform.Mt5 => _mt5Executor,
             _ => throw new InvalidOperationException($"Unsupported platform: {platform}")
         };
+    }
+
+    private void SafeLog(string message)
+    {
+        try
+        {
+            _logger.Log(message);
+        }
+        catch
+        {
+            // ignored by design
+        }
     }
 }

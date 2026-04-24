@@ -103,6 +103,16 @@
                             Height="36"
                             Margin="0,0,8,0"
                             Command="{Binding StopTradingLogicCommand}" />
+                    <Button Content="Log Folder"
+                            Width="90"
+                            Height="36"
+                            Margin="0,0,8,0"
+                            Command="{Binding OpenLogFolderCommand}" />
+                    <Button Content="Current Log"
+                            Width="96"
+                            Height="36"
+                            Margin="0,0,8,0"
+                            Command="{Binding OpenCurrentLogCommand}" />
                     <TextBox Width="170"
                              Height="36"
                              Margin="0,0,8,0"
