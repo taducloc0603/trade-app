@@ -71,7 +71,8 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
             CloseNumberOfQualifyingTimes: row.CloseNumberOfQualifyingTimes,
             OpenGapTick: row.OpenGapTick,
             CloseGapTick: row.CloseGapTick,
-            CoolDownGapTick: row.CoolDownGapTick);
+            CoolDownGapTick: row.CoolDownGapTick,
+            IsShowConfig: row.IsShowConfig);
     }
 
     public async Task<bool> UpdateSansAndHostNameByHostNameAsync(
@@ -180,6 +181,7 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
         first.TryGetProperty("cool_down_gap_tick", out var coolDownGapTickElement);
         first.TryGetProperty("platform_a", out var platformAElement);
         first.TryGetProperty("platform_b", out var platformBElement);
+        first.TryGetProperty("is_show_config", out var isShowConfigElement);
 
         // DB column name is lowercase: hostname
         var hasHostName = first.TryGetProperty("hostname", out var hostNameElement);
@@ -224,7 +226,8 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
             CloseGapTick = closeGapTickElement.ValueKind == JsonValueKind.Number && closeGapTickElement.TryGetInt32(out var closeGapTick) ? closeGapTick : 0,
             CoolDownGapTick = coolDownGapTickElement.ValueKind == JsonValueKind.Number && coolDownGapTickElement.TryGetInt32(out var coolDownGapTick) ? coolDownGapTick : 0,
             PlatformA = platformAElement.ValueKind == JsonValueKind.String ? platformAElement.GetString() : null,
-            PlatformB = platformBElement.ValueKind == JsonValueKind.String ? platformBElement.GetString() : null
+            PlatformB = platformBElement.ValueKind == JsonValueKind.String ? platformBElement.GetString() : null,
+            IsShowConfig = isShowConfigElement.ValueKind == JsonValueKind.Number && isShowConfigElement.TryGetInt32(out var isShowConfig) ? isShowConfig : 0
         };
     }
 
@@ -288,6 +291,7 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
         first.TryGetProperty("cool_down_gap_tick", out var coolDownGapTickElement);
         first.TryGetProperty("platform_a", out var platformAElement);
         first.TryGetProperty("platform_b", out var platformBElement);
+        first.TryGetProperty("is_show_config", out var isShowConfigElement);
 
         var hasHostName = first.TryGetProperty("hostname", out var hostNameElement);
         if (!hasHostName)
@@ -330,7 +334,8 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
             CloseGapTick = closeGapTickElement.ValueKind == JsonValueKind.Number && closeGapTickElement.TryGetInt32(out var closeGapTick) ? closeGapTick : 0,
             CoolDownGapTick = coolDownGapTickElement.ValueKind == JsonValueKind.Number && coolDownGapTickElement.TryGetInt32(out var coolDownGapTick) ? coolDownGapTick : 0,
             PlatformA = platformAElement.ValueKind == JsonValueKind.String ? platformAElement.GetString() : null,
-            PlatformB = platformBElement.ValueKind == JsonValueKind.String ? platformBElement.GetString() : null
+            PlatformB = platformBElement.ValueKind == JsonValueKind.String ? platformBElement.GetString() : null,
+            IsShowConfig = isShowConfigElement.ValueKind == JsonValueKind.Number && isShowConfigElement.TryGetInt32(out var isShowConfig) ? isShowConfig : 0
         };
     }
 
@@ -478,5 +483,8 @@ public sealed class SupabaseConfigRepository(HttpClient httpClient, string? supa
 
         [JsonPropertyName("platform_b")]
         public string? PlatformB { get; set; }
+
+        [JsonPropertyName("is_show_config")]
+        public int IsShowConfig { get; set; }
     }
 }

@@ -288,6 +288,7 @@ public sealed class DashboardViewModel : ObservableObject
     private bool _isLoading = true;
     private string _loadingMessage = "Đang chờ dữ liệu shared memory...";
     private string _machineHostName = string.Empty;
+    private bool _isShowConfigVisible;
     private bool _hasManualTradeHwndConfig;
     private bool _isManualOpenInFlight;
     private LivePairTradeState _manualOpenGatePairState = LivePairTradeState.MapUnavailableOrParseError;
@@ -441,6 +442,12 @@ public sealed class DashboardViewModel : ObservableObject
     public bool IsLoading { get => _isLoading; private set => SetProperty(ref _isLoading, value); }
     public string LoadingMessage { get => _loadingMessage; private set => SetProperty(ref _loadingMessage, value); }
     public string MachineHostName { get => _machineHostName; private set => SetProperty(ref _machineHostName, value); }
+
+    public bool IsShowConfigVisible
+    {
+        get => _isShowConfigVisible;
+        private set => SetProperty(ref _isShowConfigVisible, value);
+    }
 
     public bool HasManualTradeHwndConfig
     {
@@ -4874,6 +4881,7 @@ public sealed class DashboardViewModel : ObservableObject
                     result.CloseGapTick,
                     result.CoolDownGapTick);
                 _runtimeConfigState.UpdateManualTradeHwnd(result.ManualHwndColumns);
+                IsShowConfigVisible = result.IsShowConfig == 1;
                 ResetTradingLogicState();
 
                 if (string.Equals(result.MachineHostName, InlineDbHostName, StringComparison.OrdinalIgnoreCase))

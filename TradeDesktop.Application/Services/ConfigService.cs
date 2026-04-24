@@ -76,7 +76,8 @@ public sealed class ConfigService(
             record.CloseNumberOfQualifyingTimes,
             record.OpenGapTick,
             record.CloseGapTick,
-            record.CoolDownGapTick);
+            record.CoolDownGapTick,
+            record.IsShowConfig);
     }
 
     public async Task<ConfigSaveResult> SaveByMachineHostNameAsync(
@@ -164,7 +165,8 @@ public sealed record ConfigLoadResult(
     int CloseNumberOfQualifyingTimes,
     int OpenGapTick,
     int CloseGapTick,
-    int CoolDownGapTick)
+    int CoolDownGapTick,
+    int IsShowConfig = 0)
 {
     public static ConfigLoadResult Success(
         string machineHostName,
@@ -201,7 +203,8 @@ public sealed record ConfigLoadResult(
         int closeNumberOfQualifyingTimes = 1,
         int openGapTick = 0,
         int closeGapTick = 0,
-        int coolDownGapTick = 0) =>
+        int coolDownGapTick = 0,
+        int isShowConfig = 0) =>
         new(
             true,
             true,
@@ -240,13 +243,14 @@ public sealed record ConfigLoadResult(
             Math.Max(1, closeNumberOfQualifyingTimes),
             Math.Max(0, openGapTick),
             Math.Max(0, closeGapTick),
-            Math.Max(0, coolDownGapTick));
+            Math.Max(0, coolDownGapTick),
+            isShowConfig);
 
     public static ConfigLoadResult NotFound(string machineHostName) =>
-        new(false, false, machineHostName, [ManualHwndColumnConfig.Empty], "mt5", "mt5", 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", null, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0);
+        new(false, false, machineHostName, [ManualHwndColumnConfig.Empty], "mt5", "mt5", 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", null, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0);
 
     public static ConfigLoadResult Failed(string machineHostName, string error) =>
-        new(false, true, machineHostName, [ManualHwndColumnConfig.Empty], "mt5", "mt5", 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", error, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0);
+        new(false, true, machineHostName, [ManualHwndColumnConfig.Empty], "mt5", "mt5", 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, string.Empty, string.Empty, string.Empty, "[]", error, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0);
 
     private static IReadOnlyList<ManualHwndColumnConfig> NormalizeColumns(IReadOnlyList<ManualHwndColumnConfig>? columns)
     {

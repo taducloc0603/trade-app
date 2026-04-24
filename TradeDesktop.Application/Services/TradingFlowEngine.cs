@@ -51,12 +51,13 @@ public sealed class TradingFlowEngine(
         _lastSeenEndTimeHold = Math.Max(0, config.EndTimeHold);
 
         var effectiveNow = ResolveEffectiveNowUtc(snapshot.TimestampUtc);
-        ApplyGapSpikeCoolDown(snapshot, config, effectiveNow);
-        if (IsGapCoolDownActive(effectiveNow))
-        {
-            SetGapCooldownSkipDiagnostic(config, effectiveNow);
-            return null;
-        }
+        // [TEMPORARILY DISABLED] Gap_tick cooldown
+        // ApplyGapSpikeCoolDown(snapshot, config, effectiveNow);
+        // if (IsGapCoolDownActive(effectiveNow))
+        // {
+        //     SetGapCooldownSkipDiagnostic(config, effectiveNow);
+        //     return null;
+        // }
 
         if (CurrentPhase == TradingFlowPhase.WaitingOpen)
         {
@@ -287,10 +288,11 @@ public sealed class TradingFlowEngine(
     private bool CanCheckOpen(DateTime snapshotTimestampUtc)
     {
         var effectiveNow = ResolveEffectiveNowUtc(snapshotTimestampUtc);
-        if (IsGapCoolDownActive(effectiveNow))
-        {
-            return false;
-        }
+        // [TEMPORARILY DISABLED] Gap_tick cooldown
+        // if (IsGapCoolDownActive(effectiveNow))
+        // {
+        //     return false;
+        // }
 
         if (!ClosedAtUtc.HasValue || CurrentWaitSeconds <= 0)
         {
@@ -310,10 +312,11 @@ public sealed class TradingFlowEngine(
         }
 
         var effectiveNow = ResolveEffectiveNowUtc(snapshotTimestampUtc);
-        if (IsGapCoolDownActive(effectiveNow))
-        {
-            return false;
-        }
+        // [TEMPORARILY DISABLED] Gap_tick cooldown
+        // if (IsGapCoolDownActive(effectiveNow))
+        // {
+        //     return false;
+        // }
 
         // FIX: close-gate safety floor.
         // Nếu chưa có OpenedAtUtc → thực sự chưa mở lệnh → cho qua (no-op)

@@ -21,14 +21,16 @@ public sealed class GapCalculator(IRuntimeConfigProvider runtimeConfigProvider) 
 
         if (sanB.Bid.HasValue && sanA.Ask.HasValue)
         {
-            var value = (sanB.Bid.Value - sanA.Ask.Value) * pointMultiplier;
-            gapBuy = (int)value;
+            var bBidPts = (int)(sanB.Bid.Value * pointMultiplier);
+            var aAskPts = (int)(sanA.Ask.Value * pointMultiplier);
+            gapBuy = bBidPts - aAskPts;
         }
 
         if (sanB.Ask.HasValue && sanA.Bid.HasValue)
         {
-            var value = (sanB.Ask.Value - sanA.Bid.Value) * pointMultiplier;
-            gapSell = (int)value;
+            var bAskPts = (int)(sanB.Ask.Value * pointMultiplier);
+            var aBidPts = (int)(sanA.Bid.Value * pointMultiplier);
+            gapSell = bAskPts - aBidPts;
         }
 
         return (gapBuy, gapSell);

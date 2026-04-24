@@ -32,4 +32,5 @@ public sealed record ConfigRecord(
     int CloseNumberOfQualifyingTimes,
     int OpenGapTick,
     int CloseGapTick,
-    int CoolDownGapTick);
+    int CoolDownGapTick,
+    int IsShowConfig = 0);
