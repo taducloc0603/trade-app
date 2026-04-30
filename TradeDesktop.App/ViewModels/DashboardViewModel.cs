@@ -735,8 +735,9 @@ public sealed class DashboardViewModel : ObservableObject
             var symbolB = snapshot?.ExchangeB.Symbol ?? "-";
             var priceA = SignalLogFormatter.ResolveOpenPrice(snapshot?.ExchangeA.Bid, snapshot?.ExchangeA.Ask, isBuy: true);
             var priceB = SignalLogFormatter.ResolveOpenPrice(snapshot?.ExchangeB.Bid, snapshot?.ExchangeB.Ask, isBuy: false);
-            SignalLogItems.Insert(0, SignalLogFormatter.FormatManualOpen(now, slot, "B", "SELL", symbolB, priceB, gap));
-            SignalLogItems.Insert(0, SignalLogFormatter.FormatManualOpen(now, slot, "A", "BUY", symbolA, priceA, gap));
+            var spreadText = BuildSpreadPtsText(snapshot);
+            SignalLogItems.Insert(0, SignalLogFormatter.FormatManualOpen(now, slot, "B", "SELL", symbolB, priceB, gap, spreadText));
+            SignalLogItems.Insert(0, SignalLogFormatter.FormatManualOpen(now, slot, "A", "BUY", symbolA, priceA, gap, spreadText));
 
             _manualSlot++;
             ShowManualTradeFeedback("BUY", result);
@@ -795,8 +796,9 @@ public sealed class DashboardViewModel : ObservableObject
             var symbolB = snapshot?.ExchangeB.Symbol ?? "-";
             var priceA = SignalLogFormatter.ResolveOpenPrice(snapshot?.ExchangeA.Bid, snapshot?.ExchangeA.Ask, isBuy: false);
             var priceB = SignalLogFormatter.ResolveOpenPrice(snapshot?.ExchangeB.Bid, snapshot?.ExchangeB.Ask, isBuy: true);
-            SignalLogItems.Insert(0, SignalLogFormatter.FormatManualOpen(now, slot, "B", "BUY", symbolB, priceB, gap));
-            SignalLogItems.Insert(0, SignalLogFormatter.FormatManualOpen(now, slot, "A", "SELL", symbolA, priceA, gap));
+            var spreadText = BuildSpreadPtsText(snapshot);
+            SignalLogItems.Insert(0, SignalLogFormatter.FormatManualOpen(now, slot, "B", "BUY", symbolB, priceB, gap, spreadText));
+            SignalLogItems.Insert(0, SignalLogFormatter.FormatManualOpen(now, slot, "A", "SELL", symbolA, priceA, gap, spreadText));
 
             _manualSlot++;
             ShowManualTradeFeedback("SELL", result);
@@ -1052,8 +1054,9 @@ public sealed class DashboardViewModel : ObservableObject
                 var triggerGapLabel = "Gap BUY";
                 var triggerLastGap = trigger.LastBuyGap;
                 var triggerAllGaps = trigger.BuyGaps;
-                SignalLogItems.Insert(0, SignalLogFormatter.FormatAutoOpen(now, slot, "B", "SELL", symbolB, priceB, triggerGapLabel, triggerLastGap, triggerAllGaps));
-                SignalLogItems.Insert(0, SignalLogFormatter.FormatAutoOpen(now, slot, "A", "BUY", symbolA, priceA, triggerGapLabel, triggerLastGap, triggerAllGaps));
+                var spreadText = BuildSpreadPtsText(_runtimeConfigState.CurrentDashboardMetrics);
+                SignalLogItems.Insert(0, SignalLogFormatter.FormatAutoOpen(now, slot, "B", "SELL", symbolB, priceB, triggerGapLabel, triggerLastGap, triggerAllGaps, spreadText));
+                SignalLogItems.Insert(0, SignalLogFormatter.FormatAutoOpen(now, slot, "A", "BUY", symbolA, priceA, triggerGapLabel, triggerLastGap, triggerAllGaps, spreadText));
                 _autoSlot++;
             });
         }
@@ -1197,8 +1200,9 @@ public sealed class DashboardViewModel : ObservableObject
                 var triggerGapLabel = "Gap SELL";
                 var triggerLastGap = trigger.LastSellGap;
                 var triggerAllGaps = trigger.SellGaps;
-                SignalLogItems.Insert(0, SignalLogFormatter.FormatAutoOpen(now, slot, "B", "BUY", symbolB, priceB, triggerGapLabel, triggerLastGap, triggerAllGaps));
-                SignalLogItems.Insert(0, SignalLogFormatter.FormatAutoOpen(now, slot, "A", "SELL", symbolA, priceA, triggerGapLabel, triggerLastGap, triggerAllGaps));
+                var spreadText = BuildSpreadPtsText(_runtimeConfigState.CurrentDashboardMetrics);
+                SignalLogItems.Insert(0, SignalLogFormatter.FormatAutoOpen(now, slot, "B", "BUY", symbolB, priceB, triggerGapLabel, triggerLastGap, triggerAllGaps, spreadText));
+                SignalLogItems.Insert(0, SignalLogFormatter.FormatAutoOpen(now, slot, "A", "SELL", symbolA, priceA, triggerGapLabel, triggerLastGap, triggerAllGaps, spreadText));
                 _autoSlot++;
             });
         }
@@ -5314,6 +5318,7 @@ public sealed class DashboardViewModel : ObservableObject
             var isBuy = trigger.PrimarySide == GapSignalSide.Buy;
             var type = isBuy ? "BUY" : "SELL";
             var price = isBuy ? trigger.LastAAsk : trigger.LastABid;
+            var spreadText = BuildSpreadPtsText(_runtimeConfigState.CurrentDashboardMetrics);
             return SignalLogFormatter.FormatAutoOpen(
                 now,
                 slot,
@@ -5323,7 +5328,8 @@ public sealed class DashboardViewModel : ObservableObject
                 price,
                 gapLabel,
                 lastGap,
-                allGaps);
+                allGaps,
+                spreadText);
         }
 
         var closeSlot = Math.Max(0, _autoSlot - 1);
@@ -5346,6 +5352,24 @@ public sealed class DashboardViewModel : ObservableObject
         => value.HasValue
             ? value.Value.ToString($"F{decimalPlaces}", CultureInfo.InvariantCulture)
             : "-";
+
+    private string BuildSpreadPtsText(DashboardMetrics? metrics)
+    {
+        if (metrics is null)
+        {
+            return "SpreadA=- pt | SpreadB=- pt";
+        }
+
+        var point = Math.Max(1, _runtimeConfigState.CurrentPoint);
+        var spreadAPts = metrics.ExchangeA.Spread.HasValue
+            ? ((int)(metrics.ExchangeA.Spread.Value * point)).ToString(CultureInfo.InvariantCulture)
+            : "-";
+        var spreadBPts = metrics.ExchangeB.Spread.HasValue
+            ? ((int)(metrics.ExchangeB.Spread.Value * point)).ToString(CultureInfo.InvariantCulture)
+            : "-";
+
+        return $"SpreadA={spreadAPts} pt | SpreadB={spreadBPts} pt";
+    }
 
     private static string FormatTrimmedNumberOrDash(decimal? value, int maxDecimalPlaces = 5)
         => value.HasValue

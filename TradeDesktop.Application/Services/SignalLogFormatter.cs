@@ -16,11 +16,13 @@ public static class SignalLogFormatter
     /// </summary>
     public static string FormatManualOpen(
         DateTime localTime, int slot, string exchangeLabel,
-        string tradeType, string symbol, decimal? price, int? gap)
+        string tradeType, string symbol, decimal? price, int? gap,
+        string? spreadText = null)
     {
         var ts = localTime.ToString(TimestampFormat, CultureInfo.InvariantCulture);
         var gapText = gap.HasValue ? gap.Value.ToString(CultureInfo.InvariantCulture) : "0";
-        return $"{ts}> [{slot}:{exchangeLabel}]. {tradeType.ToUpperInvariant()} {symbol} at {Fp(price)} by Manual | Gap={gapText} pt.";
+        var suffix = string.IsNullOrWhiteSpace(spreadText) ? string.Empty : $" {spreadText}";
+        return $"{ts}> [{slot}:{exchangeLabel}]. {tradeType.ToUpperInvariant()} {symbol} at {Fp(price)} by Manual | Gap={gapText} pt.{suffix}";
     }
 
     /// <summary>
@@ -29,11 +31,13 @@ public static class SignalLogFormatter
     public static string FormatAutoOpen(
         DateTime localTime, int slot, string exchangeLabel,
         string tradeType, string symbol, decimal? price,
-        string gapLabel, int? lastGap, IReadOnlyList<int>? allGaps)
+        string gapLabel, int? lastGap, IReadOnlyList<int>? allGaps,
+        string? spreadText = null)
     {
         var ts = localTime.ToString(TimestampFormat, CultureInfo.InvariantCulture);
         var lastGapText = lastGap.HasValue ? lastGap.Value.ToString(CultureInfo.InvariantCulture) : "0";
-        return $"{ts}> [{slot}:{exchangeLabel}]. {tradeType.ToUpperInvariant()} {symbol} at {Fp(price)} by {gapLabel}={lastGapText} pt ({Fg(allGaps)}).";
+        var suffix = string.IsNullOrWhiteSpace(spreadText) ? string.Empty : $" {spreadText}";
+        return $"{ts}> [{slot}:{exchangeLabel}]. {tradeType.ToUpperInvariant()} {symbol} at {Fp(price)} by {gapLabel}={lastGapText} pt ({Fg(allGaps)}).{suffix}";
     }
 
     /// <summary>
