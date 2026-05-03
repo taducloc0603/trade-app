@@ -4883,9 +4883,11 @@ public sealed class DashboardViewModel : ObservableObject
                     result.OpenPts,
                     result.ConfirmGapPts,
                     result.HoldConfirmMs,
+                    result.OpenPriceFreezeMs,
                     result.ClosePts,
                     result.CloseConfirmGapPts,
                     result.CloseHoldConfirmMs,
+                    result.ClosePriceFreezeMs,
                     result.StartTimeHold,
                     result.EndTimeHold,
                     result.StartWaitTime,
@@ -4916,7 +4918,7 @@ public sealed class DashboardViewModel : ObservableObject
                 if (string.Equals(result.MachineHostName, InlineDbHostName, StringComparison.OrdinalIgnoreCase))
                 {
                     DbInlineData =
-                        $"[DB] id={result.ConfigId} | hostname={result.MachineHostName} | point={result.Point} | open_pts={result.OpenPts} | open_confirm_gap_pts={result.ConfirmGapPts} | open_hold_confirm_ms={result.HoldConfirmMs} | open_max_times_tick={result.OpenMaxTimesTick} | close_pts={result.ClosePts} | close_confirm_gap_pts={result.CloseConfirmGapPts} | close_hold_confirm_ms={result.CloseHoldConfirmMs} | close_max_times_tick={result.CloseMaxTimesTick} | start_time_hold={result.StartTimeHold} | end_time_hold={result.EndTimeHold} | start_wait_time={result.StartWaitTime} | end_wait_time={result.EndWaitTime} | sans={result.SansJson}";
+                        $"[DB] id={result.ConfigId} | hostname={result.MachineHostName} | point={result.Point} | open_pts={result.OpenPts} | open_confirm_gap_pts={result.ConfirmGapPts} | open_hold_confirm_ms={result.HoldConfirmMs} | open_price_freeze_ms={result.OpenPriceFreezeMs} | open_max_times_tick={result.OpenMaxTimesTick} | close_pts={result.ClosePts} | close_confirm_gap_pts={result.CloseConfirmGapPts} | close_hold_confirm_ms={result.CloseHoldConfirmMs} | close_price_freeze_ms={result.ClosePriceFreezeMs} | close_max_times_tick={result.CloseMaxTimesTick} | start_time_hold={result.StartTimeHold} | end_time_hold={result.EndTimeHold} | start_wait_time={result.StartWaitTime} | end_wait_time={result.EndWaitTime} | sans={result.SansJson}";
                     IsDbInlineDataVisible = true;
                 }
                 else
@@ -5046,8 +5048,8 @@ public sealed class DashboardViewModel : ObservableObject
 
             // Guard: kiểm tra điều kiện lọc trước khi vào lệnh
             var holdMs = trigger.Action == GapSignalAction.Open
-                ? _runtimeConfigState.CurrentHoldConfirmMs
-                : _runtimeConfigState.CurrentCloseHoldConfirmMs;
+                ? _runtimeConfigState.CurrentOpenPriceFreezeMs
+                : _runtimeConfigState.CurrentClosePriceFreezeMs;
             var guardConfig = new SignalEntryGuard.GuardConfig(
                 ConfirmLatencyMs: _runtimeConfigState.CurrentConfirmLatencyMs,
                 MaxGap: _runtimeConfigState.CurrentMaxGap,

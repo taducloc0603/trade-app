@@ -13,9 +13,11 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
     public int CurrentOpenPts { get; private set; }
     public int CurrentConfirmGapPts { get; private set; }
     public int CurrentHoldConfirmMs { get; private set; }
+    public int CurrentOpenPriceFreezeMs { get; private set; }
     public int CurrentClosePts { get; private set; }
     public int CurrentCloseConfirmGapPts { get; private set; }
     public int CurrentCloseHoldConfirmMs { get; private set; }
+    public int CurrentClosePriceFreezeMs { get; private set; }
     public int CurrentStartTimeHold { get; private set; }
     public int CurrentEndTimeHold { get; private set; }
     public int CurrentStartWaitTime { get; private set; }
@@ -60,9 +62,11 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
     public int OpenPts => CurrentOpenPts;
     public int ConfirmGapPts => CurrentConfirmGapPts;
     public int HoldConfirmMs => CurrentHoldConfirmMs;
+    public int OpenPriceFreezeMs => CurrentOpenPriceFreezeMs;
     public int ClosePts => CurrentClosePts;
     public int CloseConfirmGapPts => CurrentCloseConfirmGapPts;
     public int CloseHoldConfirmMs => CurrentCloseHoldConfirmMs;
+    public int ClosePriceFreezeMs => CurrentClosePriceFreezeMs;
     public int StartTimeHold => CurrentStartTimeHold;
     public int EndTimeHold => CurrentEndTimeHold;
     public int StartWaitTime => CurrentStartWaitTime;
@@ -95,9 +99,11 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
         int openPts,
         int confirmGapPts,
         int holdConfirmMs,
+        int openPriceFreezeMs,
         int closePts,
         int closeConfirmGapPts,
         int closeHoldConfirmMs,
+        int closePriceFreezeMs,
         int startTimeHold,
         int endTimeHold,
         int startWaitTime,
@@ -128,9 +134,11 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
             openPts,
             confirmGapPts,
             holdConfirmMs,
+            openPriceFreezeMs,
             closePts,
             closeConfirmGapPts,
             closeHoldConfirmMs,
+            closePriceFreezeMs,
             startTimeHold,
             endTimeHold,
             startWaitTime,
@@ -162,9 +170,11 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
         int openPts,
         int confirmGapPts,
         int holdConfirmMs,
+        int openPriceFreezeMs,
         int closePts,
         int closeConfirmGapPts,
         int closeHoldConfirmMs,
+        int closePriceFreezeMs,
         int startTimeHold,
         int endTimeHold,
         int startWaitTime,
@@ -194,9 +204,15 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
         CurrentOpenPts = Math.Abs(openPts);
         CurrentConfirmGapPts = Math.Abs(confirmGapPts);
         CurrentHoldConfirmMs = Math.Max(0, holdConfirmMs);
+        CurrentOpenPriceFreezeMs = openPriceFreezeMs >= 0
+            ? Math.Max(0, openPriceFreezeMs)
+            : CurrentHoldConfirmMs;
         CurrentClosePts = Math.Abs(closePts);
         CurrentCloseConfirmGapPts = Math.Abs(closeConfirmGapPts);
         CurrentCloseHoldConfirmMs = Math.Max(0, closeHoldConfirmMs);
+        CurrentClosePriceFreezeMs = closePriceFreezeMs >= 0
+            ? Math.Max(0, closePriceFreezeMs)
+            : CurrentCloseHoldConfirmMs;
         CurrentStartTimeHold = Math.Max(0, startTimeHold);
         CurrentEndTimeHold = Math.Max(0, endTimeHold);
         CurrentStartWaitTime = Math.Max(0, startWaitTime);
@@ -281,9 +297,11 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
             CurrentOpenPts,
             CurrentConfirmGapPts,
             CurrentHoldConfirmMs,
+            CurrentOpenPriceFreezeMs,
             CurrentClosePts,
             CurrentCloseConfirmGapPts,
             CurrentCloseHoldConfirmMs,
+            CurrentClosePriceFreezeMs,
             CurrentStartTimeHold,
             CurrentEndTimeHold,
             CurrentStartWaitTime,
@@ -316,9 +334,11 @@ public sealed class RuntimeConfigState : IRuntimeConfigProvider, IRuntimeConfigS
             CurrentOpenPts,
             CurrentConfirmGapPts,
             CurrentHoldConfirmMs,
+            CurrentOpenPriceFreezeMs,
             CurrentClosePts,
             CurrentCloseConfirmGapPts,
             CurrentCloseHoldConfirmMs,
+            CurrentClosePriceFreezeMs,
             CurrentStartTimeHold,
             CurrentEndTimeHold,
             CurrentStartWaitTime,

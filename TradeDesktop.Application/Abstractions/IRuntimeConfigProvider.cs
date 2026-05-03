@@ -9,9 +9,11 @@ public interface IRuntimeConfigProvider
     int CurrentOpenPts { get; }
     int CurrentConfirmGapPts { get; }
     int CurrentHoldConfirmMs { get; }
+    int CurrentOpenPriceFreezeMs { get; }
     int CurrentClosePts { get; }
     int CurrentCloseConfirmGapPts { get; }
     int CurrentCloseHoldConfirmMs { get; }
+    int CurrentClosePriceFreezeMs { get; }
     int CurrentStartTimeHold { get; }
     int CurrentEndTimeHold { get; }
     int CurrentStartWaitTime { get; }
