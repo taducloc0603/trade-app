@@ -31,6 +31,7 @@ public sealed class DashboardViewModel : ObservableObject
     private readonly ITradeExecutionRouter _tradeExecutionRouter;
     private readonly IMt5ManualTradeService _mt5ManualTradeService;
     private readonly ITradeSessionFileLogger _tradeSessionFileLogger;
+    private readonly ITelegramNotifier _telegramNotifier;
     private readonly string _normalizedHostName;
     private readonly CancellationTokenSource _orderInfoPollingCts = new();
     private readonly Dictionary<string, ulong> _lastTradeTimestampByMap = new(StringComparer.Ordinal);
@@ -87,6 +88,8 @@ public sealed class DashboardViewModel : ObservableObject
     private const int StaleTickThresholdSeconds = 10;
     private DateTime _lastPerfSummaryAtUtc = DateTime.MinValue;
     private const int PerfSummaryIntervalSeconds = 60;
+    private const double AlertSlippageThresholdPt = 40.0;
+    private const long AlertExecutionThresholdMs = 1000;
     private bool _isAutoOpenPausedByInvariant;
     private int _invariantClearStreak;
     private const int InvariantClearPollsRequired = 5;
@@ -310,7 +313,8 @@ public sealed class DashboardViewModel : ObservableObject
         IHistorySharedMemoryReader historySharedMemoryReader,
         ITradeExecutionRouter tradeExecutionRouter,
         IMt5ManualTradeService mt5ManualTradeService,
-        ITradeSessionFileLogger tradeSessionFileLogger)
+        ITradeSessionFileLogger tradeSessionFileLogger,
+        ITelegramNotifier telegramNotifier)
     {
         _serviceProvider = serviceProvider;
         _runtimeConfigState = runtimeConfigState;
@@ -325,6 +329,7 @@ public sealed class DashboardViewModel : ObservableObject
         _tradeExecutionRouter = tradeExecutionRouter;
         _mt5ManualTradeService = mt5ManualTradeService;
         _tradeSessionFileLogger = tradeSessionFileLogger;
+        _telegramNotifier = telegramNotifier;
 
         var normalizedHostName = _machineIdentityService.GetHostName();
         _normalizedHostName = normalizedHostName;
@@ -728,6 +733,8 @@ public sealed class DashboardViewModel : ObservableObject
                         ChartHwnd: hwndColumn.ChartHwndB,
                         Action: TradeLegAction.Sell)));
 
+            NotifyOpenCloseFailures("OPEN", result, BuildPairId(slot, appOpenRequestRawMs, isAutoFlow: false));
+
             // Phase 1 Manual Open log: A buy, B sell
             var now = DateTime.Now;
             var gap = _runtimeConfigState.CurrentDashboardMetrics?.GapBuy;
@@ -861,6 +868,8 @@ public sealed class DashboardViewModel : ObservableObject
                         Ticket: selectB.Request.Ticket,
                         Action: TradeLegAction.Close,
                         RowIndex: selectB.Request.RowIndex)));
+
+        NotifyOpenCloseFailures("CLOSE", result, ResolvePairIdForClose(selectA.Request?.Ticket ?? selectB.Request?.Ticket, slot, appCloseRequestRawMs, isAutoFlow: false));
 
         // Phase 1 Manual Close log
         var now = DateTime.Now;
@@ -1034,6 +1043,8 @@ public sealed class DashboardViewModel : ObservableObject
                         Action: TradeLegAction.Sell,
                         DelayMs: delayOpenBMs)));
 
+            NotifyOpenCloseFailures("OPEN", openResult, pairId);
+
             if (!openResult.Success && openResult.Legs.All(x => !x.Success))
             {
                 _lastAutoOpenClickAtLocal = null;
@@ -1180,6 +1191,8 @@ public sealed class DashboardViewModel : ObservableObject
                         Action: TradeLegAction.Buy,
                         DelayMs: delayOpenBMs)));
 
+            NotifyOpenCloseFailures("OPEN", openResult, pairId);
+
             if (!openResult.Success && openResult.Legs.All(x => !x.Success))
             {
                 _lastAutoOpenClickAtLocal = null;
@@ -1290,6 +1303,8 @@ public sealed class DashboardViewModel : ObservableObject
                             Action: TradeLegAction.Close,
                             DelayMs: delayCloseBMs,
                             RowIndex: selectB.Request.RowIndex)));
+
+            NotifyOpenCloseFailures("CLOSE", closeResult, ResolvePairIdFromCloseSelection(selectA) ?? ResolvePairIdFromCloseSelection(selectB) ?? $"AUTO-{slot:D4}-{appCloseRequestRawMs}");
 
             var hadCloseCandidateA = selectA.Request is not null;
             var hadCloseCandidateB = selectB.Request is not null;
@@ -2812,6 +2827,21 @@ public sealed class DashboardViewModel : ObservableObject
             SafeVmLog(
                 $"[CYCLE][ERROR] Pending open timeout: pairId={state.PairId} elapsedMs={(now - state.CreatedAtLocal).TotalMilliseconds:0} " +
                 $"confirmedA={state.OpenConfirmedA} confirmedB={state.OpenConfirmedB}");
+            NotifyTelegram(
+                eventCode: hasOnlyA ? "OPEN_PARTIAL_A_ONLY" : "OPEN_PARTIAL_B_ONLY",
+                severity: "CRITICAL",
+                detail: hasOnlyA
+                    ? "Open timeout: A vào lệnh nhưng B không vào"
+                    : "Open timeout: B vào lệnh nhưng A không vào",
+                pairId: state.PairId,
+                meta: new Dictionary<string, string?>
+                {
+                    ["openedExchange"] = hasOnlyA ? "A" : "B",
+                    ["missingExchange"] = hasOnlyA ? "B" : "A",
+                    ["elapsedMs"] = ((long)(now - state.CreatedAtLocal).TotalMilliseconds).ToString(CultureInfo.InvariantCulture),
+                    ["confirmedA"] = state.OpenConfirmedA.ToString(),
+                    ["confirmedB"] = state.OpenConfirmedB.ToString()
+                });
 
             if (hasOnlyA)
             {
@@ -2904,6 +2934,8 @@ public sealed class DashboardViewModel : ObservableObject
                         Action: TradeLegAction.Close,
                         RowIndex: rowIndex)),
             cancellationToken);
+
+        NotifyOpenCloseFailures("CLOSE", closeResult, action.PairId);
 
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
@@ -3861,6 +3893,8 @@ public sealed class DashboardViewModel : ObservableObject
                     : null),
             cancellationToken);
 
+        NotifyOpenCloseFailures("CLOSE", closeResult, action.PairId);
+
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
             SignalLogItems.Insert(0,
@@ -4183,6 +4217,13 @@ public sealed class DashboardViewModel : ObservableObject
 
             // Phase 2: Open Confirm signal log
             var openSlippage = CalculateTradeOpenSlippage(newRecord, _runtimeConfigState.CurrentPoint);
+            NotifySlippageAndDelayIfNeeded(
+                isOpen: true,
+                exchange: pendingRequest.ExchangeLabel,
+                ticket: newRecord.Ticket,
+                pairId: pendingRequest.PairId,
+                slippagePt: openSlippage,
+                executionMs: openExecutionMs);
             var openTypeText = SignalLogFormatter.TradeTypeString(newRecord.TradeType);
             SignalLogItems.Insert(0, SignalLogFormatter.FormatOpenConfirm(
                 DateTime.Now,
@@ -4348,6 +4389,13 @@ public sealed class DashboardViewModel : ObservableObject
 
             // Phase 2: Close Confirm signal log
             var closeSlippage = CalculateHistoryCloseSlippage(record, _runtimeConfigState.CurrentPoint);
+            NotifySlippageAndDelayIfNeeded(
+                isOpen: false,
+                exchange: pendingRequest.ExchangeLabel,
+                ticket: record.Ticket,
+                pairId: pendingRequest.PairId,
+                slippagePt: closeSlippage,
+                executionMs: closeExecutionMs);
             var closeTypeText = SignalLogFormatter.TradeTypeString(record.TradeType);
             SignalLogItems.Insert(0, SignalLogFormatter.FormatCloseConfirm(
                 DateTime.Now,
@@ -5483,6 +5531,118 @@ public sealed class DashboardViewModel : ObservableObject
         {
             // ignored by design
         }
+    }
+
+    private void NotifyOpenCloseFailures(string operation, ManualTradeResult result, string? pairId)
+    {
+        try
+        {
+            var failedLegs = result.Legs.Where(x => !x.Success).ToList();
+            if (failedLegs.Count == 0)
+            {
+                return;
+            }
+
+            var eventCode = operation.Equals("OPEN", StringComparison.OrdinalIgnoreCase)
+                ? (failedLegs.Count >= 2 ? "OPEN_FAILED_BOTH" : "OPEN_FAILED_ONE_LEG")
+                : (failedLegs.Count >= 2 ? "CLOSE_FAILED_BOTH" : "CLOSE_FAILED_ONE_LEG");
+
+            var severity = operation.Equals("CLOSE", StringComparison.OrdinalIgnoreCase) && failedLegs.Count == 1
+                ? "CRITICAL"
+                : "ERROR";
+
+            var detail = operation.Equals("OPEN", StringComparison.OrdinalIgnoreCase)
+                ? "Không mở được lệnh"
+                : "Không đóng được lệnh";
+
+            var meta = new Dictionary<string, string?>
+            {
+                ["operation"] = operation,
+                ["failedLegs"] = failedLegs.Count.ToString(CultureInfo.InvariantCulture),
+                ["failedDetail"] = string.Join(" | ", failedLegs.Select(x => $"{x.Exchange}:{x.Detail}"))
+            };
+
+            NotifyTelegram(eventCode, severity, detail, pairId, meta);
+        }
+        catch
+        {
+            // never break trading flow
+        }
+    }
+
+    private void NotifySlippageAndDelayIfNeeded(
+        bool isOpen,
+        string exchange,
+        ulong ticket,
+        string? pairId,
+        double? slippagePt,
+        long? executionMs)
+    {
+        try
+        {
+            if (slippagePt.HasValue && Math.Abs(slippagePt.Value) > AlertSlippageThresholdPt)
+            {
+                NotifyTelegram(
+                    isOpen ? "SLIPPAGE_OPEN_GT_40PT" : "SLIPPAGE_CLOSE_GT_40PT",
+                    "WARN",
+                    isOpen
+                        ? "Trượt giá mở lệnh vượt ngưỡng 40 point"
+                        : "Trượt giá đóng lệnh vượt ngưỡng 40 point",
+                    pairId,
+                    new Dictionary<string, string?>
+                    {
+                        ["exchange"] = exchange,
+                        ["ticket"] = ticket.ToString(CultureInfo.InvariantCulture),
+                        ["slippagePt"] = slippagePt.Value.ToString("0.##", CultureInfo.InvariantCulture)
+                    });
+            }
+
+            if (executionMs.HasValue && executionMs.Value > AlertExecutionThresholdMs)
+            {
+                NotifyTelegram(
+                    isOpen ? "DELAY_OPEN_GT_1000MS" : "DELAY_CLOSE_GT_1000MS",
+                    "WARN",
+                    isOpen
+                        ? "Delay open vượt ngưỡng 1000ms"
+                        : "Delay close vượt ngưỡng 1000ms",
+                    pairId,
+                    new Dictionary<string, string?>
+                    {
+                        ["exchange"] = exchange,
+                        ["ticket"] = ticket.ToString(CultureInfo.InvariantCulture),
+                        ["executionMs"] = executionMs.Value.ToString(CultureInfo.InvariantCulture)
+                    });
+            }
+        }
+        catch
+        {
+            // never break trading flow
+        }
+    }
+
+    private void NotifyTelegram(
+        string eventCode,
+        string severity,
+        string detail,
+        string? pairId = null,
+        IReadOnlyDictionary<string, string?>? meta = null)
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await _telegramNotifier.NotifyAsync(
+                    eventCode: eventCode,
+                    severity: severity,
+                    detail: detail,
+                    pairId: pairId,
+                    meta: meta);
+            }
+            catch
+            {
+                // swallow by design
+            }
+        });
     }
 
 }
