@@ -107,6 +107,12 @@ public sealed class DashboardViewModel : ObservableObject
     private static readonly TimeSpan SkipSignalLogThrottleInterval = TimeSpan.FromMilliseconds(500);
     private const int StableBothFlatPollsRequired = 2;
 
+    // UI render throttle: snapshot event fires every 50ms (logic path),
+    // but heavy UI rebuild (BindDashboardMetrics + RefreshTradeRowsFromSnapshot)
+    // only runs at this minimum interval to keep CPU low when a position is open.
+    private const long SnapshotUiRenderMinIntervalMs = 200;
+    private long _lastSnapshotUiRenderTickMs;
+
     private sealed record PendingOpenRequest(
         string PairId,
         string TradeMapName,
@@ -5045,11 +5051,21 @@ public sealed class DashboardViewModel : ObservableObject
             _runtimeConfigState.UpdateDashboardMetrics(metrics);
             IsLoading = false;
 
-            BindDashboardMetrics(metrics);
+            // Throttle UI-heavy work; diagnostics and logic still run every tick.
+            var nowTickMs = Environment.TickCount64;
+            var canRenderUi = (nowTickMs - _lastSnapshotUiRenderTickMs) >= SnapshotUiRenderMinIntervalMs;
+            if (canRenderUi)
+            {
+                _lastSnapshotUiRenderTickMs = nowTickMs;
+                BindDashboardMetrics(metrics);
+            }
             LogLatencyAnomalyIfNeeded(metrics);
             LogStaleTickIfNeeded(metrics);
             LogPerfSummaryIfDue(metrics);
-            RefreshTradeRowsFromSnapshot(metrics, _runtimeConfigState.CurrentPoint);
+            if (canRenderUi)
+            {
+                RefreshTradeRowsFromSnapshot(metrics, _runtimeConfigState.CurrentPoint);
+            }
             SignalEntryGuard.TrackPriceHistory(_priceHistory, metrics);
 
             if (!IsTradingLogicEnabled)
@@ -5085,8 +5101,11 @@ public sealed class DashboardViewModel : ObservableObject
                     CoolDownGapTick: _runtimeConfigState.CurrentCoolDownGapTick));
             LogFlowTransitionIfChanged("process-snapshot");
 
-            OnPropertyChanged(nameof(CurrentPositionText));
-            OnPropertyChanged(nameof(CurrentPhaseText));
+            if (canRenderUi)
+            {
+                OnPropertyChanged(nameof(CurrentPositionText));
+                OnPropertyChanged(nameof(CurrentPhaseText));
+            }
 
             if (trigger is null || !trigger.Triggered)
             {
