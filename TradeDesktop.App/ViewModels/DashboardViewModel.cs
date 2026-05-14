@@ -2417,6 +2417,16 @@ public sealed class DashboardViewModel : ObservableObject
                     ApplyHistoryResult(HistoryTab.RightPanel, historyRightResult, point);
                 }
 
+                // FIX (post-close wait race): collect close-retry actions BEFORE
+                // SyncTradingFlowWithLivePairState. CollectPendingCloseRetryActions has a
+                // side effect: when both legs confirmed closed it calls
+                // TryBeginWaitAfterCloseFromPending → BeginWaitAfterClose, which transitions
+                // engine WaitingClose → WaitingOpen with CurrentWaitSeconds set from config.
+                // If sync runs first and sees BothFlat, it calls ForceWaitingOpen() that wipes
+                // CurrentWaitSeconds = 0 and BeginWaitAfterClose's guard then returns early —
+                // a new signal can open immediately after close, ignoring start/end_wait_time.
+                closeRetryActions = CollectPendingCloseRetryActions();
+
                 RefreshManualOpenAvailability(ComputeToolAwarePairStateForOpenGate(livePairStateFromPoll));
                 SyncTradingFlowWithLivePairState(livePairStateFromPoll);
 
@@ -2437,7 +2447,6 @@ public sealed class DashboardViewModel : ObservableObject
                 TryDetectAndHandleExternalPartialClose(livePairStateFromPoll);
 
                 timeoutActions = CollectPendingOpenTimeoutActions();
-                closeRetryActions = CollectPendingCloseRetryActions();
             });
 
             if (timeoutActions.Count > 0)
