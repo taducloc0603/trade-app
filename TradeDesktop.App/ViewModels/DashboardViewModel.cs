@@ -3203,6 +3203,19 @@ public sealed class DashboardViewModel : ObservableObject
             return;
         }
 
+        // Pending auto open in flight → engine phase là nguồn sự thật. MMF chưa
+        // đủ dữ kiện để correct phase/side (1 leg có thể xuất hiện trước leg kia
+        // hàng giây khi execution chậm). Không sync để tránh:
+        //  - Ép phase WaitingClose -> WaitingOpen khi cả 2 leg chưa confirm (BothFlat thoáng qua).
+        //  - Suy side sai từ TradeType của 1 leg đơn (OnlyAOpen/OnlyBOpen) khiến
+        //    CurrentOpenMode bị đảo ngược chiều so với trigger gốc.
+        // Pending có cơ chế resolve riêng: MarkOpenPairLegConfirmed (cả 2 confirm)
+        // hoặc CollectPendingOpenTimeoutActions (timeout). Sau resolve, sync resume.
+        if (TryGetUnresolvedAutoPendingOpenPairId(out _))
+        {
+            return;
+        }
+
         if (pairState == LivePairTradeState.BothFlat)
         {
             if (_tradingFlowEngine.CurrentPhase != TradingFlowPhase.WaitingOpen)
@@ -3317,6 +3330,38 @@ public sealed class DashboardViewModel : ObservableObject
         var leftRecords = _latestTradeLeftResult?.Records ?? (IReadOnlyList<TradeSharedRecord>)[];
         var rightRecords = _latestTradeRightResult?.Records ?? (IReadOnlyList<TradeSharedRecord>)[];
         return leftRecords.Concat(rightRecords).Any(r => _pairIdByTicket.ContainsKey(r.Ticket));
+    }
+
+    /// <summary>
+    /// Silent variant: cùng predicate với <see cref="HasUnresolvedAutoPendingOpenCycle"/>
+    /// nhưng KHÔNG ghi log. Dùng cho các call site high-frequency (mỗi poll) để tránh
+    /// spam log và tránh log message sai context ("Auto open blocked").
+    /// </summary>
+    private bool TryGetUnresolvedAutoPendingOpenPairId(out string? blockingPairId)
+    {
+        foreach (var state in _pendingOpenPairById.Values)
+        {
+            if (!state.IsAutoFlow)
+            {
+                continue;
+            }
+
+            if (state.IsResolved || state.TimeoutCloseTriggered)
+            {
+                continue;
+            }
+
+            if (state.OpenConfirmedA && state.OpenConfirmedB)
+            {
+                continue;
+            }
+
+            blockingPairId = state.PairId;
+            return true;
+        }
+
+        blockingPairId = null;
+        return false;
     }
 
     /// <summary>
@@ -3524,6 +3569,19 @@ public sealed class DashboardViewModel : ObservableObject
         {
             _externalPartialCloseStreak = 0;
             _lastExternalCloseGuardBlockReason = string.Empty;
+            return;
+        }
+
+        // Guard 6 (đặt sớm): có pending auto open đang chờ confirm cả 2 leg.
+        // Trong giai đoạn này, MMF state OnlyAOpen/OnlyBOpen KHÔNG đồng nghĩa
+        // "EA đóng 1 leg externally" — nó chỉ phản ánh việc 1 leg xác nhận trước
+        // (execution chậm). Nếu hành động ở đây, hệ thống sẽ đóng nhầm leg vừa
+        // mở. Trường hợp leg thiếu thực sự không bao giờ xuất hiện đã có
+        // CollectPendingOpenTimeoutActions xử lý timeout/compensation riêng.
+        if (TryGetUnresolvedAutoPendingOpenPairId(out var pendingPairId))
+        {
+            _externalPartialCloseStreak = 0;
+            LogExternalCloseGuardBlockOnce($"Guard6: pendingAutoOpen in flight ({pendingPairId})");
             return;
         }
 

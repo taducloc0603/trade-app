@@ -10,7 +10,7 @@ Trước mỗi thay đổi, đánh giá rủi ro theo các tiêu chí sau:
 
 **Nếu có bất kỳ rủi ro nào → dừng lại và thông báo cho user trước khi tiếp tục.**
 
-## Không thay đổi logic hiện tại
+## Có thể thay đổi logic nhưng cần đảm bào sự thay đổi không làm ảnh hưởng các chức năng khác. Cần có sự đảm bảo đúng cho phần sửa logic đó.
 
 - Chỉ thêm hoặc sửa đúng những gì được yêu cầu rõ ràng.
 - Không refactor, không dọn dẹp code xung quanh, không tối ưu hóa ngoài phạm vi task.
