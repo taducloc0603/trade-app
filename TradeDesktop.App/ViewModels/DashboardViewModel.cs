@@ -71,7 +71,7 @@ public sealed class DashboardViewModel : ObservableObject
     private string _lastExternalCloseGuardBlockReason = string.Empty;
     private string _lastSkipSignalLogSignature = string.Empty;
     private DateTime _lastSkipSignalLogAtUtc;
-    private const int ExternalPartialCloseStreakRequired = 2;
+    private const int ExternalPartialCloseStreakRequired = 4;
     private const string GapCooldownSkipReason = "GAP_COOLDOWN_ACTIVE";
     private bool _externalPartialCloseInFlight = false;
     private double? _lastLoggedLatencyA;
@@ -92,7 +92,7 @@ public sealed class DashboardViewModel : ObservableObject
     private const long AlertExecutionThresholdMs = 1000;
     private bool _isAutoOpenPausedByInvariant;
     private int _invariantClearStreak;
-    private const int InvariantClearPollsRequired = 5;
+    private const int InvariantClearPollsRequired = 10;
     private TradingFlowPhase _lastLoggedPhase = TradingFlowPhase.WaitingOpen;
     private TradingOpenMode _lastLoggedOpenMode = TradingOpenMode.None;
     private TradingPositionSide _lastLoggedPositionSide = TradingPositionSide.None;
@@ -102,10 +102,10 @@ public sealed class DashboardViewModel : ObservableObject
     private SharedMapReadResult<TradeSharedRecord>? _latestTradeLeftResult;
     private SharedMapReadResult<TradeSharedRecord>? _latestTradeRightResult;
 
-    private static readonly TimeSpan OrderInfoPollInterval = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan OrderInfoPollInterval = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan OpenPartialRecheckDelay = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan SkipSignalLogThrottleInterval = TimeSpan.FromMilliseconds(500);
-    private const int StableBothFlatPollsRequired = 2;
+    private const int StableBothFlatPollsRequired = 4;
 
     // UI render throttle: snapshot event fires every 50ms (logic path),
     // but heavy UI rebuild (BindDashboardMetrics + RefreshTradeRowsFromSnapshot)
@@ -644,6 +644,15 @@ public sealed class DashboardViewModel : ObservableObject
         _tradeSessionFileLogger.Log("Trading logic start confirmed by user");
 
         ResetTradingLogicState();
+        // Wipe display state on Start only — Stop giữ nguyên để xem P&L cuối session
+        _sttByPairId.Clear();
+        _nextStt = 1;
+        _profitSnapshotByTicket.Clear();
+        TradeRealtimeProfitRows.Clear();
+        HistoryRealtimeProfitRows.Clear();
+        HistoryRealtimeProfitSummary = "0.00 | 0.00 $";
+        HistoryTab.LeftPanel.SetEmpty();
+        HistoryTab.RightPanel.SetEmpty();
         IsTradingLogicEnabled = true;
         SyncTradingFlowWithLivePairState(GetLivePairTradeStateStrict());
         _lastLoggedPhase = _tradingFlowEngine.CurrentPhase;
@@ -2166,12 +2175,6 @@ public sealed class DashboardViewModel : ObservableObject
         _isStaleA = false;
         _isStaleB = false;
         _lastPerfSummaryAtUtc = DateTime.MinValue;
-        _sttByPairId.Clear();
-        _nextStt = 1;
-        _profitSnapshotByTicket.Clear();
-        TradeRealtimeProfitRows.Clear();
-        HistoryRealtimeProfitRows.Clear();
-        HistoryRealtimeProfitSummary = "0.00 | 0.00 $";
         OnPropertyChanged(nameof(CurrentPositionText));
         OnPropertyChanged(nameof(CurrentPhaseText));
         RaiseManualOpenCanExecuteChanged();
@@ -3365,6 +3368,47 @@ public sealed class DashboardViewModel : ObservableObject
     }
 
     /// <summary>
+    /// Trả về true nếu có ít nhất 1 pending open (auto hoặc manual) chưa confirm
+    /// đủ 2 leg VÀ vẫn còn trong window OpenPendingTimeoutMs của chính nó. Dùng
+    /// cho external-close watchdog để không đóng nhầm leg vừa mở khi leg còn lại
+    /// đang chờ execution. Sau window, primary timeout handler
+    /// (CollectPendingOpenTimeoutActions) tiếp quản.
+    /// </summary>
+    private bool TryGetPendingOpenInTimeoutWindow(out string? blockingPairId)
+    {
+        var now = DateTimeOffset.Now;
+        foreach (var state in _pendingOpenPairById.Values)
+        {
+            if (state.IsResolved || state.TimeoutCloseTriggered)
+            {
+                continue;
+            }
+
+            if (state.OpenConfirmedA && state.OpenConfirmedB)
+            {
+                continue;
+            }
+
+            var timeoutMs = Math.Max(0, state.OpenPendingTimeoutMs);
+            if (timeoutMs <= 0)
+            {
+                continue;
+            }
+
+            if (now - state.CreatedAtLocal >= TimeSpan.FromMilliseconds(timeoutMs))
+            {
+                continue;
+            }
+
+            blockingPairId = state.PairId;
+            return true;
+        }
+
+        blockingPairId = null;
+        return false;
+    }
+
+    /// <summary>
     /// Trả về true nếu có ít nhất 1 auto pending open cycle chưa hoàn tất.
     /// </summary>
     private bool HasUnresolvedAutoPendingOpenCycle(out string? blockingPairId)
@@ -3572,16 +3616,16 @@ public sealed class DashboardViewModel : ObservableObject
             return;
         }
 
-        // Guard 6 (đặt sớm): có pending auto open đang chờ confirm cả 2 leg.
-        // Trong giai đoạn này, MMF state OnlyAOpen/OnlyBOpen KHÔNG đồng nghĩa
-        // "EA đóng 1 leg externally" — nó chỉ phản ánh việc 1 leg xác nhận trước
-        // (execution chậm). Nếu hành động ở đây, hệ thống sẽ đóng nhầm leg vừa
-        // mở. Trường hợp leg thiếu thực sự không bao giờ xuất hiện đã có
+        // Guard 6 (đặt sớm): có pending open (auto hoặc manual) đang chờ confirm
+        // cả 2 leg VÀ còn trong window OpenPendingTimeoutMs. Trong giai đoạn này,
+        // MMF state OnlyAOpen/OnlyBOpen KHÔNG đồng nghĩa "EA đóng 1 leg externally"
+        // — nó chỉ phản ánh việc 1 leg xác nhận trước (execution chậm). Nếu hành
+        // động ở đây, hệ thống sẽ đóng nhầm leg vừa mở. Hết window thì
         // CollectPendingOpenTimeoutActions xử lý timeout/compensation riêng.
-        if (TryGetUnresolvedAutoPendingOpenPairId(out var pendingPairId))
+        if (TryGetPendingOpenInTimeoutWindow(out var pendingPairId))
         {
             _externalPartialCloseStreak = 0;
-            LogExternalCloseGuardBlockOnce($"Guard6: pendingAutoOpen in flight ({pendingPairId})");
+            LogExternalCloseGuardBlockOnce($"Guard6: pendingOpen in flight, within timeout window ({pendingPairId})");
             return;
         }
 
